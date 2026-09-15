@@ -191,9 +191,12 @@ GHOST_SPEED = 6.0
 GHOST_ACCEL_TIME = 0.20  # secondes pour atteindre la vitesse visee (plus grand = plus mou)
 GHOST_COAST_TIME = 0.48  # secondes pour glisser a l'arret une fois les touches lachees
 GHOST_DURATION = 12.0  # duree de base du mode fantome, en secondes
+GHOST_DURATION_INCREASE_VALUE = 0.5
 GHOST_MAX_RANGE = 480.0  # conserve pour les paliers ; plus de limite de distance en jeu
+GHOST_MAX_RANGE_INCREASE_VALUE = 20
 GHOST_VISION_RADIUS = 200.0  # rayon de revelation au debut du mode fantome
 GHOST_VISION_RADIUS_MIN = 12.0  # rayon en fin de timer (presque rien)
+GHOST_VISION_RADIUS_INCREASE_VALUE = 10
 # Exposant de fermeture : 1 = lineaire, plus grand = reste large puis se referme d'un coup.
 GHOST_VISION_SHRINK_POWER = 5.0
 GHOST_CARRY_CAPACITY = 1  # nombre d'objets transportables simultanement
