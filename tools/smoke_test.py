@@ -69,19 +69,30 @@ def check_ghost_hints(window: arcade.Window) -> None:
     hidden_trap.update_contact(True, settings.HIDDEN_TRAP_ACTIVATION_DELAY - FRAME)
     assert hidden_trap.activation_ratio < 1.0
     assert not hidden_trap.lethal_for_body, "le piege ne doit pas tuer avant le delai"
-    hidden_trap.update_contact(True, FRAME)
-    assert hidden_trap.lethal_for_body, "le piege doit s'activer apres un contact continu"
-    hidden_trap.update_contact(False, FRAME)
-    assert not hidden_trap.lethal_for_body, "sortir du piege doit annuler son activation"
+    assert hidden_trap.update_contact(False, FRAME)
+    assert hidden_trap.lethal_for_body, "un contact bref doit armer le piege"
+    hidden_trap.reset_activation()
+    assert not hidden_trap.lethal_for_body, "le piege doit se reinitialiser apres une mort"
+
+    view.player.center_x = hidden_trap.center_x
+    view.player.center_y = hidden_trap.center_y
+    view._resolve_player_collisions(FRAME)
+    assert view.machine.state is GameState.PLAYING
+    view.player.center_x += settings.TILE_SIZE * 4
+    view._resolve_player_collisions(settings.HIDDEN_TRAP_ACTIVATION_DELAY)
+    assert view.machine.state is GameState.GHOST, (
+        "un piege aerien touche doit finir par tuer le corps"
+    )
 
     assert view.level.ghost_messages
-    view.on_key_press(arcade.key.F, 0)
-    assert view.machine.state is GameState.GHOST
     assert view.ghost is not None
     view.ghost.center_x = hidden_trap.center_x
     view.ghost.center_y = hidden_trap.center_y
     assert view.ghost.reveals(hidden_trap)
-    assert view.ghost.reveals_position(view.level.ghost_messages[0].position)
+    assert any(
+        view.ghost.reveals_position(message.position)
+        for message in view.level.ghost_messages
+    )
     view.on_draw()
     print("  vision spectrale -> nuee animee et texte secret visibles au rapprochement")
 

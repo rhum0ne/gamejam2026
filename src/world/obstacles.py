@@ -75,16 +75,25 @@ class Spike(arcade.SpriteSolidColor):
         self.lethal_for_ghost = False
 
 
-class HiddenSpike(Spike):
+class HiddenSpike(arcade.SpriteSolidColor):
     """Piege invisible, signale par une nuee de petits fantomes."""
 
     hidden = True
     ghost_warning = True
 
     def __init__(self, center_x: float, center_y: float, size: int = settings.TILE_SIZE) -> None:
-        super().__init__(center_x, center_y, size=size)
+        # Une hitbox pleine est volontaire ici : les pieges aeriens doivent
+        # etre detectes meme si le joueur ne touche pas exactement leur base.
+        super().__init__(
+            size,
+            size,
+            center_x=center_x,
+            center_y=center_y,
+            color=settings.COLOR_SPIKE,
+        )
         self.lethal_for_body = False
         self.contact_time = 0.0
+        self.triggered = False
 
     @property
     def activation_ratio(self) -> float:
@@ -93,17 +102,26 @@ class HiddenSpike(Spike):
             return 1.0
         return min(1.0, self.contact_time / settings.HIDDEN_TRAP_ACTIVATION_DELAY)
 
-    def update_contact(self, touching: bool, delta_time: float) -> None:
-        """Arme le piege apres un contact continu, ou annule le compte a rebours."""
-        if not touching:
-            self.contact_time = 0.0
-            self.lethal_for_body = False
-            return
+    def update_contact(self, touching: bool, delta_time: float) -> bool:
+        """Lance le compte a rebours au premier contact, meme bref."""
+        if touching:
+            self.triggered = True
+        if not self.triggered or self.lethal_for_body:
+            return False
         self.contact_time = min(
             settings.HIDDEN_TRAP_ACTIVATION_DELAY,
             self.contact_time + max(0.0, delta_time),
         )
-        self.lethal_for_body = self.activation_ratio >= 1.0
+        if self.activation_ratio < 1.0:
+            return False
+        self.lethal_for_body = True
+        return True
+
+    def reset_activation(self) -> None:
+        """Remet le piege a zero quand un nouveau corps reapparait."""
+        self.lethal_for_body = False
+        self.contact_time = 0.0
+        self.triggered = False
 
 
 class Door(arcade.SpriteSolidColor):

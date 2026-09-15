@@ -169,6 +169,7 @@ class PlayView(arcade.View):
         self._delivered_items: list[ItemKind] = []
         self._ghost_hint_time = 0.0
         self._ghost_message_labels: list[arcade.Text] = []
+        self._ghost_message_shadows: list[arcade.Text] = []
         self.setup()
 
     # ------------------------------------------------------------------ #
@@ -185,6 +186,21 @@ class PlayView(arcade.View):
                 message.position[1] + settings.TILE_SIZE,
                 settings.COLOR_GHOST_TEXT,
                 font_size=settings.GHOST_TEXT_SIZE,
+                bold=True,
+                italic=True,
+                anchor_x="center",
+            )
+            for message in self.level.ghost_messages
+        ]
+        self._ghost_message_shadows = [
+            arcade.Text(
+                message.text,
+                message.position[0] + 2,
+                message.position[1] + settings.TILE_SIZE - 2,
+                settings.COLOR_GHOST_TEXT_GLOW,
+                font_size=settings.GHOST_TEXT_SIZE + 2,
+                bold=True,
+                italic=True,
                 anchor_x="center",
             )
             for message in self.level.ghost_messages
@@ -248,8 +264,18 @@ class PlayView(arcade.View):
             for sprite in sprite_list:
                 if ghost.reveals(sprite):
                     arcade.draw_sprite(sprite)
-        for message, label in zip(self.level.ghost_messages, self._ghost_message_labels):
+        for message, label, shadow in zip(
+            self.level.ghost_messages,
+            self._ghost_message_labels,
+            self._ghost_message_shadows,
+        ):
             if ghost.reveals_position(message.position):
+                distance = math.dist((ghost.center_x, ghost.center_y), message.position)
+                reveal_ratio = 1.0 - distance / max(1.0, ghost.vision_radius)
+                alpha = int(70 + max(0.0, min(1.0, reveal_ratio)) * 185)
+                label.color = (*settings.COLOR_GHOST_TEXT, alpha)
+                shadow.color = (*settings.COLOR_GHOST_TEXT_GLOW, max(35, alpha // 2))
+                shadow.draw()
                 label.draw()
         for hazard in self.level.hazards:
             if getattr(hazard, "ghost_warning", False) and ghost.reveals(hazard):
@@ -267,6 +293,33 @@ class PlayView(arcade.View):
         reveal_ratio = max(0.0, min(1.0, reveal_ratio))
         offsets = settings.GHOST_TRAP_MARKER_OFFSETS
         visible_count = max(1, math.ceil(reveal_ratio * len(offsets)))
+        pulse = (math.sin(self._ghost_hint_time * 3.0) + 1.0) / 2.0
+        halo_alpha = int(25 + reveal_ratio * 55 + pulse * 15)
+        arcade.draw_circle_outline(
+            trap.center_x,
+            trap.center_y,
+            18.0 + pulse * 6.0,
+            (*settings.COLOR_GHOST_WARNING, halo_alpha),
+            2,
+        )
+        arcade.draw_circle_outline(
+            trap.center_x,
+            trap.center_y,
+            29.0 + pulse * 8.0,
+            (*settings.COLOR_GHOST_WARNING, max(10, halo_alpha // 2)),
+            1,
+        )
+        for particle_index in range(6):
+            phase = self._ghost_hint_time * 1.5 + particle_index * math.tau / 6.0
+            particle_radius = 12.0 + pulse * 6.0 + (particle_index % 2) * 5.0
+            particle_x = trap.center_x + math.cos(phase) * particle_radius
+            particle_y = trap.center_y + math.sin(phase) * particle_radius
+            arcade.draw_circle_filled(
+                particle_x,
+                particle_y,
+                1.2 + pulse * 0.8,
+                (*settings.COLOR_GHOST_WARNING, max(20, halo_alpha)),
+            )
 
         for index, (offset_x, offset_y) in enumerate(offsets[:visible_count]):
             phase = self._ghost_hint_time * 5.0 + index * 0.75
@@ -412,13 +465,18 @@ class PlayView(arcade.View):
 
         touched_hazards = collisions.hazards_touched_by_player(self.player, self.level)
         touched_hazard_ids = {id(hazard) for hazard in touched_hazards}
+        activated_hazard = False
         for hazard in self.level.hazards:
             update_contact = getattr(hazard, "update_contact", None)
             if update_contact is not None:
-                update_contact(id(hazard) in touched_hazard_ids, delta_time)
+                activated_hazard = (
+                    bool(update_contact(id(hazard) in touched_hazard_ids, delta_time))
+                    or activated_hazard
+                )
 
         lethal = (
-            any(getattr(hazard, "lethal_for_body", True) for hazard in touched_hazards)
+            activated_hazard
+            or any(getattr(hazard, "lethal_for_body", True) for hazard in touched_hazards)
             or collisions.player_out_of_bounds(self.player, self.level)
             or collisions.enemy_touching_player(self.player, self.level.enemies) is not None
         )
@@ -477,6 +535,10 @@ class PlayView(arcade.View):
             for item in self.ghost.release_all():
                 item.drop_at(item.center_x, item.center_y)
         self.ghost = None
+        for hazard in self.level.hazards:
+            reset_activation = getattr(hazard, "reset_activation", None)
+            if reset_activation is not None:
+                reset_activation()
         for wall in self.level.spectral_walls:
             wall.set_revealed(False)
         self._respawn_timer = settings.PLAYER_RESPAWN_DELAY
