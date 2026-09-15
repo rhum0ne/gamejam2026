@@ -313,6 +313,7 @@ def check_menus(window: arcade.Window) -> None:
         advance(view, 1)
     play = PlayView(session)
     window.show_view(play)
+    assert play.atmosphere.puff_count > 0, "l'atmosphere de premier plan doit etre peuplee"
     play.on_resize(1600, 900)
     play.on_draw()
     visible, total, walls_visible, walls_total = play.level.count_visible_tiles(
