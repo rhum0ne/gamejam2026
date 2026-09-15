@@ -95,6 +95,20 @@ ANIM_GHOST_DISAPPEAR_FRAME_TIME = 0.08
 # 1.0 = rythme de base ; plus petit = plus lent (0.5 = deux fois plus lent).
 ANIM_SPEED = 0.5
 
+# Torche (placeholder, pas de collision)
+TORCH_WIDTH = 8
+TORCH_HEIGHT = 12
+TORCH_STEM_WIDTH = 3
+TORCH_STEM_HEIGHT = 10
+TORCH_GLOW_OUTER = 104.0
+TORCH_GLOW_INNER = 38.0
+TORCH_GLOW_ALPHA = 62
+TORCH_GLOW_INNER_ALPHA = 110
+TORCH_FLICKER = 0.22
+TORCH_FLICKER_SPEED = 8.4
+TORCH_FLICKER_SPEED_FAST = 19.0
+
+
 # --------------------------------------------------------------------------- #
 # Physique du corps physique (joueur vivant)
 # --------------------------------------------------------------------------- #
@@ -122,13 +136,48 @@ PLAYER_DASH_SPEED = 30.0
 PLAYER_DASH_DURATION = 0.12
 PLAYER_DASH_COOLDOWN = 3.0
 PLAYER_DASH_READY_FLASH = 0.38
-PLAYER_DASH_TRAIL_LIFE = 0.22  # duree de vie d'une afterimage, en secondes
 PLAYER_DASH_GLOW_SCALE = 3.4
 PLAYER_DASH_GLOW_ALPHA = 34
-PLAYER_DASH_TRAIL_GLOW_SCALE = 3.2
-PLAYER_DASH_TRAIL_GLOW_ALPHA = 28
 PLAYER_DASH_GLOW_STRETCH = 1.55  # etirement du halo dans l'axe du dash
 PLAYER_DASH_GLOW_OFFSET = 0.32  # recul du halo, en fractions de PLAYER_WIDTH
+# Trainee de points (fantome cyan / dash jaune).
+TRAIL_SPACING = 6.5
+TRAIL_MOTES = 2
+TRAIL_LIFE = 0.48
+TRAIL_SIZE = 4.4
+TRAIL_SIZE_MIN = 2.2
+TRAIL_ALPHA = 210
+TRAIL_JITTER = 3.2
+TRAIL_INHERIT = 0.28
+TRAIL_DRAG = 3.4
+TRAIL_WOBBLE = 16.0
+TRAIL_WOBBLE_SPEED = 6.5
+TRAIL_CURL = 2.8
+TRAIL_MAX = 140
+TRAIL_MIN_SPEED = 0.45  # px/frame, en dessous le fantome ne depose plus
+
+# Poussiere au sol : atterrissage (plus si chute haute) et course a fond.
+PARTICLE_LAND_MIN_SPEED = 4.0  # px/frame, en dessous : pas de burst
+PARTICLE_LAND_MAX_SPEED = 22.0  # px/frame, burst maximal
+PARTICLE_LAND_COUNT_MIN = 5
+PARTICLE_LAND_COUNT_MAX = 18
+PARTICLE_LAND_LIFE = 0.42
+PARTICLE_LAND_SPEED_X = 180.0  # px/s
+PARTICLE_LAND_SPEED_Y = 140.0
+PARTICLE_LAND_GRAVITY = 480.0
+PARTICLE_LAND_SIZE_MIN = 3.5
+PARTICLE_LAND_SIZE_MAX = 7.5
+PARTICLE_RUN_SPEED_RATIO = 0.88  # fraction de PLAYER_SPEED pour declencher
+PARTICLE_RUN_INTERVAL = 0.040  # secondes entre deux grains
+PARTICLE_RUN_LIFE = 0.28
+PARTICLE_RUN_SPEED_X = 55.0
+PARTICLE_RUN_SPEED_Y = 36.0
+PARTICLE_RUN_SIZE = 3.8
+PARTICLE_MAX = 64
+PARTICLE_MIN_DRAW_SIZE = 3.0
+PARTICLE_FOOT_CLEARANCE = 3.0  # au-dessus du sol, pour ne pas naitre dans la tuile
+
+
 
 
 # --------------------------------------------------------------------------- #
@@ -142,8 +191,16 @@ GHOST_ACCEL_TIME = 0.20  # secondes pour atteindre la vitesse visee (plus grand 
 GHOST_COAST_TIME = 0.48  # secondes pour glisser a l'arret une fois les touches lachees
 GHOST_DURATION = 12.0  # duree de base du mode fantome, en secondes
 GHOST_MAX_RANGE = 480.0  # distance max autour du cadavre d'ancrage, en pixels
-GHOST_VISION_RADIUS = 160.0  # rayon de revelation des elements caches
+GHOST_VISION_RADIUS = 200.0  # rayon de revelation au debut du mode fantome
+GHOST_VISION_RADIUS_MIN = 12.0  # rayon en fin de timer (presque rien)
+# Exposant de fermeture : 1 = lineaire, plus grand = reste large puis se referme d'un coup.
+GHOST_VISION_SHRINK_POWER = 5.0
 GHOST_CARRY_CAPACITY = 1  # nombre d'objets transportables simultanement
+# Filtre plein ecran du mode fantome : distorsion barillet tres legere.
+GHOST_WARP_STRENGTH = 0.038  # 0 = identite ; ~2 % aux coins, en debut de timer
+GHOST_WARP_STRENGTH_MAX = 0.072  # force en fin de timer, toujours discrete
+GHOST_WARP_PERSPECTIVE = 0.55  # etirement vertical relatif a warp
+GHOST_WARP_CHROMA = 0.10  # aberration chromatique relative a warp
 # Fleche de rappel vers le corps : cachee tant que le fantome est assez proche.
 GHOST_HOME_ARROW_MIN_DISTANCE = 96.0
 GHOST_HOME_ARROW_OFFSET = 42.0  # distance du centre du fantome a la pointe
@@ -172,6 +229,12 @@ ENEMY_HEIGHT = 36
 ENEMY_SPEED = 1.6
 ENEMY_AGGRO_RANGE = 220.0  # distance de detection du joueur
 ENEMY_CORPSE_SMELL_RANGE = 320.0  # distance d'attraction vers un cadavre
+ENEMY_GHOST_GLOW_SCALE = 5.6
+ENEMY_GHOST_GLOW_ALPHA = 96
+ENEMY_GHOST_GLOW_INNER_SCALE = 2.4
+ENEMY_GHOST_GLOW_INNER_ALPHA = 170
+ENEMY_GHOST_GLOW_PULSE = 0.16
+ENEMY_GHOST_GLOW_PULSE_SPEED = 3.4
 
 # --------------------------------------------------------------------------- #
 # Objets et progression
@@ -207,8 +270,12 @@ COLOR_CHECKPOINT = (86, 148, 196)
 COLOR_PLAYER = (232, 232, 240)
 COLOR_GHOST = (128, 200, 255)
 COLOR_GHOST_GLOW = (110, 190, 255)
+COLOR_TRAIL_GHOST = (132, 214, 255)
+COLOR_TRAIL_GHOST_CORE = (230, 248, 255)
 COLOR_CORPSE = (140, 120, 120)
 COLOR_ENEMY = (188, 92, 160)
+COLOR_ENEMY_GLOW = (255, 28, 22)
+COLOR_ENEMY_GLOW_CORE = (255, 92, 64)
 COLOR_KEY = (232, 204, 96)
 COLOR_SOUL_ORB = (110, 190, 255)
 COLOR_HUD_TEXT = (228, 228, 236)
@@ -216,14 +283,24 @@ COLOR_HUD_BAR_BACKGROUND = (48, 48, 62)
 COLOR_HUD_BAR_FILL = (128, 200, 255)
 COLOR_DASH = (255, 214, 120)
 COLOR_DASH_GLOW = (255, 224, 150)
+COLOR_TRAIL_DASH = (255, 214, 96)
+COLOR_TRAIL_DASH_CORE = (255, 250, 210)
 COLOR_DASH_GAUGE = (255, 186, 72)
+COLOR_TORCH_STEM = (94, 58, 34)
+COLOR_TORCH_FLAME = (255, 158, 52)
+COLOR_TORCH_GLOW = (255, 132, 36)
+COLOR_TORCH_GLOW_CORE = (255, 220, 130)
+COLOR_DUST = (236, 228, 208)
+COLOR_DUST_DARK = (186, 174, 150)
 COLOR_MENU_TITLE = (200, 220, 255)
 COLOR_MENU_HINT = (150, 155, 175)
 
 # Opacite du voile hors du champ de vision du fantome (0-255).
-FOG_ALPHA = 200
+FOG_ALPHA = 235
 # Part du rayon entierement transparente au centre (0 = degrade des le centre).
-GHOST_VISION_CLEAR_RATIO = 0.25
+GHOST_VISION_CLEAR_RATIO = 0.0
+# Courbe du degrade (1 = lineaire, plus grand = bord plus sec).
+GHOST_VISION_FALLOFF_POWER = 2.5
 
 # --------------------------------------------------------------------------- #
 # Atmosphere de premier plan (brouillard + nuages, parallaxe > 1)

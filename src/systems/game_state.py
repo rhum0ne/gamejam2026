@@ -226,19 +226,24 @@ class PlayView(arcade.View):
         if self.player.alive:
             self.player.draw_fx()
             arcade.draw_sprite(self.player)
+            self.player.draw_particles()
+        # Premier plan : passe devant le monde, reste sous le voile fantome et le HUD.
+        self.atmosphere.draw(self.camera.world)
         if self.ghost is not None:
             if self.machine.state is GameState.GHOST:
                 self._draw_ghost_layer(self.ghost)
             elif self.ghost.vanishing:
                 arcade.draw_sprite(self.ghost)
-        self.atmosphere.draw(self.camera.world)
         if settings.DEBUG_SHOW_HITBOXES:
             self._draw_hitboxes()
         self.camera.use_ui()
         self.hud.draw(self._hud_data())
         if self._debug_enabled:
             self.debug.draw(self._debug_snapshot())
-        self.camera.present()
+        warp = 0.0
+        if self.machine.state is GameState.GHOST and self.ghost is not None:
+            warp = self.ghost.warp_strength
+        self.camera.present(warp)
 
     def _draw_hitboxes(self) -> None:
         color = settings.COLOR_DEBUG_HITBOX
@@ -261,10 +266,11 @@ class PlayView(arcade.View):
             if ghost.reveals(item):
                 item.draw_fx()
                 arcade.draw_sprite(item)
+        self.fog.draw(ghost, self.camera.world)
         for enemy in self.level.enemies:
+            enemy.draw_ghost_glow()
             if ghost.reveals(enemy):
                 arcade.draw_sprite(enemy)
-        self.fog.draw(ghost, self.camera.world)
         ghost.draw_fx()
         arcade.draw_sprite(ghost)
         self._draw_body_arrow(ghost)

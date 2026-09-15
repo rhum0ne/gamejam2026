@@ -17,6 +17,7 @@ import arcade
 import settings
 from src.entities.glow import draw_glow
 from src.entities.item import Item
+from src.entities.trail import PointTrail
 from src.systems.upgrades import GhostStats
 from src.ui import sprites
 
@@ -56,6 +57,10 @@ class Ghost(arcade.Sprite):
         self._input = (0.0, 0.0)
         self._solid_walls: arcade.SpriteList | None = None
         self._glow_time = 0.0
+        self._trail = PointTrail(
+            settings.COLOR_TRAIL_GHOST,
+            settings.COLOR_TRAIL_GHOST_CORE,
+        )
 
     # ------------------------------------------------------------------ #
     # Initialisation
@@ -79,8 +84,29 @@ class Ghost(arcade.Sprite):
     # ------------------------------------------------------------------ #
 
     @property
+    def timer_spent(self) -> float:
+        """Part du timer ecoulee, de 0.0 (debut) a 1.0 (expire)."""
+        duration = max(self.stats.duration, 0.001)
+        return 1.0 - max(0.0, min(1.0, self.time_left / duration))
+
+    @property
     def vision_radius(self) -> float:
-        return self.stats.vision_radius
+        """Rayon de vision : part de `stats.vision_radius` et se referme avec le timer.
+
+        La courbe est une puissance : le trou reste large longtemps, puis
+        s'effondre d'un coup en fin de timer, sans rester petit trop longtemps.
+        """
+        eased = self.timer_spent ** settings.GHOST_VISION_SHRINK_POWER
+        start = self.stats.vision_radius
+        end = settings.GHOST_VISION_RADIUS_MIN
+        return start + (end - start) * eased
+
+    @property
+    def warp_strength(self) -> float:
+        """Intensite du filtre de perspective, qui monte legerement avec le timer."""
+        start = settings.GHOST_WARP_STRENGTH
+        end = settings.GHOST_WARP_STRENGTH_MAX
+        return start + (end - start) * self.timer_spent
 
     @property
     def expired(self) -> bool:
@@ -160,7 +186,8 @@ class Ghost(arcade.Sprite):
     # ------------------------------------------------------------------ #
 
     def draw_fx(self) -> None:
-        """Halo cyan leger, pulse doucement pour rester lisible dans le noir."""
+        """Trainee de points cyan, puis halo."""
+        self._trail.draw()
         pulse = 1.0 + settings.GHOST_GLOW_PULSE * math.sin(
             self._glow_time * settings.GHOST_GLOW_PULSE_SPEED
         )
@@ -189,6 +216,15 @@ class Ghost(arcade.Sprite):
         self._move_axis("x")
         self._move_axis("y")
         self._clamp_to_leash()
+        speed = math.hypot(self.change_x, self.change_y)
+        self._trail.follow(
+            self.center_x,
+            self.center_y,
+            self.change_x,
+            self.change_y,
+            delta_time,
+            active=speed >= settings.TRAIL_MIN_SPEED,
+        )
         if abs(self.change_x) > 0.05:
             self.facing = 1 if self.change_x > 0 else -1
         self._advance_animation(delta_time)

@@ -20,6 +20,8 @@ Rendu a resolution fixe (`begin_frame` / `present`)
     dimensions. `present()` redimensionne cette image fixe vers la fenetre
     reelle en une seule passe (un quad texture, mise a l'echelle materielle
     quasi gratuite), en conservant le ratio d'aspect (bandes noires si besoin).
+    Un `warp_strength` non nul (mode fantome) applique une distorsion barillet
+    et un leger etirement perspectif sur cette copie.
 """
 
 from __future__ import annotations
@@ -62,11 +64,24 @@ _PRESENT_FRAGMENT_SHADER = dedent(
     #version 330
 
     uniform sampler2D screen_texture;
+    uniform float warp_barrel;
+    uniform float warp_perspective;
+    uniform float warp_chroma;
     in vec2 out_uv;
     out vec4 frag_color;
 
     void main() {
-        frag_color = texture(screen_texture, out_uv);
+        vec2 centered = out_uv - vec2(0.5);
+        float r2 = dot(centered, centered);
+        vec2 warped = centered * (1.0 + warp_barrel * r2);
+        warped.y *= 1.0 + warp_perspective * centered.y;
+        vec2 uv = vec2(0.5) + warped;
+        vec2 dir = centered * inversesqrt(r2 + 1e-6);
+        vec2 offset = dir * warp_chroma;
+        float red = texture(screen_texture, clamp(uv + offset, 0.0, 1.0)).r;
+        vec4 mid = texture(screen_texture, clamp(uv, 0.0, 1.0));
+        float blue = texture(screen_texture, clamp(uv - offset, 0.0, 1.0)).b;
+        frag_color = vec4(red, mid.g, blue, mid.a);
     }
     """
 )
@@ -166,8 +181,12 @@ class CameraRig:
         """Efface l'image hors-ecran, avant que le monde et le HUD n'y dessinent."""
         self._target.clear(color=settings.COLOR_BACKGROUND)
 
-    def present(self) -> None:
-        """Recopie l'image hors-ecran (resolution fixe) dans la fenetre reelle."""
+    def present(self, warp_strength: float = 0.0) -> None:
+        """Recopie l'image hors-ecran (resolution fixe) dans la fenetre reelle.
+
+        `warp_strength` 0 laisse l'image intacte. Une valeur positive (mode
+        fantome) deforme legerement la perspective sur tout l'ecran.
+        """
         screen = self._window.ctx.screen
         screen.use()
         screen.clear(
@@ -176,7 +195,11 @@ class CameraRig:
         )
         screen.viewport = self._present_viewport
         self._target.color_attachments[0].use(unit=0)
+        strength = max(0.0, float(warp_strength))
         self._present_program["screen_texture"] = 0
+        self._present_program["warp_barrel"] = strength
+        self._present_program["warp_perspective"] = strength * settings.GHOST_WARP_PERSPECTIVE
+        self._present_program["warp_chroma"] = strength * settings.GHOST_WARP_CHROMA
         self._present_geometry.render(self._present_program)
 
     def on_resize(self, width: int, height: int) -> None:

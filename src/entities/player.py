@@ -17,6 +17,8 @@ import arcade
 import settings
 from src.entities.glow import draw_glow
 from src.entities.item import ItemKind
+from src.entities.particles import DustParticles
+from src.entities.trail import PointTrail
 from src.ui import sprites
 
 
@@ -28,6 +30,7 @@ def _idle_animation() -> sprites.StripAnimation:
 def _walk_animation() -> sprites.StripAnimation:
     frames = sprites.load_strip(settings.SPRITE_PLAYER_WALK, settings.SPRITE_FRAME_SIZE)
     return sprites.StripAnimation(frames, settings.ANIM_WALK_FRAME_TIME, loop=True)
+
 
 def _exp_alpha(delta_time: float, smooth_time: float) -> float:
     if smooth_time <= 0.0:
@@ -65,7 +68,11 @@ class Player(arcade.Sprite):
         self._dash_dir = 1
         self._dash_cooldown = 0.0
         self._ready_flash = 0.0
-        self._trail: list[list[float]] = []
+        self._dust = DustParticles()
+        self._dash_trail = PointTrail(
+            settings.COLOR_TRAIL_DASH,
+            settings.COLOR_TRAIL_DASH_CORE,
+        )
 
     # ------------------------------------------------------------------ #
     # Initialisation
@@ -139,7 +146,8 @@ class Player(arcade.Sprite):
         self._move_dir = 0
         self._dash_timer = 0.0
         self._landing_timer = 0.0
-        self._trail.clear()
+        self._dust.clear()
+        self._dash_trail.clear()
 
     def respawn_at(self, position: tuple[float, float]) -> None:
         """Fait reapparaitre le corps au checkpoint fourni."""
@@ -154,7 +162,8 @@ class Player(arcade.Sprite):
         self._dash_timer = 0.0
         self._dash_cooldown = 0.0
         self._ready_flash = 0.0
-        self._trail.clear()
+        self._dust.clear()
+        self._dash_trail.clear()
 
     # ------------------------------------------------------------------ #
     # Commandes
@@ -181,7 +190,6 @@ class Player(arcade.Sprite):
         self._dash_cooldown = settings.PLAYER_DASH_COOLDOWN
         self._ready_flash = 0.0
         self.change_x = self._dash_dir * settings.PLAYER_DASH_SPEED
-        self._trail.append([self.center_x, self.center_y, settings.PLAYER_DASH_TRAIL_LIFE])
         return True
 
     def jump(self) -> bool:
@@ -201,27 +209,8 @@ class Player(arcade.Sprite):
             self.change_y *= 0.4
 
     def draw_fx(self) -> None:
-        """Trainee de dash (afterimages + halo) et anneau quand la jauge est pleine."""
-        life_max = max(settings.PLAYER_DASH_TRAIL_LIFE, 0.001)
-        for pos_x, pos_y, life in self._trail:
-            fade = max(0.0, min(1.0, life / life_max))
-            width = settings.PLAYER_WIDTH * (0.42 + 0.38 * fade)
-            height = settings.PLAYER_HEIGHT * (0.5 + 0.35 * fade)
-            draw_glow(
-                pos_x,
-                pos_y,
-                width * settings.PLAYER_DASH_TRAIL_GLOW_SCALE,
-                height * settings.PLAYER_DASH_TRAIL_GLOW_SCALE,
-                settings.COLOR_DASH_GLOW,
-                int(settings.PLAYER_DASH_TRAIL_GLOW_ALPHA * fade),
-            )
-            arcade.draw_lrbt_rectangle_filled(
-                pos_x - width / 2,
-                pos_x + width / 2,
-                pos_y - height / 2,
-                pos_y + height / 2,
-                (*settings.COLOR_DASH, int(100 * fade)),
-            )
+        """Trainee de points du dash, halo, et anneau 'dash pret'."""
+        self._dash_trail.draw()
         if self.is_dashing:
             glow_w = (
                 settings.PLAYER_WIDTH
@@ -237,19 +226,6 @@ class Player(arcade.Sprite):
                 settings.COLOR_DASH_GLOW,
                 settings.PLAYER_DASH_GLOW_ALPHA,
             )
-            streak = 22.0
-            if self._dash_dir >= 0:
-                left, right = self.left - streak, self.left
-            else:
-                left, right = self.right, self.right + streak
-            inset = settings.PLAYER_HEIGHT * 0.22
-            arcade.draw_lrbt_rectangle_filled(
-                left,
-                right,
-                self.bottom + inset,
-                self.top - inset,
-                (*settings.COLOR_DASH, 70),
-            )
         flash = self.dash_flash
         if flash > 0.0:
             radius = 16.0 + (1.0 - flash) * 26.0
@@ -260,6 +236,10 @@ class Player(arcade.Sprite):
                 (*settings.COLOR_DASH, int(220 * flash)),
                 2,
             )
+
+    def draw_particles(self) -> None:
+        """Poussiere de pied, dessinee apres le corps pour rester visible."""
+        self._dust.draw()
 
     # ------------------------------------------------------------------ #
     # Boucle de jeu
@@ -279,27 +259,45 @@ class Player(arcade.Sprite):
             self.change_x = self._dash_dir * settings.PLAYER_DASH_SPEED
         else:
             self._apply_horizontal(delta_time)
+        fall_speed = max(0.0, -self.change_y)
         self._physics.update()
         grounded = self._physics.can_jump()
         if grounded and not self._was_on_ground:
             self._landing_timer = settings.PLAYER_LANDING_SLOW_TIME
+            self._dust.emit_landing(
+                self.center_x,
+                self.bottom,
+                fall_speed,
+                body_half=self.width / 2,
+            )
         self._was_on_ground = grounded
         if grounded:
             self._time_off_ground = 0.0
             self._landing_timer = max(0.0, self._landing_timer - delta_time)
+            self._tick_run_dust(delta_time)
         else:
             self._time_off_ground += delta_time
-        self._update_trail(delta_time)
+            self._dust.stop_run()
+        self._dash_trail.follow(
+            self.center_x,
+            self.center_y,
+            self.change_x,
+            self.change_y,
+            delta_time,
+            active=self.is_dashing,
+        )
+        self._dust.update(delta_time)
 
-    def _update_trail(self, delta_time: float) -> None:
+    def _tick_run_dust(self, delta_time: float) -> None:
         if self.is_dashing:
-            self._trail.append([self.center_x, self.center_y, settings.PLAYER_DASH_TRAIL_LIFE])
-        alive: list[list[float]] = []
-        for pos_x, pos_y, life in self._trail:
-            remaining = life - delta_time
-            if remaining > 0.0:
-                alive.append([pos_x, pos_y, remaining])
-        self._trail = alive[-18:]
+            self._dust.stop_run()
+            return
+        full_speed = abs(self.change_x) >= settings.PLAYER_SPEED * settings.PARTICLE_RUN_SPEED_RATIO
+        if not full_speed or self._move_dir == 0:
+            self._dust.stop_run()
+            return
+        behind_x = self.center_x - self.facing * (self.width * 0.55)
+        self._dust.tick_run(behind_x, self.bottom, self.facing, delta_time)
 
     def _tick_dash(self, delta_time: float) -> None:
         if self._dash_timer > 0.0:
