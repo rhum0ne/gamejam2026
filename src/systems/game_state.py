@@ -18,6 +18,7 @@ methodes, pour eviter un import circulaire.
 
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass, field
 from enum import Enum, auto
 
@@ -166,6 +167,8 @@ class PlayView(arcade.View):
         self.held_keys: set[int] = set()
         self._respawn_timer = 0.0
         self._delivered_items: list[ItemKind] = []
+        self._fps = 0.0
+        self._last_draw_time = 0.0
         self.setup()
 
     # ------------------------------------------------------------------ #
@@ -177,7 +180,10 @@ class PlayView(arcade.View):
         self.level = Level.from_file(self.session.level_file)
         self.player = Player(*self.level.player_spawn)
         self.player.respawn_point = self.level.checkpoint_spawn
-        self.player.bind_world(self.level.solid_platforms)
+        for checkpoint in self.level.checkpoints:
+            if (checkpoint.center_x, checkpoint.center_y) == self.level.checkpoint_spawn:
+                checkpoint.activate()
+        self.player.bind_world(self.level.static_walls, platforms=[self.level.corpses])
         for enemy in self.level.enemies:
             enemy.bind_world(self._static_platforms())
         self.camera.set_bounds(self.level.width, self.level.height)
@@ -199,6 +205,7 @@ class PlayView(arcade.View):
     # ------------------------------------------------------------------ #
 
     def on_draw(self) -> None:
+        self._sample_fps()
         self.clear()
         self.camera.use_world()
         self.level.draw()
@@ -252,7 +259,18 @@ class PlayView(arcade.View):
             ghost_time_left=self.ghost.time_left if self.ghost is not None else None,
             ghost_duration=self.ghost.stats.duration if self.ghost is not None else settings.GHOST_DURATION,
             leash_ratio=self.ghost.leash_ratio if self.ghost is not None else 0.0,
+            fps=self._fps if settings.DEBUG_SHOW_FPS else None,
         )
+
+    def _sample_fps(self) -> None:
+        """Moyenne glissante du FPS de dessin, independante de update_rate."""
+        now = time.perf_counter()
+        if self._last_draw_time > 0.0:
+            elapsed = now - self._last_draw_time
+            if elapsed > 0.0:
+                instant = 1.0 / elapsed
+                self._fps = instant if self._fps == 0.0 else self._fps * 0.9 + instant * 0.1
+        self._last_draw_time = now
 
     # ------------------------------------------------------------------ #
     # Boucle de jeu
@@ -320,6 +338,11 @@ class PlayView(arcade.View):
         for item in collisions.items_reachable_by_body(self.player, self.level):
             self._collect(item.kind)
             item.remove_from_sprite_lists()
+
+        checkpoint = collisions.checkpoint_touched_by_player(self.player, self.level)
+        if checkpoint is not None:
+            self.player.respawn_point = (checkpoint.center_x, checkpoint.center_y)
+            checkpoint.activate()
 
         door = collisions.door_touched_by_player(self.player, self.level)
         if door is not None and self.player.has_item(ItemKind.KEY):

@@ -124,8 +124,14 @@ FOG_ALPHA = 170
 # Camera
 # --------------------------------------------------------------------------- #
 
-CAMERA_LERP = 0.12  # 0 = camera figee, 1 = camera collee a la cible
-CAMERA_LOOK_AHEAD = 48.0  # avance de la camera dans le sens du deplacement
+# Constante de temps du suivi (secondes) : plus grand = plus fluide, plus de retard.
+CAMERA_SMOOTH_TIME = 0.22
+# Lissage du look-ahead, independant du suivi de position.
+CAMERA_LOOK_SMOOTH_TIME = 0.30
+CAMERA_LOOK_AHEAD = 56.0  # pixels d'avance a pleine vitesse
+# Seuils en pixels/frame : ignore les micro-secousses de la physique au sol.
+CAMERA_FALL_LOOK_THRESHOLD = 4.0
+CAMERA_RISE_LOOK_THRESHOLD = 10.0
 
 # --------------------------------------------------------------------------- #
 # Debug

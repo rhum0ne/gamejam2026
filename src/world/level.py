@@ -21,6 +21,7 @@ puis une entree dans `_FACTORIES` (et si besoin une classe dans `obstacles.py`).
 from __future__ import annotations
 
 import json
+import math
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -31,6 +32,20 @@ import settings
 from src.entities.enemy import Enemy
 from src.entities.item import Item, ItemKind
 from src.world.obstacles import Checkpoint, Door, SpectralWall, Spike, Wall
+
+
+def _static_sprite_list() -> arcade.SpriteList:
+    """Liste pour le terrain immobile : le hash spatial rend les collisions O(voisinage)."""
+    return arcade.SpriteList(
+        use_spatial_hash=True,
+        spatial_hash_cell_size=settings.TILE_SIZE * 4,
+        capacity=4096,
+    )
+
+
+def _dynamic_sprite_list() -> arcade.SpriteList:
+    """Liste pour les sprites qui bougent (cadavres, ennemis, objets)."""
+    return arcade.SpriteList(capacity=64)
 
 
 class LevelFormatError(ValueError):
@@ -46,14 +61,14 @@ class Level:
     tile_size: int
     columns: int
     rows: int
-    walls: arcade.SpriteList = field(default_factory=arcade.SpriteList)
-    spectral_walls: arcade.SpriteList = field(default_factory=arcade.SpriteList)
-    hazards: arcade.SpriteList = field(default_factory=arcade.SpriteList)
-    doors: arcade.SpriteList = field(default_factory=arcade.SpriteList)
-    checkpoints: arcade.SpriteList = field(default_factory=arcade.SpriteList)
-    items: arcade.SpriteList = field(default_factory=arcade.SpriteList)
-    enemies: arcade.SpriteList = field(default_factory=arcade.SpriteList)
-    corpses: arcade.SpriteList = field(default_factory=arcade.SpriteList)
+    walls: arcade.SpriteList = field(default_factory=_static_sprite_list)
+    spectral_walls: arcade.SpriteList = field(default_factory=_static_sprite_list)
+    hazards: arcade.SpriteList = field(default_factory=_static_sprite_list)
+    doors: arcade.SpriteList = field(default_factory=_dynamic_sprite_list)
+    checkpoints: arcade.SpriteList = field(default_factory=_dynamic_sprite_list)
+    items: arcade.SpriteList = field(default_factory=_dynamic_sprite_list)
+    enemies: arcade.SpriteList = field(default_factory=_dynamic_sprite_list)
+    corpses: arcade.SpriteList = field(default_factory=_dynamic_sprite_list)
     player_spawn: tuple[float, float] = (0.0, 0.0)
     checkpoint_spawn: tuple[float, float] = (0.0, 0.0)
 
@@ -111,6 +126,27 @@ class Level:
                     raise LevelFormatError(f"type de tuile inconnu : '{kind}'")
                 center = self.tile_center(column_index, row_index, len(grid))
                 factory(self, *center)
+        self._bind_initial_checkpoint()
+
+    def _bind_initial_checkpoint(self) -> None:
+        """Le spawn initial est le checkpoint le plus proche du joueur, pas le premier 'C' du fichier.
+
+        Sans ca, un checkpoint sur une plateforme haute (parse en premier, car en haut
+        de la carte) volerait le point de reapparition du tutoriel.
+        """
+        if self.player_spawn == (0.0, 0.0):
+            return
+        nearest = None
+        nearest_distance = None
+        for checkpoint in self.checkpoints:
+            distance = math.dist(checkpoint.position, self.player_spawn)
+            if nearest_distance is None or distance < nearest_distance:
+                nearest = checkpoint
+                nearest_distance = distance
+        if nearest is not None and nearest_distance <= 3 * self.tile_size:
+            self.checkpoint_spawn = (nearest.center_x, nearest.center_y)
+            return
+        self.checkpoint_spawn = self.player_spawn
 
     def tile_center(self, column: int, row: int, total_rows: int) -> tuple[float, float]:
         """Convertit des coordonnees de grille en coordonnees monde (pixels)."""
@@ -129,6 +165,11 @@ class Level:
     @property
     def height(self) -> float:
         return self.rows * self.tile_size
+
+    @property
+    def static_walls(self) -> list[arcade.SpriteList]:
+        """Terrain immobile (hash spatial) : murs normaux et spectraux."""
+        return [self.walls, self.spectral_walls]
 
     @property
     def solid_platforms(self) -> list[arcade.SpriteList]:
@@ -182,7 +223,6 @@ def _add_door(level: Level, x: float, y: float) -> None:
 
 def _add_checkpoint(level: Level, x: float, y: float) -> None:
     level.checkpoints.append(Checkpoint(x, y, size=level.tile_size))
-    level.checkpoint_spawn = (x, y)
 
 
 def _add_player_spawn(level: Level, x: float, y: float) -> None:
