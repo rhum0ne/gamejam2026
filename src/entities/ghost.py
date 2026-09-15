@@ -63,18 +63,29 @@ class Ghost(arcade.SpriteSolidColor):
     # ------------------------------------------------------------------ #
 
     @property
+    def timer_spent(self) -> float:
+        """Part du timer ecoulee, de 0.0 (debut) a 1.0 (expire)."""
+        duration = max(self.stats.duration, 0.001)
+        return 1.0 - max(0.0, min(1.0, self.time_left / duration))
+
+    @property
     def vision_radius(self) -> float:
         """Rayon de vision : part de `stats.vision_radius` et se referme avec le timer.
 
         La courbe est une puissance : le trou reste large longtemps, puis
         s'effondre d'un coup en fin de timer, sans rester petit trop longtemps.
         """
-        duration = max(self.stats.duration, 0.001)
-        spent = 1.0 - max(0.0, min(1.0, self.time_left / duration))
-        eased = spent ** settings.GHOST_VISION_SHRINK_POWER
+        eased = self.timer_spent ** settings.GHOST_VISION_SHRINK_POWER
         start = self.stats.vision_radius
         end = settings.GHOST_VISION_RADIUS_MIN
         return start + (end - start) * eased
+
+    @property
+    def warp_strength(self) -> float:
+        """Intensite du filtre de perspective, qui monte legerement avec le timer."""
+        start = settings.GHOST_WARP_STRENGTH
+        end = settings.GHOST_WARP_STRENGTH_MAX
+        return start + (end - start) * self.timer_spent
 
     @property
     def expired(self) -> bool:

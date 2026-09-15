@@ -242,8 +242,8 @@ class PlayView(arcade.View):
         if self._debug_enabled:
             self.debug.draw(self._debug_snapshot())
         warp = 0.0
-        if self.machine.state is GameState.GHOST:
-            warp = settings.GHOST_WARP_STRENGTH
+        if self.machine.state is GameState.GHOST and self.ghost is not None:
+            warp = self.ghost.warp_strength
         self.camera.present(warp)
 
     def _draw_hitboxes(self) -> None:

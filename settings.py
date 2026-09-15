@@ -170,7 +170,8 @@ GHOST_VISION_RADIUS_MIN = 12.0  # rayon en fin de timer (presque rien)
 GHOST_VISION_SHRINK_POWER = 5.0
 GHOST_CARRY_CAPACITY = 1  # nombre d'objets transportables simultanement
 # Filtre plein ecran du mode fantome : distorsion barillet tres legere.
-GHOST_WARP_STRENGTH = 0.038  # 0 = identite ; ~2 % aux coins
+GHOST_WARP_STRENGTH = 0.038  # 0 = identite ; ~2 % aux coins, en debut de timer
+GHOST_WARP_STRENGTH_MAX = 0.072  # force en fin de timer, toujours discrete
 GHOST_WARP_PERSPECTIVE = 0.55  # etirement vertical relatif a warp
 GHOST_WARP_CHROMA = 0.10  # aberration chromatique relative a warp
 # Fleche de rappel vers le corps : cachee tant que le fantome est assez proche.
