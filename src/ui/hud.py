@@ -31,6 +31,7 @@ class HudData:
     ghost_time_left: float | None = None
     ghost_duration: float = settings.GHOST_DURATION
     leash_ratio: float = 0.0
+    attack_cooldown_left: float | None = None
 
 
 class Hud:
@@ -49,6 +50,7 @@ class Hud:
         screen_width, screen_height = self.screen_width, self.screen_height
         self._level_text = self._make_text("", self._MARGIN, screen_height - 30)
         self._state_text = self._make_text("", self._MARGIN, screen_height - 54, size=13)
+        self._attack_text = self._make_text("", self._MARGIN, screen_height - 78, size=13)
         self._essence_text = self._make_text(
             "", screen_width - self._MARGIN, screen_height - 30, anchor_x="right"
         )
@@ -89,12 +91,19 @@ class Hud:
         """Dessine le HUD a partir de l'instantane fourni."""
         self._level_text.text = data.level_name
         self._state_text.text = data.state_label
+        if data.attack_cooldown_left is not None:
+            cooldown = max(0.0, data.attack_cooldown_left)
+            self._attack_text.text = (
+                "Attaque : prete" if cooldown <= 0.0 else f"Attaque : {cooldown:0.1f} s"
+            )
         self._essence_text.text = f"Ames : {data.essence}  |  Fantome niv. {data.ghost_level}"
         self._key_text.text = "Cle : oui" if data.has_key else "Cle : non"
         self._hint_text.text = data.hint
 
         self._level_text.draw()
         self._state_text.draw()
+        if data.attack_cooldown_left is not None:
+            self._attack_text.draw()
         self._essence_text.draw()
         self._key_text.draw()
         if data.hint:

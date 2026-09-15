@@ -147,6 +147,7 @@ _JUMP_KEYS = frozenset({arcade.key.SPACE}) | _UP_KEYS
 _PROJECT_KEY = arcade.key.F
 _RETURN_KEY = arcade.key.R
 _UPGRADE_KEY = arcade.key.TAB
+_ATTACK_BUTTON = arcade.MOUSE_BUTTON_LEFT
 
 
 class PlayView(arcade.View):
@@ -165,6 +166,8 @@ class PlayView(arcade.View):
         self.anchor_corpse: Corpse | None = None
         self.held_keys: set[int] = set()
         self._respawn_timer = 0.0
+        self._hitstop_timer = 0.0
+        self._attack_sound = self._load_attack_sound()
         self._delivered_items: list[ItemKind] = []
         self.setup()
 
@@ -186,9 +189,20 @@ class PlayView(arcade.View):
         self.anchor_corpse = None
         self.held_keys.clear()
         self._respawn_timer = 0.0
+        self._hitstop_timer = 0.0
         self._delivered_items.clear()
         self.machine = GameStateMachine(GameState.MENU)
         self.machine.to(GameState.PLAYING)
+
+    @staticmethod
+    def _load_attack_sound() -> arcade.Sound | None:
+        """Charge le son du coup, avec un son Arcade de secours si besoin."""
+        custom_path = settings.SOUNDS_DIR / settings.ATTACK_SOUND_FILENAME
+        sound_path = custom_path if custom_path.exists() else settings.DEFAULT_ATTACK_SOUND
+        try:
+            return arcade.load_sound(sound_path)
+        except (FileNotFoundError, OSError):
+            return None
 
     def _static_platforms(self) -> list[arcade.SpriteList]:
         """Plateformes solides hors cadavres (un cadavre ne doit pas se bloquer lui-meme)."""
@@ -204,10 +218,39 @@ class PlayView(arcade.View):
         self.level.draw()
         if self.player.alive:
             arcade.draw_sprite(self.player)
+            self._draw_player_attack()
         if self.machine.state is GameState.GHOST and self.ghost is not None:
             self._draw_ghost_layer(self.ghost)
         self.camera.use_ui()
         self.hud.draw(self._hud_data())
+
+    def _draw_player_attack(self) -> None:
+        """Dessine un slash anime au lieu d'afficher la hitbox de debug."""
+        if self.player.attack_bounds is None:
+            return
+        progress = min(1.0, self.player.attack_progress * 1.8)
+        direction = 1 if self.player.facing >= 0 else -1
+        start_x = self.player.center_x + direction * (self.player.width / 2 + 2)
+        reach = max(10.0, settings.PLAYER_ATTACK_RANGE * progress)
+        tip_x = start_x + direction * reach
+        center_y = self.player.center_y
+        slash_height = self.player.height * 0.35
+        arcade.draw_line(
+            start_x,
+            center_y - slash_height,
+            tip_x,
+            center_y + slash_height,
+            settings.COLOR_ATTACK,
+            5,
+        )
+        arcade.draw_line(
+            start_x + direction * 4,
+            center_y - slash_height + 4,
+            tip_x + direction * 4,
+            center_y + slash_height - 4,
+            settings.COLOR_ATTACK_GLOW,
+            2,
+        )
 
     def _draw_ghost_layer(self, ghost: Ghost) -> None:
         """Voile d'obscurite, elements reveles, longe et fantome.
@@ -252,6 +295,9 @@ class PlayView(arcade.View):
             ghost_time_left=self.ghost.time_left if self.ghost is not None else None,
             ghost_duration=self.ghost.stats.duration if self.ghost is not None else settings.GHOST_DURATION,
             leash_ratio=self.ghost.leash_ratio if self.ghost is not None else 0.0,
+            attack_cooldown_left=self.player.attack_cooldown_left
+            if state is GameState.PLAYING
+            else None,
         )
 
     # ------------------------------------------------------------------ #
@@ -259,6 +305,9 @@ class PlayView(arcade.View):
     # ------------------------------------------------------------------ #
 
     def on_update(self, delta_time: float) -> None:
+        if self._hitstop_timer > 0.0:
+            self._hitstop_timer = max(0.0, self._hitstop_timer - delta_time)
+            return
         self.level.update(delta_time)
         state = self.machine.state
         if state is GameState.PLAYING:
@@ -312,10 +361,21 @@ class PlayView(arcade.View):
     def _resolve_player_collisions(self) -> None:
         stomped = collisions.enemy_stomped_by_player(self.player, self.level.enemies)
         if stomped is not None:
-            orb = stomped.take_damage()
+            orb = stomped.take_damage(settings.PLAYER_ATTACK_DAMAGE)
             if orb is not None:
                 self.level.spawn_item(orb)
             self.player.change_y = settings.PLAYER_JUMP_SPEED * 0.6
+            self._hitstop_timer = settings.COMBAT_HITSTOP_DURATION
+
+        for enemy in collisions.enemies_hit_by_player_attack(self.player, self.level.enemies):
+            self.player.mark_attack_hit(enemy)
+            orb = enemy.take_damage(
+                settings.PLAYER_ATTACK_DAMAGE,
+                knockback=settings.ENEMY_KNOCKBACK_SPEED * self.player.facing,
+            )
+            if orb is not None:
+                self.level.spawn_item(orb)
+            self._hitstop_timer = settings.COMBAT_HITSTOP_DURATION
 
         for item in collisions.items_reachable_by_body(self.player, self.level):
             self._collect(item.kind)
@@ -440,6 +500,17 @@ class PlayView(arcade.View):
                 self._enter_ghost_mode()
         elif state is GameState.GHOST and symbol == _RETURN_KEY:
             self._start_respawn()
+
+    def on_mouse_press(self, x: float, y: float, button: int, modifiers: int) -> None:
+        """Oriente le corps vers le curseur et lance une attaque au clic gauche."""
+        if button != _ATTACK_BUTTON or self.machine.state is not GameState.PLAYING:
+            return
+        camera_x, _ = self.camera.world.position
+        world_x = x + camera_x - self.camera.world.viewport_width / 2
+        if abs(world_x - self.player.center_x) > 2:
+            self.player.facing = 1 if world_x > self.player.center_x else -1
+        if self.player.attack() and self._attack_sound is not None:
+            arcade.play_sound(self._attack_sound, volume=settings.ATTACK_SOUND_VOLUME)
 
     def on_key_release(self, symbol: int, modifiers: int) -> None:
         self.held_keys.discard(symbol)

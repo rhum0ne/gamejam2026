@@ -19,6 +19,9 @@ ASSETS_DIR = ROOT_DIR / "assets"
 SPRITES_DIR = ASSETS_DIR / "sprites"
 SOUNDS_DIR = ASSETS_DIR / "sons"
 MAPS_DIR = ASSETS_DIR / "maps"
+ATTACK_SOUND_FILENAME = "attack.wav"
+DEFAULT_ATTACK_SOUND = ":resources:sounds/hit1.wav"
+ATTACK_SOUND_VOLUME = 0.45
 
 # Ordre de parcours des niveaux : le nom du fichier dans assets/maps/.
 LEVEL_SEQUENCE: tuple[str, ...] = ("level_1_tuto.json",)
@@ -50,6 +53,11 @@ PLAYER_SPEED = 5.5
 PLAYER_JUMP_SPEED = 17.0
 PLAYER_COYOTE_TIME = 0.10  # secondes de tolerance pour sauter apres une chute
 PLAYER_RESPAWN_DELAY = 0.4  # secondes avant de reprendre le controle du corps
+PLAYER_ATTACK_RANGE = 42.0  # longueur de la hitbox de l'attaque frontale, en pixels
+PLAYER_ATTACK_DURATION = 0.12  # duree pendant laquelle la hitbox reste active
+PLAYER_ATTACK_COOLDOWN = 0.35  # delai minimal entre deux attaques
+PLAYER_ATTACK_DAMAGE = 1
+COMBAT_HITSTOP_DURATION = 0.05  # micro-pause lors d'un impact reussi
 
 # --------------------------------------------------------------------------- #
 # Forme fantome
@@ -81,6 +89,10 @@ ENEMY_HEIGHT = 36
 ENEMY_SPEED = 1.6
 ENEMY_AGGRO_RANGE = 220.0  # distance de detection du joueur
 ENEMY_CORPSE_SMELL_RANGE = 320.0  # distance d'attraction vers un cadavre
+ENEMY_HIT_FLASH_DURATION = 0.18
+ENEMY_DEFEAT_DURATION = 0.16  # laisse le feedback visible avant de retirer l'ennemi
+ENEMY_KNOCKBACK_SPEED = 5.0
+ENEMY_KNOCKBACK_FRICTION = 0.72
 
 # --------------------------------------------------------------------------- #
 # Objets et progression
@@ -106,9 +118,12 @@ COLOR_DOOR_LOCKED = (150, 110, 46)
 COLOR_DOOR_OPEN = (96, 170, 110)
 COLOR_CHECKPOINT = (86, 148, 196)
 COLOR_PLAYER = (232, 232, 240)
+COLOR_ATTACK = (255, 214, 112)
+COLOR_ATTACK_GLOW = (255, 238, 160)
 COLOR_GHOST = (128, 200, 255)
 COLOR_CORPSE = (140, 120, 120)
 COLOR_ENEMY = (188, 92, 160)
+COLOR_ENEMY_HIT = (255, 155, 155)
 COLOR_KEY = (232, 204, 96)
 COLOR_SOUL_ORB = (110, 190, 255)
 COLOR_HUD_TEXT = (228, 228, 236)

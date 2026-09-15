@@ -56,6 +56,32 @@ def check_progression() -> None:
           f"portee fantome {progression.ghost_stats.max_range:.0f} px")
 
 
+def check_combat(window: arcade.Window) -> None:
+    """Un clic gauche declenche une frappe et fait apparaitre une ame."""
+    view = PlayView(GameSession())
+    window.show_view(view)
+    advance(view, 2)
+
+    enemy = view.level.enemies[0]
+    player = view.player
+    player.facing = 1
+    enemy.center_x = player.right + enemy.width / 2 + 6
+    enemy.center_y = player.center_y
+
+    click_x = view.camera.world.viewport_width / 2 + 50
+    click_y = view.camera.world.viewport_height / 2
+    view.on_mouse_press(click_x, click_y, arcade.MOUSE_BUTTON_LEFT, 0)
+    advance(view, 1)
+
+    assert enemy.is_defeated, "un clic gauche doit vaincre l'ennemi a portee"
+    assert any(item.kind is ItemKind.SOUL_ORB for item in view.level.items), (
+        "un ennemi vaincu doit laisser une bille bleue"
+    )
+    advance(view, 20)
+    assert enemy not in view.level.enemies, "un ennemi vaincu doit finir par disparaitre"
+    print("  combat -> clic gauche, ennemi vaincu, ame generee")
+
+
 def advance(view: arcade.View, frames: int) -> None:
     for _ in range(frames):
         view.on_update(FRAME)
@@ -213,11 +239,13 @@ def main() -> int:
         visible=False,
     )
     try:
-        print("[3/5] boucle de jeu")
+        print("[3/6] combat")
+        check_combat(window)
+        print("[4/6] boucle de jeu")
         check_gameplay_loop(window)
-        print("[4/5] solution du niveau tutoriel")
+        print("[5/6] solution du niveau tutoriel")
         check_tutorial_is_solvable(window)
-        print("[5/5] menus")
+        print("[6/6] menus")
         check_menus(window)
     finally:
         window.close()

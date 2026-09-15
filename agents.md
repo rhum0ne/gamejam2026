@@ -207,6 +207,7 @@ separation : elle permet de tester les regles sans contexte OpenGL.
 * Vitesse `PLAYER_SPEED`, saut `PLAYER_JUMP_SPEED`, gravite `GRAVITY`.
 * `PLAYER_COYOTE_TIME` : tolerance de saut apres avoir quitte le sol.
 * `cut_jump()` : saut a hauteur variable quand la touche est relachee.
+* Attaque de melee frontale au clic gauche, avec portee et cooldown reglables.
 * Meurt au contact des piques, d'un ennemi, ou en sortant du niveau.
 * `inventory` : ensemble de `ItemKind` (la cle ouvre la porte).
 
@@ -233,8 +234,9 @@ separation : elle permet de tester les regles sans contexte OpenGL.
 ### Ennemis — `entities/enemy.py`
 * Priorite : cadavre a portee d'odorat (`FEAST`) > joueur a portee (`CHASE`) >
   patrouille (`PATROL`, demi-tour sur mur ou bord de plateforme).
-* Meurent en un coup quand le joueur retombe sur leur tete
-  (`collisions.enemy_stomped_by_player`) et laissent une bille bleue.
+* Meurent en un coup quand le joueur les frappe ou retombe sur leur tete
+  (`collisions.enemies_hit_by_player_attack` / `enemy_stomped_by_player`) et
+  laissent une bille bleue.
 
 ### Ames et ameliorations — `systems/upgrades.py`
 * Une bille bleue ramassee = `SOUL_ESSENCE_PER_ORB` essence.
@@ -347,7 +349,7 @@ transition de niveau est automatique (`GameSession.advance_level`).
 * Corps physique : marche, saut, coyote time, mort, checkpoint, inventaire.
 * Fantome : vol, murs spectraux, longe, timer, revelation, transport/livraison.
 * Cadavre : solide, gravite, dissipation, devorable.
-* Ennemi : patrouille, poursuite, festin, bille bleue.
+* Ennemi : patrouille, poursuite, festin, combat de base, bille bleue.
 * Niveau 1 "Le Puits Mortel" charge depuis JSON et **terminable**.
 * Camera lissee, HUD, ecran titre, victoire, game over, arbre de competences.
 
@@ -358,8 +360,8 @@ transition de niveau est automatique (`GameSession.advance_level`).
    particules, tremblement de camera, transitions de niveau.
 3. **Niveaux** : 3 a 5 cartes apres le tutoriel, introduisant le cadavre comme
    plateforme puis comme bouclier anti-piques.
-4. **Combat** : attaque du corps physique (pour l'instant seul l'ecrasement
-   tue), varietes d'ennemis (volant, spectral visible seulement en mode fantome).
+4. **Combat** : varietes d'ennemis (volant, spectral visible seulement en mode
+   fantome), degats et comportements avances.
 5. **Revelation** : remplacer le voile rectangulaire par un vrai masque en
    shader (cone de vision aux bords adoucis) — `TODO(rendu)` dans
    `PlayView._draw_ghost_layer`.

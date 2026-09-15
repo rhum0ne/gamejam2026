@@ -76,7 +76,11 @@ def enemy_touching_player(player: Player, enemies: arcade.SpriteList) -> Enemy |
     """Premier ennemi en contact avec le corps physique vivant."""
     if not player.alive:
         return None
-    touched = arcade.check_for_collision_with_list(player, enemies)
+    touched = [
+        enemy
+        for enemy in arcade.check_for_collision_with_list(player, enemies)
+        if not enemy.is_defeated
+    ]
     return touched[0] if touched else None
 
 
@@ -85,6 +89,26 @@ def enemy_stomped_by_player(player: Player, enemies: arcade.SpriteList) -> Enemy
     if not player.alive or player.change_y >= 0:
         return None
     for enemy in arcade.check_for_collision_with_list(player, enemies):
+        if enemy.is_defeated:
+            continue
         if player.center_y > enemy.center_y + enemy.height / 4:
             return enemy
     return None
+
+
+def enemies_hit_by_player_attack(player: Player, enemies: arcade.SpriteList) -> list[Enemy]:
+    """Retourne les ennemis qui recouvrent la hitbox de la frappe frontale."""
+    bounds = player.attack_bounds
+    if bounds is None:
+        return []
+    left, bottom, right, top = bounds
+    return [
+        enemy
+        for enemy in enemies
+        if not enemy.is_defeated
+        and not player.attack_has_hit(enemy)
+        and enemy.right >= left
+        and enemy.left <= right
+        and enemy.top >= bottom
+        and enemy.bottom <= top
+    ]

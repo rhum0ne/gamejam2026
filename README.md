@@ -77,6 +77,7 @@ que les menus se dessinent. A lancer avant chaque commit.
 | --- | --- |
 | `Q` / `D`, ou fleches gauche / droite | Se deplacer |
 | `Espace`, `Z` ou fleche haut | Sauter (hauteur variable : relache pour ecourter) |
+| Clic gauche | Attaquer devant soi (mode corps physique) |
 | `ZQSD` / fleches | Diriger le fantome (vol libre, 8 directions) |
 | `F` | Projeter son esprit (le corps meurt sur place et laisse un cadavre) |
 | `R` | En mode fantome : retourner immediatement au corps |

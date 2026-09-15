@@ -45,6 +45,11 @@ class Enemy(arcade.SpriteSolidColor):
         self.state = EnemyState.PATROL
         self.facing = -1
         self.hit_points = 1
+        self._base_color = settings.COLOR_ENEMY
+        self._hit_flash_left = 0.0
+        self._defeat_time_left = 0.0
+        self._defeated = False
+        self._knockback_x = 0.0
         self._physics: arcade.PhysicsEnginePlatformer | None = None
         self._ground: arcade.SpriteList | None = None
 
@@ -65,15 +70,27 @@ class Enemy(arcade.SpriteSolidColor):
     # Mort
     # ------------------------------------------------------------------ #
 
-    def take_damage(self, amount: int = 1) -> Item | None:
+    @property
+    def is_defeated(self) -> bool:
+        """Indique si l'ennemi est vaincu mais encore visible quelques frames."""
+        return self._defeated
+
+    def take_damage(self, amount: int = 1, knockback: float = 0.0) -> Item | None:
         """Applique des degats. Retourne la bille bleue si l'ennemi meurt."""
         if amount <= 0:
             raise ValueError("amount doit etre strictement positif")
+        if self._defeated:
+            return None
         self.hit_points -= amount
+        self._hit_flash_left = settings.ENEMY_HIT_FLASH_DURATION
+        self.color = settings.COLOR_ENEMY_HIT
+        self._knockback_x = knockback
+        self.change_x = knockback
         if self.hit_points > 0:
             return None
         orb = make_soul_orb(self.center_x, self.center_y)
-        self.remove_from_sprite_lists()
+        self._defeated = True
+        self._defeat_time_left = settings.ENEMY_DEFEAT_DURATION
         return orb
 
     # ------------------------------------------------------------------ #
@@ -88,6 +105,20 @@ class Enemy(arcade.SpriteSolidColor):
         corpses: arcade.SpriteList | None = None,
         **kwargs,
     ) -> None:
+        self._hit_flash_left = max(0.0, self._hit_flash_left - delta_time)
+        self.color = settings.COLOR_ENEMY_HIT if self._hit_flash_left > 0 else self._base_color
+
+        if self._defeated:
+            self._update_defeated(delta_time)
+            return
+
+        if self._hit_flash_left > 0.0:
+            self.change_x = self._knockback_x
+            self._knockback_x *= settings.ENEMY_KNOCKBACK_FRICTION
+            if self._physics is not None:
+                self._physics.update()
+            return
+
         target_corpse = self._closest_corpse(corpses)
         if target_corpse is not None:
             self._feast(delta_time, target_corpse)
@@ -97,6 +128,16 @@ class Enemy(arcade.SpriteSolidColor):
             self._patrol()
         if self._physics is not None:
             self._physics.update()
+
+    def _update_defeated(self, delta_time: float) -> None:
+        """Joue le recul et le flash de l'ennemi avant son retrait de la scene."""
+        self._defeat_time_left = max(0.0, self._defeat_time_left - delta_time)
+        self.change_x = self._knockback_x
+        self._knockback_x *= settings.ENEMY_KNOCKBACK_FRICTION
+        if self._physics is not None:
+            self._physics.update()
+        if self._defeat_time_left <= 0.0:
+            self.remove_from_sprite_lists()
 
     # ------------------------------------------------------------------ #
     # Comportements

@@ -64,7 +64,7 @@ class TitleView(arcade.View):
         _draw_centered("T  -  Arbre de competences", 300, 20, settings.COLOR_HUD_TEXT)
         _draw_centered("ECHAP  -  Quitter", 260, 20, settings.COLOR_HUD_TEXT)
         _draw_centered(
-            "Deplacements : ZQSD / fleches  -  Saut : Espace  -  Projeter l'esprit : F",
+            "Deplacements : ZQSD / fleches  -  Saut : Espace  -  Attaque : clic gauche  -  Esprit : F",
             160,
             15,
             settings.COLOR_MENU_HINT,
