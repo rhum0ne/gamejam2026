@@ -13,6 +13,7 @@ from src.systems.game_state import GameSession, PlayView
 from src.systems.upgrades import UPGRADES, UPGRADES_BY_ID, Upgrade
 from src.ui import keys
 from src.ui.display import handle_display_key, use_default_camera
+from src.ui.fonts import PIXEL_FONT
 
 _TEXT_CACHE: dict[tuple, arcade.Text] = {}
 _TEXT_CACHE_LIMIT = 256
@@ -32,7 +33,9 @@ def _label(
     if cached is None:
         if len(_TEXT_CACHE) >= _TEXT_CACHE_LIMIT:
             _TEXT_CACHE.clear()
-        cached = arcade.Text(text, x, y, color, font_size=size, anchor_x=anchor_x)
+        cached = arcade.Text(
+            text, x, y, color, font_size=size, anchor_x=anchor_x, font_name=PIXEL_FONT
+        )
         _TEXT_CACHE[key] = cached
     return cached
 
@@ -95,7 +98,7 @@ class TitleView(_HeldKeysMixin, arcade.View):
     def on_draw(self) -> None:
         self.clear()
         height = self.window.height
-        _draw_centered(self, "PROJECT ASTRAL PLATFORMER", height * 0.70, 44, settings.COLOR_MENU_TITLE)
+        _draw_centered(self, "PROJECT ASTRAL PLATFORMER", height * 0.70, 28, settings.COLOR_MENU_TITLE)
         _draw_centered(self, "Dualite Joueur / Fantome", height * 0.63, 20, settings.COLOR_MENU_HINT)
         _draw_action(self, height * 0.48, ("enter",), "Commencer l'aventure", self.held_keys)
         _draw_action(self, height * 0.42, ("t",), "Arbre de competences", self.held_keys)
@@ -243,7 +246,7 @@ class UpgradeTreeView(_HeldKeysMixin, arcade.View):
             settings.COLOR_MENU_HINT,
         )
 
-        left = max(48.0, width * 0.14)
+        left = max(40.0, width * 0.06)
         top = height - 210
         for index, upgrade in enumerate(UPGRADES):
             y = top - index * 60
@@ -258,7 +261,9 @@ class UpgradeTreeView(_HeldKeysMixin, arcade.View):
             else:
                 color = settings.COLOR_MENU_HINT
                 status = f"{upgrade.cost} essence - {self._blocking_reason(upgrade)}"
-            _draw_left(f"[{index + 1}] {upgrade.name}  ({status})", left, y, 18, color)
+            # 14, pas 18 : avec la police pixel, la ligne la plus longue
+            # ("requiert <nom>") deborderait sinon de la fenetre.
+            _draw_left(f"[{index + 1}] {upgrade.name}  ({status})", left, y, 14, color)
             _draw_left(upgrade.description, left + 30, y - 24, 14, settings.COLOR_MENU_HINT)
 
         if self.message:

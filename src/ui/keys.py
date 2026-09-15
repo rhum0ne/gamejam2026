@@ -14,6 +14,7 @@ from arcade.types import XYWH
 from PIL import Image
 
 import settings
+from src.ui.fonts import PIXEL_FONT
 
 _CELL = settings.UI_KEY_CELL
 _LETTERS_PRESSED_ROW = 7
@@ -256,9 +257,9 @@ def _caption(text: str, size: float, color: tuple[int, int, int]) -> arcade.Text
             0,
             color,
             font_size=size,
-            bold=True,
             anchor_x="left",
             anchor_y="center",
+            font_name=PIXEL_FONT,
         )
         _LABELS[key] = cached
     return cached
