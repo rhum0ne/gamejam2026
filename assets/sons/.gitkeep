@@ -1,0 +1,2 @@
+Bruitages et musiques.
+Charger via settings.SOUNDS_DIR, jamais avec un chemin en dur.

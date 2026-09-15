@@ -1,0 +1,229 @@
+"""Test de demarrage automatique, sans interaction humaine.
+
+Il verifie que le squelette tourne vraiment : chargement des cartes, creation
+de la fenetre, boucle de jeu, passage en mode fantome, retour au corps, logique
+de progression. A lancer avant chaque commit et en CI :
+
+    python tools/smoke_test.py
+
+La fenetre est creee en mode invisible (`visible=False`) : aucune fenetre
+n'apparait, mais le contexte OpenGL est bien reel, donc `on_draw` est teste.
+"""
+
+from __future__ import annotations
+
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+import arcade  # noqa: E402
+
+import settings  # noqa: E402
+from src.entities.item import ItemKind  # noqa: E402
+from src.systems.game_state import GameSession, GameState, PlayView  # noqa: E402
+from src.systems.upgrades import SoulProgression  # noqa: E402
+from src.ui.menus import TitleView, UpgradeTreeView, VictoryView  # noqa: E402
+from src.world.level import Level  # noqa: E402
+
+FRAME = settings.FRAME_TIME
+
+
+def check_levels() -> None:
+    """Toutes les cartes de la sequence se chargent et sont jouables."""
+    for name in settings.LEVEL_SEQUENCE:
+        level = Level.from_file(name)
+        assert level.player_spawn != (0.0, 0.0), f"{name} : pas de spawn joueur ('P')"
+        assert len(level.walls) > 0, f"{name} : aucun mur"
+        assert level.width > 0 and level.height > 0
+        print(f"  carte '{name}' -> {level.name}: {level.columns}x{level.rows} tuiles, "
+              f"{len(level.walls)} murs, {len(level.items)} objets, {len(level.enemies)} ennemis")
+
+
+def check_progression() -> None:
+    """La progression d'ames et l'arbre de competences se comportent comme prevu."""
+    progression = SoulProgression()
+    assert progression.level == 1
+    assert not progression.can_unlock("range_1")
+    for _ in range(3):
+        progression.absorb_orb()
+    assert progression.can_unlock("range_1")
+    assert progression.unlock("range_1")
+    assert progression.essence == 0
+    assert progression.ghost_stats.max_range > settings.GHOST_MAX_RANGE
+    assert not progression.unlock("range_1"), "une amelioration ne doit pas etre achetee deux fois"
+    print(f"  progression -> niveau {progression.level}, "
+          f"portee fantome {progression.ghost_stats.max_range:.0f} px")
+
+
+def advance(view: arcade.View, frames: int) -> None:
+    for _ in range(frames):
+        view.on_update(FRAME)
+        view.on_draw()
+
+
+def check_gameplay_loop(window: arcade.Window) -> None:
+    """Boucle corps physique -> mort -> fantome -> retour au corps."""
+    view = PlayView(GameSession())
+    window.show_view(view)
+    assert view.machine.state is GameState.PLAYING
+
+    view.on_key_press(arcade.key.RIGHT, 0)
+    advance(view, 30)
+    view.on_key_release(arcade.key.RIGHT, 0)
+    assert view.player.alive, "le joueur ne doit pas mourir en marchant sur le sol"
+
+    view.on_key_press(arcade.key.F, 0)
+    view.on_key_release(arcade.key.F, 0)
+    assert view.machine.state is GameState.GHOST, "F doit projeter l'esprit"
+    assert view.ghost is not None and len(view.level.corpses) == 1
+
+    view.on_key_press(arcade.key.DOWN, 0)
+    advance(view, 60)
+    view.on_key_release(arcade.key.DOWN, 0)
+    assert view.ghost is not None
+    assert view.ghost.distance_to_anchor <= view.ghost.stats.max_range + 1
+
+    view.ghost.time_left = 0.0
+    advance(view, 2)
+    assert view.machine.state is GameState.RESPAWNING
+    advance(view, int(settings.PLAYER_RESPAWN_DELAY / FRAME) + 5)
+    assert view.machine.state is GameState.PLAYING, "le corps doit revenir au checkpoint"
+    assert view.player.alive
+    print(f"  boucle de jeu -> {view.session.deaths} mort(s), "
+          f"etats visites : {' > '.join(state.name for state in view.machine.history)}")
+
+
+def check_tutorial_is_solvable(window: arcade.Window) -> None:
+    """Rejoue la solution attendue du niveau 1 (fiche concept, section 5).
+
+    Corps au bord du puits -> projection de l'esprit -> le fantome plonge
+    chercher la cle -> il la ramene au cadavre -> le corps reapparait avec la
+    cle -> il franchit le puits et ouvre la porte.
+
+    Ce test protege le level design : si une valeur de `settings.py` (portee du
+    fantome, hauteur de saut, largeur du puits) casse la solution, il echoue.
+    """
+    view = PlayView(GameSession())
+    window.show_view(view)
+
+    view.held_keys.add(arcade.key.RIGHT)
+    advance(view, 66)
+    view.held_keys.clear()
+    advance(view, 5)
+    assert view.player.alive, "le corps doit s'arreter au bord du puits, pas tomber"
+
+    view.on_key_press(arcade.key.F, 0)
+    view.on_key_release(arcade.key.F, 0)
+    assert view.machine.state is GameState.GHOST
+    corpse = view.level.corpses[0]
+    key_item = next(item for item in view.level.items if item.kind is ItemKind.KEY)
+
+    def fly_to(target_x: float, target_y: float, is_done, limit: int = 600) -> bool:
+        """Pilote le fantome vers un point, avec une zone neutre comme un joueur."""
+        for _ in range(limit):
+            view.held_keys.clear()
+            delta_x = target_x() - view.ghost.center_x
+            delta_y = target_y() - view.ghost.center_y
+            if abs(delta_x) > 6:
+                view.held_keys.add(arcade.key.RIGHT if delta_x > 0 else arcade.key.LEFT)
+            if abs(delta_y) > 6:
+                view.held_keys.add(arcade.key.UP if delta_y > 0 else arcade.key.DOWN)
+            # Le timer et la duree de vie du cadavre ne sont pas le sujet de ce test.
+            # Le timer du fantome n'est pas le sujet ici : un pilote scripte
+            # est bien plus lent qu'un joueur, on le neutralise.
+            view.ghost.time_left = settings.GHOST_DURATION
+            view.on_update(FRAME)
+            if is_done():
+                return True
+        return False
+
+    assert fly_to(
+        lambda: key_item.center_x, lambda: key_item.center_y, lambda: bool(view.ghost.carried)
+    ), (
+        "le fantome doit pouvoir atteindre la cle au fond du puits "
+        f"(portee : {view.ghost.stats.max_range:.0f} px)"
+    )
+    # Remontee en deux temps : d'abord au-dessus du cadavre, puis descente
+    # dessus, pour ne pas raser la corniche (le fantome bute sur les murs).
+    waypoint_y = corpse.center_y + 3 * settings.TILE_SIZE
+    assert fly_to(
+        lambda: corpse.center_x,
+        lambda: waypoint_y,
+        lambda: abs(view.ghost.center_x - corpse.center_x) < 12
+        and abs(view.ghost.center_y - waypoint_y) < 12,
+    ), "le fantome doit pouvoir remonter du puits"
+    assert fly_to(
+        lambda: corpse.center_x, lambda: corpse.center_y, lambda: bool(view._delivered_items)
+    ), "le fantome doit pouvoir ramener la cle jusqu'au cadavre"
+
+    view.ghost.time_left = 0.0
+    view.held_keys.clear()
+    advance(view, int(settings.PLAYER_RESPAWN_DELAY / FRAME) + 10)
+    assert view.player.has_item(ItemKind.KEY), "le corps doit reapparaitre avec la cle livree"
+
+    # Le cadavre reste solide au bord du puits et bloque la course d'elan :
+    # on attend sa dissipation, comme le ferait un joueur.
+    for _ in range(int(settings.CORPSE_LIFETIME / FRAME) + 60):
+        if not view.level.corpses:
+            break
+        view.on_update(FRAME)
+    assert not view.level.corpses, "le cadavre doit finir par se dissiper"
+
+    view.held_keys.add(arcade.key.RIGHT)
+    previous_x = view.player.center_x
+    for _ in range(900):
+        blocked = abs(view.player.center_x - previous_x) < 0.2
+        at_pit_edge = 515 < view.player.center_x < 540
+        previous_x = view.player.center_x
+        # Sauter au bord du puits, et par-dessus ce qui bloque la course.
+        if view.player.on_ground and (at_pit_edge or blocked):
+            view.player.jump()
+        view.on_update(FRAME)
+        if view.machine.state is GameState.VICTORY:
+            break
+    assert view.machine.state is GameState.VICTORY, (
+        f"le niveau doit pouvoir etre termine (etat : {view.machine.state.name}, "
+        f"x = {view.player.center_x:.0f})"
+    )
+    print(f"  niveau 1 -> resolu en {view.session.deaths} mort(s), "
+          f"porte ouverte a x = {view.player.center_x:.0f}")
+
+
+def check_menus(window: arcade.Window) -> None:
+    """Les vues hors-jeu se dessinent sans erreur."""
+    session = GameSession()
+    for view in (TitleView(session), VictoryView(session), UpgradeTreeView(session)):
+        window.show_view(view)
+        advance(view, 2)
+    print("  menus -> titre, victoire et arbre de competences dessines")
+
+
+def main() -> int:
+    print("Project Astral Platformer - smoke test")
+    print("[1/5] chargement des cartes")
+    check_levels()
+    print("[2/5] progression et ameliorations")
+    check_progression()
+
+    window = arcade.Window(
+        width=settings.SCREEN_WIDTH,
+        height=settings.SCREEN_HEIGHT,
+        title="smoke test",
+        visible=False,
+    )
+    try:
+        print("[3/5] boucle de jeu")
+        check_gameplay_loop(window)
+        print("[4/5] solution du niveau tutoriel")
+        check_tutorial_is_solvable(window)
+        print("[5/5] menus")
+        check_menus(window)
+    finally:
+        window.close()
+    print("OK : le squelette demarre et tourne.")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

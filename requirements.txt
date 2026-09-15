@@ -1,0 +1,4 @@
+# Dependances de Project Astral Platformer
+# Installation : python -m pip install -r requirements.txt
+
+arcade==3.3.3

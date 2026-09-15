@@ -1,0 +1,2 @@
+Images du jeu (joueur, fantome, cadavre, ennemis, cle, decor).
+Charger via settings.SPRITES_DIR, jamais avec un chemin en dur.
