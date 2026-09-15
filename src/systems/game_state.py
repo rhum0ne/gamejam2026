@@ -263,11 +263,14 @@ class PlayView(arcade.View):
             wall.set_revealed(ghost.reveals(wall))
             if wall.revealed:
                 arcade.draw_sprite(wall)
-        for sprite_list in (self.level.items, self.level.enemies):
-            for sprite in sprite_list:
-                if ghost.reveals(sprite):
-                    arcade.draw_sprite(sprite)
+        for item in self.level.items:
+            if ghost.reveals(item):
+                arcade.draw_sprite(item)
         self.fog.draw(ghost, self.camera.world)
+        for enemy in self.level.enemies:
+            enemy.draw_ghost_glow()
+            if ghost.reveals(enemy):
+                arcade.draw_sprite(enemy)
         ghost.draw_fx()
         arcade.draw_sprite(ghost)
         self._draw_body_arrow(ghost)
