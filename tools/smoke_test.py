@@ -263,6 +263,12 @@ def main() -> int:
         height=settings.SCREEN_HEIGHT,
         title="smoke test",
         visible=False,
+        vsync=True,
+        update_rate=settings.FRAME_TIME,
+        draw_rate=settings.FRAME_TIME,
+    )
+    assert abs(window.update_rate - settings.FRAME_TIME) < 1e-6, (
+        f"update_rate={window.update_rate} (attendu {settings.FRAME_TIME} pour 60 FPS)"
     )
     try:
         print("[3/6] boucle de jeu")

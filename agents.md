@@ -332,7 +332,9 @@ transition de niveau est automatique (`GameSession.advance_level`).
   contient elle-meme (un cadavre avec `level.corpses` dans ses murs se bloque
   lui-meme) — d'ou `PlayView._static_platforms()`.
 * **Vitesses en pixels par frame**, pas par seconde (convention Arcade). La base
-  est 60 FPS ; un `delta_time` est quand meme utilise pour les timers.
+  est 60 FPS ; un `delta_time` est quand meme utilise pour les timers. La fenetre
+  est creee avec `vsync=True` et `update_rate = draw_rate = 1/60`. Le compteur
+  FPS du HUD (bas gauche) mesure le rythme de `on_draw`, pas seulement l'update.
 * **Deux cameras** : dessine le monde avec `camera.use_world()` et le HUD avec
   `camera.use_ui()`, sinon le HUD defile avec le niveau.
 * **Jamais `arcade.draw_text` dans une boucle de rendu** : Arcade emet un
@@ -354,7 +356,7 @@ transition de niveau est automatique (`GameSession.advance_level`).
 * Cadavre : solide, gravite, dissipation, devorable.
 * Ennemi : patrouille, poursuite, festin, bille bleue.
 * Niveau 1 "Le Puits Mortel" charge depuis JSON et **terminable**.
-* Camera lissee, HUD, ecran titre, victoire, game over, arbre de competences.
+* Camera lissee (constante de temps, look-ahead proportionnel a la vitesse), HUD, ecran titre, victoire, game over, arbre de competences.
 
 ### A faire (par ordre de priorite pour la jam)
 1. **Assets** : remplacer les `SpriteSolidColor` par des sprites et des

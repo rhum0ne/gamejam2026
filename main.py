@@ -47,14 +47,18 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 
 def create_window() -> arcade.Window:
-    """Cree la fenetre de jeu."""
-    return arcade.Window(
+    """Cree la fenetre de jeu, cadencee a 60 FPS avec vsync."""
+    window = arcade.Window(
         width=settings.SCREEN_WIDTH,
         height=settings.SCREEN_HEIGHT,
         title=settings.SCREEN_TITLE,
         update_rate=settings.FRAME_TIME,
+        draw_rate=settings.FRAME_TIME,
+        vsync=True,
         center_window=True,
     )
+    arcade.enable_timings()
+    return window
 
 
 def main(argv: list[str] | None = None) -> None:
