@@ -29,6 +29,8 @@ LEVEL_SEQUENCE: tuple[str, ...] = ("level_1_tuto.json",)
 
 SCREEN_WIDTH = 1280
 SCREEN_HEIGHT = 720
+SCREEN_MIN_WIDTH = 640
+SCREEN_MIN_HEIGHT = 360
 SCREEN_TITLE = "Project Astral Platformer"
 FPS = 60
 FRAME_TIME = 1 / FPS

@@ -34,7 +34,7 @@ Les options sont transmises au jeu :
 ```bash
 ./play.sh --play          # demarre directement le niveau, sans passer par le menu
 ./play.sh --level 0       # choisit le niveau de depart
-./play.sh --check         # lance le test de demarrage au lieu du jeu
+./play.sh --fullscreen      # demarre en plein ecran (F11 pour quitter)
 ```
 
 `python main.py` fonctionne aussi : si Arcade manque dans l'interpreteur
@@ -81,6 +81,7 @@ que les menus se dessinent. A lancer avant chaque commit.
 | `F` | Projeter son esprit (le corps meurt sur place et laisse un cadavre) |
 | `R` | En mode fantome : retourner immediatement au corps |
 | `Tab` | Arbre de competences |
+| `F11` (ou Alt/Cmd+Entree) | Plein ecran |
 | `Echap` | Retour au menu titre |
 
 ---

@@ -72,7 +72,7 @@ class CameraRig:
     def on_resize(self, width: int, height: int) -> None:
         """Reajuste les viewports apres un redimensionnement de la fenetre."""
         self.world.match_window()
-        self.ui.match_window()
+        self.ui.match_window(position=True)
         self.world.position = self._clamp(*self.world.position)
 
     def _ease_look_ahead(self, target: arcade.Sprite, delta_time: float) -> None:

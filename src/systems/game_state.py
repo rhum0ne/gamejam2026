@@ -32,6 +32,7 @@ from src.entities.item import ItemKind
 from src.entities.player import Player
 from src.systems import collisions
 from src.systems.upgrades import SoulProgression
+from src.ui.display import handle_display_key
 from src.ui.hud import Hud, HudData
 from src.world.camera import CameraRig
 from src.world.fog import GhostFog
@@ -173,6 +174,10 @@ class PlayView(arcade.View):
         self._fps = 0.0
         self._last_draw_time = 0.0
         self.setup()
+
+    def on_show_view(self) -> None:
+        self.camera.on_resize(self.window.width, self.window.height)
+        self.hud.resize(self.window.width, self.window.height)
 
     # ------------------------------------------------------------------ #
     # Mise en place
@@ -463,6 +468,8 @@ class PlayView(arcade.View):
     def on_key_press(self, symbol: int, modifiers: int) -> None:
         from src.ui.menus import TitleView, UpgradeTreeView
 
+        if handle_display_key(self.window, symbol, modifiers):
+            return
         self.held_keys.add(symbol)
         state = self.machine.state
         if symbol == arcade.key.ESCAPE:

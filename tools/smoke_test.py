@@ -243,12 +243,21 @@ def check_tutorial_is_solvable(window: arcade.Window) -> None:
 
 
 def check_menus(window: arcade.Window) -> None:
-    """Les vues hors-jeu se dessinent sans erreur."""
+    """Les vues hors-jeu se dessinent sans erreur, y compris apres un resize."""
     session = GameSession()
     for view in (TitleView(session), VictoryView(session), UpgradeTreeView(session)):
         window.show_view(view)
         advance(view, 2)
-    print("  menus -> titre, victoire et arbre de competences dessines")
+        view.on_resize(1920, 1080)
+        advance(view, 1)
+        view.on_resize(settings.SCREEN_MIN_WIDTH, settings.SCREEN_MIN_HEIGHT)
+        advance(view, 1)
+    play = PlayView(session)
+    window.show_view(play)
+    play.on_resize(1600, 900)
+    play.on_draw()
+    play.on_resize(settings.SCREEN_WIDTH, settings.SCREEN_HEIGHT)
+    print("  menus -> titre, victoire, arbre et resize OK")
 
 
 def main() -> int:
