@@ -7,6 +7,10 @@
 
 Une secousse optionnelle (`shake`) se superpose au suivi sans le deriver.
 
+Le zoom suit aussi une cible (`CAMERA_ZOOM_PLAYER` en corps, `CAMERA_ZOOM_GHOST`
+en fantome) avec son propre lissage exponentiel : la camera recule quand on
+projette le fantome hors du corps, et se rapproche au retour.
+
 Le look-ahead n'est pas un cran binaire : il est proportionnel a la vitesse et
 lui-meme lisse, pour eviter les a-coups quand `change_x` / `change_y` basculent
 (physique au sol, sommet de saut, arret).
@@ -20,6 +24,8 @@ Rendu a resolution fixe (`begin_frame` / `present`)
     dimensions. `present()` redimensionne cette image fixe vers la fenetre
     reelle en une seule passe (un quad texture, mise a l'echelle materielle
     quasi gratuite), en conservant le ratio d'aspect (bandes noires si besoin).
+    Un `warp_strength` non nul (mode fantome) applique une distorsion barillet
+    et un leger etirement perspectif sur cette copie.
 """
 
 from __future__ import annotations
@@ -62,11 +68,24 @@ _PRESENT_FRAGMENT_SHADER = dedent(
     #version 330
 
     uniform sampler2D screen_texture;
+    uniform float warp_barrel;
+    uniform float warp_perspective;
+    uniform float warp_chroma;
     in vec2 out_uv;
     out vec4 frag_color;
 
     void main() {
-        frag_color = texture(screen_texture, out_uv);
+        vec2 centered = out_uv - vec2(0.5);
+        float r2 = dot(centered, centered);
+        vec2 warped = centered * (1.0 + warp_barrel * r2);
+        warped.y *= 1.0 + warp_perspective * centered.y;
+        vec2 uv = vec2(0.5) + warped;
+        vec2 dir = centered * inversesqrt(r2 + 1e-6);
+        vec2 offset = dir * warp_chroma;
+        float red = texture(screen_texture, clamp(uv + offset, 0.0, 1.0)).r;
+        vec4 mid = texture(screen_texture, clamp(uv, 0.0, 1.0));
+        float blue = texture(screen_texture, clamp(uv - offset, 0.0, 1.0)).b;
+        frag_color = vec4(red, mid.g, blue, mid.a);
     }
     """
 )
@@ -102,6 +121,7 @@ class CameraRig:
         self._shake_duration = 0.001
         self._shake_amp = 0.0
         self._shake_phase = 0.0
+        self._zoom = settings.CAMERA_ZOOM_PLAYER
         self._present_geometry = geometry.quad_2d_fs()
         self._present_program = self._window.ctx.program(
             vertex_shader=_PRESENT_VERTEX_SHADER,
@@ -114,13 +134,15 @@ class CameraRig:
         self.world_width = world_width
         self.world_height = world_height
 
-    def snap_to(self, target: arcade.Sprite) -> None:
+    def snap_to(self, target: arcade.Sprite, zoom: float = settings.CAMERA_ZOOM_PLAYER) -> None:
         """Place instantanement la camera sur la cible (changement de niveau)."""
         self._look_x = 0.0
         self._look_y = 0.0
         self._shake_time = 0.0
         self._shake_x = 0.0
         self._shake_y = 0.0
+        self._zoom = zoom
+        self.world.zoom = zoom
         self._anchor_x, self._anchor_y = self._clamp(target.center_x, target.center_y)
         self._apply_offset()
 
@@ -131,13 +153,43 @@ class CameraRig:
         self._shake_time = self._shake_duration
         self._shake_phase = 0.0
 
-    def follow(self, target: arcade.Sprite, delta_time: float) -> None:
-        """Rapproche la camera de la cible, avec un look-ahead lisse."""
-        self._ease_look_ahead(target, delta_time)
-        desired_x, desired_y = self._clamp(
-            target.center_x + self._look_x,
-            target.center_y + self._look_y,
-        )
+    def follow(
+        self,
+        target: arcade.Sprite,
+        delta_time: float,
+        zoom: float = settings.CAMERA_ZOOM_PLAYER,
+    ) -> None:
+        """Rapproche la camera d'une cible mouvante, avec un look-ahead lisse.
+
+        `zoom` est la cible vers laquelle le niveau de zoom est lisse : passer
+        `CAMERA_ZOOM_GHOST` (plus petit que `CAMERA_ZOOM_PLAYER`) donne l'effet
+        de recul/projection hors du corps au passage humain -> fantome.
+        """
+        self._ease_look_ahead(target.change_x, target.change_y, delta_time)
+        self._advance(target.center_x + self._look_x, target.center_y + self._look_y, delta_time, zoom)
+
+    def drift_to(
+        self,
+        x: float,
+        y: float,
+        delta_time: float,
+        zoom: float = settings.CAMERA_ZOOM_PLAYER,
+    ) -> None:
+        """Ramene doucement la camera vers un point fixe, sans cible ni look-ahead.
+
+        Sert au retour au corps (mode `RESPAWNING`) : le corps n'a pas encore
+        bouge au point de reapparition, donc rien a suivre, mais on veut la
+        meme transition fluide (position + zoom) qu'avec `follow`, plutot
+        qu'un saut instantane une fois le delai de respawn ecoule.
+        """
+        self._ease_look_ahead(0.0, 0.0, delta_time)
+        self._advance(x + self._look_x, y + self._look_y, delta_time, zoom)
+
+    def _advance(self, target_x: float, target_y: float, delta_time: float, zoom: float) -> None:
+        zoom_alpha = _exp_alpha(delta_time, settings.CAMERA_ZOOM_SMOOTH_TIME)
+        self._zoom += (zoom - self._zoom) * zoom_alpha
+        self.world.zoom = self._zoom
+        desired_x, desired_y = self._clamp(target_x, target_y)
         alpha = _exp_alpha(delta_time, settings.CAMERA_SMOOTH_TIME)
         self._anchor_x += (desired_x - self._anchor_x) * alpha
         self._anchor_y += (desired_y - self._anchor_y) * alpha
@@ -166,8 +218,12 @@ class CameraRig:
         """Efface l'image hors-ecran, avant que le monde et le HUD n'y dessinent."""
         self._target.clear(color=settings.COLOR_BACKGROUND)
 
-    def present(self) -> None:
-        """Recopie l'image hors-ecran (resolution fixe) dans la fenetre reelle."""
+    def present(self, warp_strength: float = 0.0) -> None:
+        """Recopie l'image hors-ecran (resolution fixe) dans la fenetre reelle.
+
+        `warp_strength` 0 laisse l'image intacte. Une valeur positive (mode
+        fantome) deforme legerement la perspective sur tout l'ecran.
+        """
         screen = self._window.ctx.screen
         screen.use()
         screen.clear(
@@ -176,7 +232,11 @@ class CameraRig:
         )
         screen.viewport = self._present_viewport
         self._target.color_attachments[0].use(unit=0)
+        strength = max(0.0, float(warp_strength))
         self._present_program["screen_texture"] = 0
+        self._present_program["warp_barrel"] = strength
+        self._present_program["warp_perspective"] = strength * settings.GHOST_WARP_PERSPECTIVE
+        self._present_program["warp_chroma"] = strength * settings.GHOST_WARP_CHROMA
         self._present_geometry.render(self._present_program)
 
     def on_resize(self, width: int, height: int) -> None:
@@ -215,13 +275,13 @@ class CameraRig:
     def _apply_offset(self) -> None:
         self.world.position = (self._anchor_x + self._shake_x, self._anchor_y + self._shake_y)
 
-    def _ease_look_ahead(self, target: arcade.Sprite, delta_time: float) -> None:
+    def _ease_look_ahead(self, change_x: float, change_y: float, delta_time: float) -> None:
         max_speed = max(abs(settings.PLAYER_SPEED), abs(settings.GHOST_SPEED), 1.0)
-        desired_x = max(-1.0, min(1.0, target.change_x / max_speed)) * settings.CAMERA_LOOK_AHEAD
+        desired_x = max(-1.0, min(1.0, change_x / max_speed)) * settings.CAMERA_LOOK_AHEAD
         desired_y = 0.0
-        if target.change_y < -settings.CAMERA_FALL_LOOK_THRESHOLD:
+        if change_y < -settings.CAMERA_FALL_LOOK_THRESHOLD:
             desired_y = -settings.CAMERA_LOOK_AHEAD
-        elif target.change_y > settings.CAMERA_RISE_LOOK_THRESHOLD:
+        elif change_y > settings.CAMERA_RISE_LOOK_THRESHOLD:
             desired_y = settings.CAMERA_LOOK_AHEAD * 0.35
         alpha = _exp_alpha(delta_time, settings.CAMERA_LOOK_SMOOTH_TIME)
         self._look_x += (desired_x - self._look_x) * alpha

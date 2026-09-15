@@ -165,7 +165,7 @@ class Hud:
             )
 
     def _draw_ghost_gauges(self, data: HudData) -> None:
-        """Jauge de temps restant du fantome et tension de la longe."""
+        """Jauge de temps restant du fantome."""
         time_left = max(0.0, data.ghost_time_left or 0.0)
         ratio = time_left / data.ghost_duration if data.ghost_duration else 0.0
         center_x = self.screen_width / 2
@@ -181,8 +181,3 @@ class Hud:
         )
         self._timer_text.text = f"Retour au corps dans {time_left:0.1f} s"
         self._timer_text.draw()
-
-        if data.leash_ratio > 0.75:
-            arcade.draw_lrbt_rectangle_outline(
-                left - 3, left + self._BAR_WIDTH + 3, bottom - 3, top + 3, settings.COLOR_SPIKE, 2
-            )
