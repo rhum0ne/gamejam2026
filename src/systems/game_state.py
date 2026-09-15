@@ -9,7 +9,7 @@ Deux choses vivent ici :
    detectees par `src.systems.collisions`.
 
 La `GameSession` porte tout ce qui doit survivre au changement de vue ou de
-niveau (essence d'ame, ameliorations, niveau courant, nombre de morts).
+niveau (essence d'ame, paliers du fantome, niveau courant, nombre de morts).
 
 Note sur les imports : `menus.py` importe `PlayView` et `PlayView` doit pouvoir
 afficher les menus. Les imports de `src.ui.menus` sont donc faits *dans* les
@@ -51,19 +51,17 @@ class GameState(Enum):
     RESPAWNING = auto()
     VICTORY = auto()
     GAME_OVER = auto()
-    UPGRADES = auto()
 
 
 _TRANSITIONS: dict[GameState, frozenset[GameState]] = {
     GameState.MENU: frozenset({GameState.PLAYING}),
     GameState.PLAYING: frozenset(
-        {GameState.GHOST, GameState.VICTORY, GameState.GAME_OVER, GameState.UPGRADES, GameState.MENU}
+        {GameState.GHOST, GameState.VICTORY, GameState.GAME_OVER, GameState.MENU}
     ),
     GameState.GHOST: frozenset({GameState.RESPAWNING, GameState.GAME_OVER, GameState.MENU}),
     GameState.RESPAWNING: frozenset({GameState.PLAYING, GameState.MENU}),
-    GameState.VICTORY: frozenset({GameState.PLAYING, GameState.UPGRADES, GameState.MENU}),
+    GameState.VICTORY: frozenset({GameState.PLAYING, GameState.MENU}),
     GameState.GAME_OVER: frozenset({GameState.PLAYING, GameState.MENU}),
-    GameState.UPGRADES: frozenset({GameState.PLAYING, GameState.MENU}),
 }
 
 STATE_LABELS: dict[GameState, str] = {
@@ -73,7 +71,6 @@ STATE_LABELS: dict[GameState, str] = {
     GameState.RESPAWNING: "Retour au corps...",
     GameState.VICTORY: "Niveau termine",
     GameState.GAME_OVER: "Game Over",
-    GameState.UPGRADES: "Arbre de competences",
 }
 
 
@@ -155,7 +152,6 @@ _DOWN_KEYS = frozenset({arcade.key.DOWN, arcade.key.S})
 _JUMP_KEYS = frozenset({arcade.key.SPACE}) | _UP_KEYS
 _PROJECT_KEY = arcade.key.F
 _RETURN_KEY = arcade.key.R
-_UPGRADE_KEY = arcade.key.TAB
 _DASH_KEYS = frozenset({arcade.key.LSHIFT, arcade.key.RSHIFT})
 
 
@@ -230,19 +226,24 @@ class PlayView(arcade.View):
         if self.player.alive:
             self.player.draw_fx()
             arcade.draw_sprite(self.player)
+            self.player.draw_particles()
+        # Premier plan : passe devant le monde, reste sous le voile fantome et le HUD.
+        self.atmosphere.draw(self.camera.world)
         if self.ghost is not None:
             if self.machine.state is GameState.GHOST:
                 self._draw_ghost_layer(self.ghost)
             elif self.ghost.vanishing:
                 arcade.draw_sprite(self.ghost)
-        self.atmosphere.draw(self.camera.world)
         if settings.DEBUG_SHOW_HITBOXES:
             self._draw_hitboxes()
         self.camera.use_ui()
         self.hud.draw(self._hud_data())
         if self._debug_enabled:
             self.debug.draw(self._debug_snapshot())
-        self.camera.present()
+        warp = 0.0
+        if self.machine.state is GameState.GHOST and self.ghost is not None:
+            warp = self.ghost.warp_strength
+        self.camera.present(warp)
 
     def _draw_hitboxes(self) -> None:
         color = settings.COLOR_DEBUG_HITBOX
@@ -265,10 +266,11 @@ class PlayView(arcade.View):
             if ghost.reveals(item):
                 item.draw_fx()
                 arcade.draw_sprite(item)
+        self.fog.draw(ghost, self.camera.world)
         for enemy in self.level.enemies:
+            enemy.draw_ghost_glow()
             if ghost.reveals(enemy):
                 arcade.draw_sprite(enemy)
-        self.fog.draw(ghost, self.camera.world)
         ghost.draw_fx()
         arcade.draw_sprite(ghost)
         self._draw_body_arrow(ghost)
@@ -408,7 +410,7 @@ class PlayView(arcade.View):
         self._update_enemies(delta_time)
         self._resolve_player_collisions()
         if self.machine.state is GameState.PLAYING:
-            self.camera.follow(self.player, delta_time)
+            self.camera.follow(self.player, delta_time, zoom=settings.CAMERA_ZOOM_PLAYER)
 
     def _update_ghost(self, delta_time: float) -> None:
         ghost = self.ghost
@@ -421,7 +423,7 @@ class PlayView(arcade.View):
         self._update_enemies(delta_time)
         if not ghost.vanishing:
             self._resolve_ghost_collisions(ghost)
-        self.camera.follow(ghost, delta_time)
+        self.camera.follow(ghost, delta_time, zoom=settings.CAMERA_ZOOM_GHOST)
         if ghost.expired:
             emit_ghost_end(self, "timer")
         elif ghost.vanished:
@@ -433,6 +435,8 @@ class PlayView(arcade.View):
             if self.ghost.vanished:
                 self.ghost = None
         self._respawn_timer -= delta_time
+        respawn_x, respawn_y = self.player.respawn_point
+        self.camera.drift_to(respawn_x, respawn_y, delta_time, zoom=settings.CAMERA_ZOOM_PLAYER)
         if self._respawn_timer > 0:
             return
         self.ghost = None
@@ -441,7 +445,6 @@ class PlayView(arcade.View):
             self.player.give_item(kind)
         self._delivered_items.clear()
         self._update_respawn_enemies()
-        self.camera.snap_to(self.player)
         self.machine.try_to(GameState.PLAYING)
 
     def _update_enemies(self, delta_time: float) -> None:
@@ -537,7 +540,7 @@ class PlayView(arcade.View):
         return direction
 
     def on_key_press(self, symbol: int, modifiers: int) -> None:
-        from src.ui.menus import TitleView, UpgradeTreeView
+        from src.ui.menus import TitleView
 
         if handle_display_key(self.window, symbol, modifiers):
             return
@@ -548,9 +551,6 @@ class PlayView(arcade.View):
         state = self.machine.state
         if symbol == arcade.key.ESCAPE:
             self.window.show_view(TitleView(self.session))
-            return
-        if symbol == _UPGRADE_KEY:
-            self.window.show_view(UpgradeTreeView(self.session, back_view=self))
             return
         if state is GameState.PLAYING:
             if symbol in _JUMP_KEYS:

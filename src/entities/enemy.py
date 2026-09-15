@@ -21,6 +21,7 @@ mode fantome, tireur) en sous-classant `Enemy`.
 
 from __future__ import annotations
 
+import math
 from collections.abc import Sequence
 from enum import Enum, auto
 
@@ -28,6 +29,7 @@ import arcade
 
 import settings
 from src.entities.corpse import Corpse
+from src.entities.glow import draw_glow
 from src.entities.item import Item, make_soul_orb
 from src.entities.player import Player
 from src.ui import sprites
@@ -102,6 +104,7 @@ class Enemy(arcade.Sprite):
         self._attack_cooldown = 0.0
         self._physics: arcade.PhysicsEnginePlatformer | None = None
         self._ground: arcade.SpriteList | None = None
+        self._glow_time = (center_x * 0.13 + center_y * 0.07) % math.tau
 
     # ------------------------------------------------------------------ #
     # Initialisation
@@ -194,6 +197,32 @@ class Enemy(arcade.Sprite):
         sprites.apply_facing(self, self.facing)
 
     # ------------------------------------------------------------------ #
+    # Dessin
+    # ------------------------------------------------------------------ #
+
+    def draw_ghost_glow(self) -> None:
+        """Halo rouge intense, dessine aussi hors du champ de vision."""
+        pulse = 1.0 + settings.ENEMY_GHOST_GLOW_PULSE * math.sin(
+            self._glow_time * settings.ENEMY_GHOST_GLOW_PULSE_SPEED
+        )
+        draw_glow(
+            self.center_x,
+            self.center_y,
+            settings.ENEMY_WIDTH * settings.ENEMY_GHOST_GLOW_SCALE,
+            settings.ENEMY_HEIGHT * settings.ENEMY_GHOST_GLOW_SCALE,
+            settings.COLOR_ENEMY_GLOW,
+            int(settings.ENEMY_GHOST_GLOW_ALPHA * pulse),
+        )
+        draw_glow(
+            self.center_x,
+            self.center_y,
+            settings.ENEMY_WIDTH * settings.ENEMY_GHOST_GLOW_INNER_SCALE,
+            settings.ENEMY_HEIGHT * settings.ENEMY_GHOST_GLOW_INNER_SCALE,
+            settings.COLOR_ENEMY_GLOW_CORE,
+            int(settings.ENEMY_GHOST_GLOW_INNER_ALPHA * pulse),
+        )
+
+    # ------------------------------------------------------------------ #
     # Boucle de jeu
     # ------------------------------------------------------------------ #
 
@@ -221,6 +250,7 @@ class Enemy(arcade.Sprite):
             else:
                 self._patrol()
         self._advance_animation(delta_time)
+        self._glow_time += max(0.0, delta_time)
         if self._physics is not None:
             self._physics.update()
         if self.state is EnemyState.DYING and self._animator.finished:

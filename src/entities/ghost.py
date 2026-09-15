@@ -3,7 +3,6 @@
 Specificites par rapport au corps physique :
     - aucune gravite, deplacement libre dans les 8 directions ;
     - traverse les murs spectraux (`SpectralWall`) mais pas les murs normaux ;
-    - reste attache au cadavre par une "longe" de longueur `stats.max_range` ;
     - possede un timer : a zero, le corps reapparait au checkpoint ;
     - peut transporter des objets jusqu'au cadavre pour les livrer au corps.
 """
@@ -17,6 +16,7 @@ import arcade
 import settings
 from src.entities.glow import draw_glow
 from src.entities.item import Item
+from src.entities.trail import PointTrail
 from src.systems.upgrades import GhostStats
 from src.ui import sprites
 
@@ -56,6 +56,10 @@ class Ghost(arcade.Sprite):
         self._input = (0.0, 0.0)
         self._solid_walls: arcade.SpriteList | None = None
         self._glow_time = 0.0
+        self._trail = PointTrail(
+            settings.COLOR_TRAIL_GHOST,
+            settings.COLOR_TRAIL_GHOST_CORE,
+        )
 
     # ------------------------------------------------------------------ #
     # Initialisation
@@ -79,8 +83,29 @@ class Ghost(arcade.Sprite):
     # ------------------------------------------------------------------ #
 
     @property
+    def timer_spent(self) -> float:
+        """Part du timer ecoulee, de 0.0 (debut) a 1.0 (expire)."""
+        duration = max(self.stats.duration, 0.001)
+        return 1.0 - max(0.0, min(1.0, self.time_left / duration))
+
+    @property
     def vision_radius(self) -> float:
-        return self.stats.vision_radius
+        """Rayon de vision : part de `stats.vision_radius` et se referme avec le timer.
+
+        La courbe est une puissance : le trou reste large longtemps, puis
+        s'effondre d'un coup en fin de timer, sans rester petit trop longtemps.
+        """
+        eased = self.timer_spent ** settings.GHOST_VISION_SHRINK_POWER
+        start = self.stats.vision_radius
+        end = settings.GHOST_VISION_RADIUS_MIN
+        return start + (end - start) * eased
+
+    @property
+    def warp_strength(self) -> float:
+        """Intensite du filtre de perspective, qui monte legerement avec le timer."""
+        start = settings.GHOST_WARP_STRENGTH
+        end = settings.GHOST_WARP_STRENGTH_MAX
+        return start + (end - start) * self.timer_spent
 
     @property
     def expired(self) -> bool:
@@ -106,10 +131,8 @@ class Ghost(arcade.Sprite):
 
     @property
     def leash_ratio(self) -> float:
-        """Part de la longe consommee, entre 0.0 et 1.0."""
-        if self.stats.max_range <= 0:
-            return 1.0
-        return min(1.0, self.distance_to_anchor / self.stats.max_range)
+        """Ancienne tension de longe : plus de limite de distance, toujours 0."""
+        return 0.0
 
     def reveals(self, sprite: arcade.Sprite) -> bool:
         """Indique si `sprite` est dans le champ de revelation du fantome."""
@@ -160,7 +183,8 @@ class Ghost(arcade.Sprite):
     # ------------------------------------------------------------------ #
 
     def draw_fx(self) -> None:
-        """Halo cyan leger, pulse doucement pour rester lisible dans le noir."""
+        """Trainee de points cyan, puis halo."""
+        self._trail.draw()
         pulse = 1.0 + settings.GHOST_GLOW_PULSE * math.sin(
             self._glow_time * settings.GHOST_GLOW_PULSE_SPEED
         )
@@ -188,7 +212,15 @@ class Ghost(arcade.Sprite):
         self._apply_steering(delta_time)
         self._move_axis("x")
         self._move_axis("y")
-        self._clamp_to_leash()
+        speed = math.hypot(self.change_x, self.change_y)
+        self._trail.follow(
+            self.center_x,
+            self.center_y,
+            self.change_x,
+            self.change_y,
+            delta_time,
+            active=speed >= settings.TRAIL_MIN_SPEED,
+        )
         if abs(self.change_x) > 0.05:
             self.facing = 1 if self.change_x > 0 else -1
         self._advance_animation(delta_time)
@@ -224,19 +256,3 @@ class Ghost(arcade.Sprite):
             else:
                 self.center_y = previous
                 self.change_y = 0.0
-
-    def _clamp_to_leash(self) -> None:
-        """Empeche le fantome de s'eloigner du cadavre au-dela de sa portee."""
-        anchor_x, anchor_y = self.anchor
-        offset_x = self.center_x - anchor_x
-        offset_y = self.center_y - anchor_y
-        distance = math.hypot(offset_x, offset_y)
-        if distance <= self.stats.max_range or distance == 0:
-            return
-        scale = self.stats.max_range / distance
-        self.center_x = anchor_x + offset_x * scale
-        self.center_y = anchor_y + offset_y * scale
-        radial = (self.change_x * offset_x + self.change_y * offset_y) / distance
-        if radial > 0:
-            self.change_x -= radial * offset_x / distance
-            self.change_y -= radial * offset_y / distance

@@ -1,17 +1,35 @@
-"""Progression du fantome : essence d'ame, niveaux et arbre de competences.
+"""Progression du fantome : essence d'ame, paliers et statistiques.
 
-Boucle de progression (fiche concept, systeme 2) :
-    ennemi tue -> bille bleue -> essence d'ame -> niveau du fantome -> upgrade.
+Boucle : ennemi tue -> bille bleue -> essence -> palier du fantome -> bonus.
+Les paliers se debloquent tout seuls (pas de shop).
 
-Les ameliorations sont purement declaratives : une `Upgrade` ne contient que
-des bonus additifs, et `SoulProgression.ghost_stats` recalcule les statistiques
-finales a partir des ameliorations debloquees. Pour ajouter une amelioration,
-il suffit d'ajouter une entree dans `UPGRADES`.
+Paliers d'ames cumulees (`settings.SOUL_LEVEL_THRESHOLDS`) :
+
+    Niveau fantome | Ames cumulees | Bonus debloques
+    -------------- | ------------- | ------------------------------------------
+    1 (depart)     | 0             | stats de base (settings.GHOST_*)
+    2              | 3             | Longe astrale I, Persistance I
+    3              | 8             | Perception I
+    4              | 15            | Poigne spectrale I
+    5              | 25            | (aucun bonus extra pour l'instant)
+    6              | 40            | (aucun bonus extra pour l'instant)
+
+Bonus (additifs, se cumulent) :
+
+    Nom                 | Effet
+    ------------------- | --------------------------------
+    Longe astrale I     | +120 px de portee autour du cadavre
+    Persistance I       | +4 s de timer fantome
+    Perception I        | +60 px de rayon de revelation
+    Poigne spectrale I  | +1 objet transporte a la fois
+
+Pour ajouter un palier : une entree dans `PALIERS` (et un seuil dans
+`SOUL_LEVEL_THRESHOLDS` si le niveau n'existe pas encore).
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 import settings
 
@@ -25,77 +43,76 @@ class GhostStats:
     vision_radius: float = settings.GHOST_VISION_RADIUS
     carry_capacity: int = settings.GHOST_CARRY_CAPACITY
 
+    def level_increased(self) -> "GhostStats":
+        """Retourne une nouvelle instance avec les bonus d'un niveau supplementaire."""
+        return replace(
+            self,
+            max_range=self.max_range + settings.GHOST_MAX_RANGE_INCREASE_VALUE,
+            duration=self.duration + settings.GHOST_DURATION_INCREASE_VALUE,
+            vision_radius=self.vision_radius + settings.GHOST_VISION_RADIUS_INCREASE_VALUE,
+        )
+
+    @staticmethod
+    def for_level(level: int) -> "GhostStats":
+        """Construit les stats de base pour un niveau donne (0 = aucun bonus)."""
+        base = GhostStats()
+        for _ in range(level):
+            base = base.level_increased()
+        return base
+
 
 @dataclass(frozen=True, slots=True)
-class Upgrade:
-    """Noeud de l'arbre de competences."""
+class Palier:
+    """Bonus automatique a partir d'un niveau de fantome."""
 
-    identifier: str
+    level: int
     name: str
     description: str
-    cost: int
-    required_level: int
-    requires: tuple[str, ...] = ()
     range_bonus: float = 0.0
     duration_bonus: float = 0.0
     vision_bonus: float = 0.0
     carry_bonus: int = 0
 
+    def __post_init__(self) -> None:
+        if self.level < 1:
+            raise ValueError("level doit etre >= 1")
 
-UPGRADES: tuple[Upgrade, ...] = (
-    Upgrade(
-        identifier="range_1",
+
+# `level` = palier de `SOUL_LEVEL_THRESHOLDS` (1 = depart, 2 = 3 ames, ...).
+PALIERS: tuple[Palier, ...] = (
+    Palier(
+        level=2,
         name="Longe astrale I",
         description="+120 px de portee autour du cadavre.",
-        cost=3,
-        required_level=1,
         range_bonus=120.0,
     ),
-    Upgrade(
-        identifier="duration_1",
+    Palier(
+        level=2,
         name="Persistance I",
         description="+4 s de duree en mode fantome.",
-        cost=3,
-        required_level=1,
         duration_bonus=4.0,
     ),
-    Upgrade(
-        identifier="vision_1",
+    Palier(
+        level=3,
         name="Perception I",
         description="+60 px de rayon de revelation.",
-        cost=4,
-        required_level=2,
         vision_bonus=60.0,
     ),
-    Upgrade(
-        identifier="carry_1",
+    Palier(
+        level=4,
         name="Poigne spectrale I",
         description="Transporte un objet supplementaire.",
-        cost=6,
-        required_level=3,
-        requires=("range_1",),
         carry_bonus=1,
     ),
 )
 
-UPGRADES_BY_ID: dict[str, Upgrade] = {upgrade.identifier: upgrade for upgrade in UPGRADES}
-
 
 @dataclass(slots=True)
 class SoulProgression:
-    """Banque d'essence d'ame et ameliorations debloquees.
-
-    L'instance vit dans la `GameSession` : elle survit aux changements de
-    niveau et de vue (menu, arbre de competences, partie).
-    """
+    """Essence d'ame recoltee. Les paliers se debloquent tout seuls."""
 
     essence: int = 0
     collected_total: int = 0
-    unlocked: set[str] = field(default_factory=set)
-
-    # ------------------------------------------------------------------ #
-    # Essence
-    # ------------------------------------------------------------------ #
 
     def absorb_orb(self, amount: int = settings.SOUL_ESSENCE_PER_ORB) -> None:
         """Convertit une bille bleue recoltee en essence d'ame."""
@@ -114,49 +131,32 @@ class SoulProgression:
         return level
 
     @property
+    def ghost_stats(self) -> GhostStats:
+        """Statistiques du fantome correspondant au niveau actuel."""
+        return GhostStats.for_level(self.level - 1)
+
+    @property
     def essence_to_next_level(self) -> int | None:
-        """Essence restante avant le prochain niveau, ou None si niveau max."""
+        """Essence restante avant le prochain palier, ou None si palier max."""
         for threshold in settings.SOUL_LEVEL_THRESHOLDS:
             if self.collected_total < threshold:
                 return threshold - self.collected_total
         return None
 
-    # ------------------------------------------------------------------ #
-    # Arbre de competences
-    # ------------------------------------------------------------------ #
-
-    def is_unlocked(self, identifier: str) -> bool:
-        return identifier in self.unlocked
-
-    def can_unlock(self, identifier: str) -> bool:
-        """Verifie cout, niveau requis et prerequis de l'amelioration."""
-        upgrade = UPGRADES_BY_ID.get(identifier)
-        if upgrade is None or identifier in self.unlocked:
-            return False
-        if self.essence < upgrade.cost or self.level < upgrade.required_level:
-            return False
-        return all(parent in self.unlocked for parent in upgrade.requires)
-
-    def unlock(self, identifier: str) -> bool:
-        """Debloque une amelioration si possible. Retourne True en cas de succes."""
-        if not identifier:
-            raise ValueError("identifier ne doit pas etre vide")
-        if not self.can_unlock(identifier):
-            return False
-        self.essence -= UPGRADES_BY_ID[identifier].cost
-        self.unlocked.add(identifier)
-        return True
+    def unlocked_paliers(self) -> tuple[Palier, ...]:
+        """Paliers dont le niveau requis est atteint."""
+        current = self.level
+        return tuple(palier for palier in PALIERS if palier.level <= current)
 
     @property
     def ghost_stats(self) -> GhostStats:
-        """Statistiques du fantome apres application des ameliorations."""
+        """Statistiques du fantome apres application des paliers atteints."""
         stats = GhostStats()
-        for identifier in self.unlocked:
-            upgrade = UPGRADES_BY_ID[identifier]
+        for palier in self.unlocked_paliers():
             stats = GhostStats(
-                max_range=stats.max_range + upgrade.range_bonus,
-                duration=stats.duration + upgrade.duration_bonus,
-                vision_radius=stats.vision_radius + upgrade.vision_bonus,
-                carry_capacity=stats.carry_capacity + upgrade.carry_bonus,
+                max_range=stats.max_range + palier.range_bonus,
+                duration=stats.duration + palier.duration_bonus,
+                vision_radius=stats.vision_radius + palier.vision_bonus,
+                carry_capacity=stats.carry_capacity + palier.carry_bonus,
             )
         return stats

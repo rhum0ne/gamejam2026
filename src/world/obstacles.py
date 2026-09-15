@@ -12,11 +12,13 @@ rectangle plein : changer un PNG ne doit pas modifier la physique.
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 
 import arcade
 
 import settings
+from src.entities.glow import draw_glow
 from src.ui import sprites
 
 
@@ -172,6 +174,64 @@ class Spike(arcade.Sprite):
         if not spec.hanging:
             offset_y = -offset_y
         sprites.apply_rect_hit_box(self, size, hit_height, offset_y=offset_y)
+
+
+class Torch(arcade.SpriteSolidColor):
+    """Torche decorative : placeholder solide + halo additif qui vacille.
+
+    Pas de collision : c'est du decor. Le sprite sera remplace plus tard.
+    """
+
+    def __init__(self, center_x: float, center_y: float) -> None:
+        super().__init__(
+            settings.TORCH_WIDTH,
+            settings.TORCH_HEIGHT,
+            center_x=center_x,
+            center_y=center_y + settings.TORCH_STEM_HEIGHT / 2,
+            color=settings.COLOR_TORCH_FLAME,
+        )
+        self._time = 0.0
+        self._phase = (center_x * 0.17 + center_y * 0.09) % math.tau
+
+    def update(self, delta_time: float = settings.FRAME_TIME, *args, **kwargs) -> None:
+        self._time += max(0.0, delta_time)
+
+    def draw_fx(self) -> None:
+        """Halo chaud, puis le baton du placeholder (la flamme est le sprite)."""
+        flicker = self._flicker()
+        flame_x = self.center_x
+        flame_y = self.center_y
+        draw_glow(
+            flame_x,
+            flame_y,
+            settings.TORCH_GLOW_OUTER * flicker,
+            settings.TORCH_GLOW_OUTER * flicker * 1.15,
+            settings.COLOR_TORCH_GLOW,
+            int(settings.TORCH_GLOW_ALPHA * flicker),
+        )
+        draw_glow(
+            flame_x,
+            flame_y,
+            settings.TORCH_GLOW_INNER * flicker,
+            settings.TORCH_GLOW_INNER * flicker,
+            settings.COLOR_TORCH_GLOW_CORE,
+            int(settings.TORCH_GLOW_INNER_ALPHA * flicker),
+        )
+        stem_top = self.bottom
+        stem_bottom = stem_top - settings.TORCH_STEM_HEIGHT
+        half = settings.TORCH_STEM_WIDTH / 2
+        arcade.draw_lrbt_rectangle_filled(
+            self.center_x - half,
+            self.center_x + half,
+            stem_bottom,
+            stem_top,
+            settings.COLOR_TORCH_STEM,
+        )
+
+    def _flicker(self) -> float:
+        slow = math.sin(self._time * settings.TORCH_FLICKER_SPEED + self._phase)
+        fast = math.sin(self._time * settings.TORCH_FLICKER_SPEED_FAST + self._phase * 1.7)
+        return 1.0 + settings.TORCH_FLICKER * (0.65 * slow + 0.35 * fast)
 
 
 class Door(arcade.SpriteSolidColor):

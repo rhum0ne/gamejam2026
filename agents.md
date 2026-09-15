@@ -14,8 +14,8 @@ la **dualite corps / fantome** : quand le joueur meurt, son esprit se projette
 hors du corps pendant un temps limite, traverse certains murs, revele les
 secrets et rapporte des objets, tandis que son **cadavre** reste sur place comme
 element de gameplay (plateforme, bouclier anti-piques, appat pour les ennemis).
-Les ames des ennemis vaincus font monter le fantome en niveau via un arbre de
-competences.
+Les ames des ennemis vaincus font monter le fantome en niveau via des paliers
+automatiques (duree, portee, vision, capacite).
 
 Le depot contient pour l'instant un **squelette fonctionnel** : tout demarre,
 tourne et le niveau tutoriel est terminable, mais le contenu (assets, niveaux,
@@ -117,14 +117,14 @@ gamejam2026/
 │   ├── systems/            LES REGLES ET LA LOGIQUE GLOBALE
 │   │   ├── game_state.py   GameState + GameStateMachine + GameSession + PlayView (vue de jeu)
 │   │   ├── collisions.py   Detection pure des chocs de gameplay (ne modifie rien)
-│   │   └── upgrades.py     Essence d'ame, niveaux, arbre de competences, GhostStats
+│   │   └── upgrades.py     Essence d'ame, paliers, GhostStats
 │   │
 │   └── ui/                 L'INTERFACE UTILISATEUR
 │       ├── keys.py         Atlas Kenney des touches (relache / enfonce)
 │       ├── hud.py          HudData + Hud : ames, timer fantome, icones clavier, jauge dash
 │       ├── debug.py        Overlay FPS / etats / tuiles visibles (DEBUG_OVERLAY, F3)
 │       ├── display.py      Redimensionnement et plein ecran
-│       └── menus.py        TitleView, GameOverView, VictoryView, UpgradeTreeView
+│       └── menus.py        TitleView, GameOverView, VictoryView
 │
 └── tools/
     ├── bootstrap.py        Creation de .venv, installation des dependances, relance (stdlib seule)
@@ -177,7 +177,7 @@ separation : elle permet de tester les regles sans contexte OpenGL.
                    v                             |
      +--------> [PLAYING] --- porte + cle ---> [VICTORY] --> niveau suivant / VictoryView
      |          |   ^                             |
-     |     mort |   | corps rendu                 +--> [UPGRADES]
+     |     mort |   | corps rendu                 |
      |          v   |
      |        [GHOST] -- timer ecoule / touche R --> [RESPAWNING]
      |             |                                     |
@@ -188,7 +188,7 @@ separation : elle permet de tester les regles sans contexte OpenGL.
   (`systems/game_state.py`). `GameStateMachine.to()` **leve** une
   `StateTransitionError` si la transition est interdite ; `try_to()` retourne
   `False` a la place. En jeu, prefere `try_to` / `can` pour ne jamais crasher.
-* `MENU`, `GAME_OVER`, `UPGRADES` correspondent aussi a des `arcade.View`
+* `MENU`, `GAME_OVER` correspondent aussi a des `arcade.View`
   dediees dans `ui/menus.py` ; `PLAYING`, `GHOST`, `RESPAWNING`, `VICTORY` sont
   des sous-etats de `PlayView`.
 * `GameSession` (progression, index de niveau, nombre de morts) est passee de
@@ -227,7 +227,7 @@ separation : elle permet de tester les regles sans contexte OpenGL.
 * Traverse `SpectralWall`, bloque par `Wall` (collision resolue axe par axe).
 * `stats` (`GhostStats`) : `max_range` (longe), `duration` (timer),
   `vision_radius`, `carry_capacity`. Valeurs de base dans `settings.py`,
-  bonus via l'arbre de competences.
+  bonus via les paliers (`PALIERS`).
 * Ramasse automatiquement au contact les objets `ghost_can_carry`, et les
   **livre en touchant le cadavre** (`_delivered_items` -> inventaire du corps a
   la reapparition).
@@ -276,12 +276,12 @@ separation : elle permet de tester les regles sans contexte OpenGL.
   `check_tutorial_is_solvable`) — ne pas le reposer sur le sol principal sans
   rejouer ces tests.
 
-### Ames et ameliorations — `systems/upgrades.py`
+### Ames et paliers — `systems/upgrades.py`
 * Une bille bleue ramassee = `SOUL_ESSENCE_PER_ORB` essence.
 * Le niveau du fantome vient de `SOUL_LEVEL_THRESHOLDS` (essence *totale*
-  recoltee) ; l'essence *disponible* se depense dans l'arbre.
-* Une `Upgrade` est **purement declarative** (bonus additifs + prerequis) :
-  pour en ajouter une, ajoute une entree dans `UPGRADES`, rien d'autre.
+  recoltee). Atteindre un palier debloque ses bonus automatiquement (pas de shop).
+* Un `Palier` est **purement declaratif** (niveau requis + bonus additifs) :
+  pour en ajouter un, ajoute une entree dans `PALIERS`, rien d'autre.
 
 ---
 
@@ -339,7 +339,7 @@ transition de niveau est automatique (`GameSession.advance_level`).
 2. **Annotations de type partout**, avec `from __future__ import annotations` en
    tete de fichier.
 3. **`dataclass`** pour les structures de donnees (`frozen=True` + `slots=True`
-   si l'objet est immuable : `GhostStats`, `ItemProfile`, `HudData`, `Upgrade`).
+   si l'objet est immuable : `GhostStats`, `ItemProfile`, `HudData`, `Palier`).
 4. **Une responsabilite par module.** Si un fichier depasse ~300 lignes ou
    melange deux sujets, decoupe-le.
 5. **Aucune constante magique dans le code** : toute valeur de gameplay,
@@ -348,7 +348,7 @@ transition de niveau est automatique (`GameSession.advance_level`).
    evident, jamais ce que le code dit deja. Les intentions non implementees sont
    marquees `TODO(sujet) : ...` (sujets utilises : `design`, `gameplay`, `rendu`).
 7. **Validation des entrees des methodes publiques** : leve `ValueError` /
-   `TypeError` sur un argument invalide (voir `SoulProgression.unlock`,
+   `TypeError` sur un argument invalide (voir `SoulProgression.absorb_orb`,
    `Enemy.take_damage`). Pas de validation dans les methodes privees.
 8. **Pas de `except` nu**, pas de `print` de debug laisse dans `src/`
    (les `print` sont reserves a `tools/`).
@@ -405,7 +405,7 @@ transition de niveau est automatique (`GameSession.advance_level`).
 * Ennemi : patrouille, poursuite, festin, bille bleue, sprite anime (squelette)
   avec mort animee (etat `DYING`).
 * Niveau 1 "Le Puits Mortel" charge depuis JSON et **terminable**.
-* Camera lissee (constante de temps, look-ahead proportionnel a la vitesse), HUD, ecran titre, victoire, game over, arbre de competences.
+* Camera lissee (constante de temps, look-ahead proportionnel a la vitesse), HUD, ecran titre, victoire, game over.
 
 ### A faire (par ordre de priorite pour la jam)
 1. **Assets** : joueur, fantome et ennemi (squelette) ont deja des sprites
@@ -463,4 +463,4 @@ transition de niveau est automatique (`GameSession.advance_level`).
 | Perception extra-sensorielle | `GhostStats.vision_radius`, `Ghost.reveals()` |
 | Mur passe-muraille | `SpectralWall` |
 | Piques | `Spike` |
-| Arbre d'ameliorations | `UPGRADES`, `UpgradeTreeView` |
+| Paliers du fantome | `PALIERS`, `SoulProgression.ghost_stats` |
