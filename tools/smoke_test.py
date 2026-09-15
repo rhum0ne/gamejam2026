@@ -196,6 +196,16 @@ def wait_ghost_ready(view: PlayView, limit: int = 180) -> None:
     raise AssertionError("la transition mort -> fantome n'est pas terminee")
 
 
+def wait_rebirth_ready(view: PlayView, limit: int = 180) -> None:
+    """Laisse finir le voile noir / la reconstruction avant de piloter le corps."""
+    for _ in range(limit):
+        if view.machine.state is GameState.PLAYING and not view.player_rebirthing:
+            return
+        view.on_update(FRAME)
+        view.on_draw()
+    raise AssertionError("la transition fantome -> corps n'est pas terminee")
+
+
 def check_gameplay_loop(window: arcade.Window) -> None:
     """Boucle corps physique -> mort -> fantome -> retour au corps."""
     view = PlayView(GameSession())
@@ -229,9 +239,11 @@ def check_gameplay_loop(window: arcade.Window) -> None:
     view.ghost.time_left = 0.0
     advance(view, 2)
     assert view.machine.state is GameState.RESPAWNING
-    advance(view, int(settings.PLAYER_RESPAWN_DELAY / FRAME) + 5)
+    assert view.player_rebirthing, "la fin du fantome doit ouvrir une cinematique"
+    wait_rebirth_ready(view)
     assert view.machine.state is GameState.PLAYING, "le corps doit revenir au checkpoint"
     assert view.player.alive
+    assert not view.player_rebirthing
     print(f"  boucle de jeu -> {view.session.deaths} mort(s), "
           f"etats visites : {' > '.join(state.name for state in view.machine.history)}")
 
@@ -364,7 +376,7 @@ def check_tutorial_is_solvable(window: arcade.Window) -> None:
 
     view.ghost.time_left = 0.0
     view.held_keys.clear()
-    advance(view, int(settings.PLAYER_RESPAWN_DELAY / FRAME) + 10)
+    wait_rebirth_ready(view)
     assert view.player.has_item(ItemKind.KEY), "le corps doit reapparaitre avec la cle livree"
     assert view.machine.state is GameState.PLAYING
     assert view._hud_data().show_esprit, "F / esprit doit apparaitre apres la premiere projection"

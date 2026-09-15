@@ -139,7 +139,7 @@ PLAYER_SPEED = 5.5
 PLAYER_JUMP_SPEED = 18.0
 PLAYER_MAX_FALL_SPEED = 14.0  # px/frame, vitesse verticale max en chute
 PLAYER_COYOTE_TIME = 0.10  # secondes de tolerance pour sauter apres une chute
-PLAYER_RESPAWN_DELAY = 0.4  # secondes avant de reprendre le controle du corps
+# PLAYER_RESPAWN_DELAY est la somme des phases REBIRTH_* (plus bas).
 # Eclat d'ames bleues sur le totem au moment du respawn.
 CHECKPOINT_BURST_COUNT = 22
 CHECKPOINT_BURST_LIFE = 0.9
@@ -405,6 +405,7 @@ COLOR_SOUL_ORB = (110, 190, 255)
 COLOR_HUD_TEXT = (228, 228, 236)
 COLOR_HUD_BAR_BACKGROUND = (48, 48, 62)
 COLOR_HUD_BAR_FILL = (128, 200, 255)
+COLOR_HUD_GHOST_GAUGE = (110, 196, 255)
 COLOR_DASH = (255, 214, 120)
 COLOR_DASH_GLOW = (255, 224, 150)
 COLOR_TRAIL_DASH = (255, 214, 96)
@@ -494,6 +495,34 @@ DEATH_PARTICLE_MAX = 200
 DEATH_PARTICLE_GLOW_ALPHA = 170
 DEATH_PARTICLE_CORE_ALPHA = 230
 DEATH_PARTICLE_CORE_SIZE = 3.4
+# Fantome -> corps : voile noir, reconstruction par particules, puis reveal.
+REBIRTH_FADE_OUT_TIME = 0.26
+REBIRTH_FORM_TIME = 0.58
+REBIRTH_REVEAL_TIME = 0.42
+REBIRTH_PLAYER_AT = 0.38  # part de FORM ou le sprite apparait
+REBIRTH_HUD_AT = 0.42  # part de REVEAL ou le HUD commence a revenir
+CAMERA_ZOOM_REBIRTH = 1.38
+CAMERA_REBIRTH_SHAKE = 3.2
+CAMERA_REBIRTH_SHAKE_TIME = 0.28
+REBIRTH_FLASH_SIZE = 150.0
+REBIRTH_FLASH_ALPHA = 210
+REBIRTH_PARTICLE_COUNT = 70
+REBIRTH_PARTICLE_STREAM_INTERVAL = 0.024
+REBIRTH_PARTICLE_STREAM_COUNT = 5
+REBIRTH_PARTICLE_LIFE = 0.72
+REBIRTH_PARTICLE_SPEED = 190.0
+REBIRTH_PARTICLE_RADIUS = 118.0
+REBIRTH_PARTICLE_RADIUS_MIN = 36.0
+REBIRTH_PARTICLE_SIZE_MIN = 6.0
+REBIRTH_PARTICLE_SIZE_MAX = 16.0
+REBIRTH_PARTICLE_MAX = 160
+REBIRTH_PARTICLE_GLOW_ALPHA = 165
+REBIRTH_PARTICLE_CORE_ALPHA = 230
+REBIRTH_PARTICLE_CORE_SIZE = 3.2
+COLOR_REBIRTH_VEIL = (0, 0, 0)
+COLOR_REBIRTH_PARTICLE = (214, 216, 228)
+COLOR_REBIRTH_PARTICLE_CORE = (250, 252, 255)
+PLAYER_RESPAWN_DELAY = REBIRTH_FADE_OUT_TIME + REBIRTH_FORM_TIME + REBIRTH_REVEAL_TIME
 
 # --------------------------------------------------------------------------- #
 # Icones clavier (Kenney Input Prompts, dans assets/ui/)
@@ -504,6 +533,14 @@ UI_KEYBOARD_EXTRAS = "Keyboard Extras.png"
 UI_KEY_CELL = 16  # taille native d'une touche-lettre
 UI_KEY_ICON_HEIGHT = 40  # hauteur a l'ecran (nearest-neighbor)
 UI_KEY_CAPTION_SIZE = 16  # libelles a cote des icones
+
+# Jauge unique bas-centre : dash (corps) ou timer (fantome).
+HUD_GAUGE_WIDTH = 168
+HUD_GAUGE_HEIGHT = 10
+HUD_GAUGE_ICON = 22
+HUD_GAUGE_GAP = 8
+HUD_GAUGE_LIFT = 10  # au-dessus des icones clavier
+HUD_GAUGE_LOW = 0.22  # le timer fantome pulse sous ce ratio
 
 # --------------------------------------------------------------------------- #
 # Debug

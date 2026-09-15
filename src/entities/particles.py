@@ -359,3 +359,152 @@ class EmergenceBurst:
             )
         )
         self._grains = self._grains[-settings.DEATH_PARTICLE_MAX :]
+
+
+class ReformBurst:
+    """Motes qui convergent vers un point : le corps se reconstitue hors du noir."""
+
+    def __init__(self, rng: random.Random | None = None) -> None:
+        self._grains: list[_Grain] = []
+        self._rng = rng if rng is not None else random.Random()
+        self._stream_timer = 0.0
+        self._home_x = 0.0
+        self._home_y = 0.0
+
+    def clear(self) -> None:
+        self._grains.clear()
+        self._stream_timer = 0.0
+
+    def emit_cloud(self, x: float, y: float) -> None:
+        """Anneau initial, assez large pour qu'on voie le rappel vers le corps."""
+        self._home_x = x
+        self._home_y = y
+        for _ in range(settings.REBIRTH_PARTICLE_COUNT):
+            self._spawn_inward(x, y, burst=True)
+
+    def emit_stream(self, x: float, y: float, delta_time: float) -> None:
+        """Filet de motes qui continuent d'affluer pendant la reconstruction."""
+        self._home_x = x
+        self._home_y = y
+        self._stream_timer -= max(0.0, delta_time)
+        if self._stream_timer > 0.0:
+            return
+        self._stream_timer = settings.REBIRTH_PARTICLE_STREAM_INTERVAL
+        for _ in range(settings.REBIRTH_PARTICLE_STREAM_COUNT):
+            self._spawn_inward(x, y, burst=False)
+
+    def emit_collapse(self, x: float, y: float) -> None:
+        """Dernier rappel serre, au moment ou le sprite apparait."""
+        self._home_x = x
+        self._home_y = y
+        for _ in range(settings.REBIRTH_PARTICLE_COUNT // 2):
+            self._spawn_inward(x, y, burst=True, tight=True)
+
+    def update(self, delta_time: float = settings.FRAME_TIME) -> None:
+        dt = max(0.0, delta_time)
+        alive: list[_Grain] = []
+        home_x, home_y = self._home_x, self._home_y
+        for grain in self._grains:
+            grain.life -= dt
+            if grain.life <= 0.0:
+                continue
+            dx = home_x - grain.x
+            dy = home_y - grain.y
+            dist = math.hypot(dx, dy)
+            if dist > 1.0:
+                pull = settings.REBIRTH_PARTICLE_SPEED * (0.35 + 0.65 * min(1.0, dist / 90.0))
+                grain.vx = grain.vx * max(0.0, 1.0 - 3.4 * dt) + dx / dist * pull
+                grain.vy = grain.vy * max(0.0, 1.0 - 3.4 * dt) + dy / dist * pull
+            grain.x += grain.vx * dt
+            grain.y += grain.vy * dt
+            if dist < 10.0:
+                grain.life -= dt * 2.4
+            alive.append(grain)
+        self._grains = alive[-settings.REBIRTH_PARTICLE_MAX :]
+
+    def draw(self) -> None:
+        if not self._grains:
+            return
+        core = settings.REBIRTH_PARTICLE_CORE_SIZE
+        with additive_blend():
+            for grain in self._grains:
+                fade = max(0.0, min(1.0, grain.life / grain.max_life))
+                alpha = int(settings.REBIRTH_PARTICLE_GLOW_ALPHA * fade)
+                if alpha <= 0:
+                    continue
+                draw_glow(
+                    grain.x,
+                    grain.y,
+                    grain.size,
+                    grain.size,
+                    grain.color,
+                    alpha,
+                    bind_blend=False,
+                )
+        for grain in self._grains:
+            fade = max(0.0, min(1.0, grain.life / grain.max_life))
+            alpha = int(settings.REBIRTH_PARTICLE_CORE_ALPHA * fade)
+            if alpha <= 0:
+                continue
+            half = core * (0.45 + 0.55 * fade) / 2
+            arcade.draw_lrbt_rectangle_filled(
+                grain.x - half,
+                grain.x + half,
+                grain.y - half,
+                grain.y + half,
+                (*settings.COLOR_REBIRTH_PARTICLE_CORE, alpha),
+            )
+
+    def _spawn_inward(
+        self,
+        x: float,
+        y: float,
+        *,
+        burst: bool,
+        tight: bool = False,
+    ) -> None:
+        angle = self._rng.uniform(0.0, math.tau)
+        if tight:
+            radius = self._rng.uniform(
+                settings.REBIRTH_PARTICLE_RADIUS_MIN * 0.45,
+                settings.REBIRTH_PARTICLE_RADIUS_MIN,
+            )
+        elif burst:
+            radius = self._rng.uniform(
+                settings.REBIRTH_PARTICLE_RADIUS_MIN,
+                settings.REBIRTH_PARTICLE_RADIUS,
+            )
+        else:
+            radius = self._rng.uniform(
+                settings.REBIRTH_PARTICLE_RADIUS * 0.7,
+                settings.REBIRTH_PARTICLE_RADIUS * 1.15,
+            )
+        px = x + math.cos(angle) * radius
+        py = y + math.sin(angle) * radius
+        tangent = angle + math.pi * 0.5
+        swirl = self._rng.uniform(18.0, 55.0)
+        life = settings.REBIRTH_PARTICLE_LIFE * self._rng.uniform(0.55, 1.2)
+        size = self._rng.uniform(
+            settings.REBIRTH_PARTICLE_SIZE_MIN,
+            settings.REBIRTH_PARTICLE_SIZE_MAX,
+        )
+        if self._rng.random() > 0.42:
+            color = settings.COLOR_REBIRTH_PARTICLE_CORE
+        elif self._rng.random() > 0.5:
+            color = settings.COLOR_REBIRTH_PARTICLE
+        else:
+            color = settings.COLOR_DEATH_PARTICLE
+        self._grains.append(
+            _Grain(
+                x=px,
+                y=py,
+                vx=math.cos(tangent) * swirl,
+                vy=math.sin(tangent) * swirl,
+                life=life,
+                max_life=max(life, 0.001),
+                size=size,
+                gravity=0.0,
+                color=color,
+            )
+        )
+        self._grains = self._grains[-settings.REBIRTH_PARTICLE_MAX :]

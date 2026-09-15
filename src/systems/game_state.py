@@ -34,6 +34,7 @@ from src.entities.item import ItemKind
 from src.entities.player import Player
 from src.systems import collisions
 from src.systems.ghost_emergence import GhostEmergence
+from src.systems.player_rebirth import PlayerRebirth
 from src.systems.play_events import bind_play_view, emit_ghost_end, emit_player_death, emit_player_win
 from src.systems.upgrades import SoulProgression
 from src.ui.debug import DebugOverlay, DebugSnapshot
@@ -213,8 +214,8 @@ class PlayView(arcade.View):
         self.ghost: Ghost | None = None
         self.anchor_corpse: Corpse | None = None
         self._emergence: GhostEmergence | None = None
+        self._rebirth: PlayerRebirth | None = None
         self.held_keys: set[int] = set()
-        self._respawn_timer = 0.0
         self._delivered_items: list[ItemKind] = []
         bind_play_view(self)
         self._fps = 0.0
@@ -246,8 +247,8 @@ class PlayView(arcade.View):
         self.ghost = None
         self.anchor_corpse = None
         self._emergence = None
+        self._rebirth = None
         self.held_keys.clear()
-        self._respawn_timer = 0.0
         self._delivered_items.clear()
         self.machine = GameStateMachine(GameState.MENU)
         self.machine.to(GameState.PLAYING)
@@ -256,6 +257,10 @@ class PlayView(arcade.View):
     def ghost_emerging(self) -> bool:
         return self._emergence is not None and self._emergence.active
 
+    @property
+    def player_rebirthing(self) -> bool:
+        return self._rebirth is not None and self._rebirth.active
+
     def start_ghost_emergence(self, origin_x: float, origin_y: float) -> None:
         """Lance le gros plan, les particules et la sortie du fantome."""
         if self.ghost is not None:
@@ -263,6 +268,10 @@ class PlayView(arcade.View):
         sequence = GhostEmergence(origin_x, origin_y)
         sequence.capture_zoom(self.camera)
         self._emergence = sequence
+
+    def start_player_rebirth(self, origin_x: float, origin_y: float) -> None:
+        """Lance le voile noir et la reconstruction du corps au checkpoint."""
+        self._rebirth = PlayerRebirth(origin_x, origin_y)
 
     def _static_platforms(self) -> list[arcade.SpriteList]:
         """Plateformes solides hors cadavres (un cadavre ne doit pas se bloquer lui-meme)."""
@@ -291,26 +300,39 @@ class PlayView(arcade.View):
 
     def on_draw(self) -> None:
         self._sample_fps()
+        rebirth = self._rebirth if self.player_rebirthing else None
+        defer_player = rebirth is not None and rebirth.shows_player
         self.camera.begin_frame()
         self.camera.use_world()
-        self.level.draw(self._terrain_cull_rect())
-        if self.player.alive:
-            self.player.draw_fx()
-            draw_pixel_sprite(self.player)
-            self.player.draw_particles()
-        # Premier plan : passe devant le monde, reste sous le voile fantome et le HUD.
-        self.atmosphere.draw(self.camera.world)
-        if self.ghost is not None:
-            if self.machine.state is GameState.GHOST:
-                self._draw_ghost_or_emergence(self.ghost)
-            elif self.ghost.vanishing:
-                draw_pixel_sprite(self.ghost)
-        if settings.DEBUG_SHOW_HITBOXES:
-            self._draw_hitboxes()
+        if rebirth is None or rebirth.shows_world:
+            self.level.draw(self._terrain_cull_rect())
+            if self.player.alive and not defer_player:
+                self.player.draw_fx()
+                draw_pixel_sprite(self.player)
+                self.player.draw_particles()
+            # Premier plan : passe devant le monde, reste sous le voile fantome et le HUD.
+            self.atmosphere.draw(self.camera.world)
+            if self.ghost is not None:
+                if self.machine.state is GameState.GHOST:
+                    self._draw_ghost_or_emergence(self.ghost)
+                elif self.ghost.vanishing:
+                    draw_pixel_sprite(self.ghost)
+            if settings.DEBUG_SHOW_HITBOXES:
+                self._draw_hitboxes()
         self.camera.use_ui()
-        self.hud.draw(self._hud_data())
-        if self._debug_enabled:
-            self.debug.draw(self._debug_snapshot())
+        if rebirth is None:
+            self._draw_hud_layer()
+        elif rebirth.covers_hud:
+            self._draw_hud_layer()
+            self._draw_black_veil(rebirth.veil)
+        else:
+            self._draw_black_veil(rebirth.veil)
+        if defer_player:
+            self.camera.use_world()
+            self._draw_rebirth_body(rebirth)
+        if rebirth is not None and not rebirth.covers_hud and rebirth.hud_alpha > 0.0:
+            self.camera.use_ui()
+            self._draw_hud_layer(rebirth.hud_alpha)
         warp = 0.0
         if self.machine.state is GameState.GHOST and self.ghost is not None:
             warp = self.ghost.warp_strength
@@ -318,6 +340,35 @@ class PlayView(arcade.View):
             if emergence is not None and emergence.active:
                 warp *= emergence.fog_strength
         self.camera.present(warp)
+
+    def _draw_hud_layer(self, fade: float = 1.0) -> None:
+        self.hud.draw(self._hud_data(), fade=fade)
+        if self._debug_enabled and fade > 0.05:
+            self.debug.draw(self._debug_snapshot())
+
+    def _draw_black_veil(self, strength: float) -> None:
+        alpha = int(255 * max(0.0, min(1.0, strength)))
+        if alpha <= 0:
+            return
+        arcade.draw_lrbt_rectangle_filled(
+            0,
+            settings.WORLD_VIEW_WIDTH,
+            0,
+            settings.WORLD_VIEW_HEIGHT,
+            (*settings.COLOR_REBIRTH_VEIL, alpha),
+        )
+
+    def _draw_rebirth_body(self, rebirth: PlayerRebirth) -> None:
+        """Corps et motes par-dessus le voile : le joueur apparait avant le decor."""
+        fade = rebirth.player_alpha
+        if self.player.alive and fade > 0.0:
+            self.player.alpha = int(255 * fade)
+            self.player.draw_fx()
+            draw_pixel_sprite(self.player)
+            self.player.draw_particles()
+            self.player.alpha = 255
+        with glow_pass():
+            rebirth.draw_fx()
 
     def _draw_hitboxes(self) -> None:
         color = settings.COLOR_DEBUG_HITBOX
@@ -443,6 +494,9 @@ class PlayView(arcade.View):
 
     def _hud_data(self) -> HudData:
         state = self.machine.state
+        show_body_hud = state is GameState.PLAYING or (
+            self.player_rebirthing and self.player.alive
+        )
         return HudData(
             level_name=self.level.name,
             state_label=STATE_LABELS[state],
@@ -461,20 +515,22 @@ class PlayView(arcade.View):
             ghost_duration=self.ghost.stats.duration if self.ghost is not None else settings.GHOST_DURATION,
             leash_ratio=self.ghost.leash_ratio if self.ghost is not None else 0.0,
             fps=self._fps if settings.DEBUG_SHOW_FPS and not self._debug_enabled else None,
-            dash_ratio=self.player.dash_ratio if state is GameState.PLAYING else None,
+            dash_ratio=self.player.dash_ratio if show_body_hud else None,
             dash_ready=self.player.dash_ready,
             dash_flash=self.player.dash_flash,
             controls=(
                 "ghost"
                 if state is GameState.GHOST and not self.ghost_emerging
-                else ("playing" if state is GameState.PLAYING else "")
+                else ("playing" if show_body_hud else "")
             ),
             pressed_keys=frozenset(self.held_keys),
             show_esprit=self.session.knows_esprit,
         )
 
     def _hint_for(self, state: GameState) -> str:
-        if state is GameState.PLAYING:
+        if state is GameState.PLAYING or (
+            state is GameState.RESPAWNING and self.player.alive
+        ):
             return self.level.hint
         if state is GameState.GHOST:
             return "R : ecourter le mode fantome et revenir au checkpoint"
@@ -620,16 +676,40 @@ class PlayView(arcade.View):
             self.ghost.update(delta_time)
             if self.ghost.vanished:
                 self.ghost = None
-        self._respawn_timer -= delta_time
-        respawn_x, respawn_y = self.player.respawn_point
-        self.camera.drift_to(respawn_x, respawn_y, delta_time, zoom=settings.CAMERA_ZOOM_PLAYER)
-        if self._respawn_timer > 0:
+        rebirth = self._rebirth
+        if rebirth is None:
+            self._finish_rebirth()
             return
+        rebirth.update(delta_time, self.camera)
+        if rebirth.consume_body_spawn():
+            self._materialize_body()
+        if rebirth.active:
+            return
+        self._rebirth = None
+        self._finish_rebirth()
+
+    def _materialize_body(self) -> None:
+        """Place le corps au checkpoint une fois l'ecran noir."""
         self.ghost = None
-        self.player.respawn_at(self.player.respawn_point)
+        origin_x, origin_y = self.player.respawn_point
+        self.player.respawn_at((origin_x, origin_y))
         for kind in self._delivered_items:
             self.player.give_item(kind)
         self._delivered_items.clear()
+        checkpoint = self.level.checkpoint_at(self.player.respawn_point)
+        if checkpoint is not None:
+            checkpoint.play_respawn()
+        rebirth = self._rebirth
+        if rebirth is not None:
+            rebirth.particles.emit_cloud(origin_x, origin_y)
+        self.camera.snap_to(self.player, zoom=settings.CAMERA_ZOOM_REBIRTH)
+
+    def _finish_rebirth(self) -> None:
+        if not self.player.alive:
+            self.player.respawn_at(self.player.respawn_point)
+            for kind in self._delivered_items:
+                self.player.give_item(kind)
+            self._delivered_items.clear()
         self._update_respawn_enemies()
         self.machine.try_to(GameState.PLAYING)
 

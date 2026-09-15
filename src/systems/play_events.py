@@ -10,7 +10,6 @@ from __future__ import annotations
 from functools import partial
 from typing import TYPE_CHECKING
 
-import settings
 from src.entities.corpse import Corpse
 from src.entities.ghost import Ghost
 from src.systems.event_manager import event_manager
@@ -111,10 +110,8 @@ def on_player_ghost_end(view: PlayView, data: dict) -> None:
     for wall in view.level.spectral_walls:
         wall.set_revealed(False)
     view.anchor_corpse = None
-    view._respawn_timer = settings.PLAYER_RESPAWN_DELAY
-    checkpoint = view.level.checkpoint_at(view.player.respawn_point)
-    if checkpoint is not None:
-        checkpoint.play_respawn()
+    respawn_x, respawn_y = view.player.respawn_point
+    view.start_player_rebirth(respawn_x, respawn_y)
     view.machine.try_to(GameState.RESPAWNING)
 
 

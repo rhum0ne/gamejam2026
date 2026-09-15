@@ -49,8 +49,6 @@ class Hud:
     """Affichage des informations de jeu par-dessus la scene."""
 
     _MARGIN = 16
-    _BAR_WIDTH = 320
-    _BAR_HEIGHT = 14
 
     def __init__(self, screen_width: int, screen_height: int) -> None:
         self.screen_width = screen_width
@@ -69,9 +67,6 @@ class Hud:
         )
         self._hint_text = self._make_text(
             "", screen_width / 2, self._MARGIN + 6, size=13, anchor_x="center"
-        )
-        self._timer_text = self._make_text(
-            "", screen_width / 2, screen_height - 52, size=13, anchor_x="center"
         )
         self._fps_text = self._make_text(
             "", self._MARGIN, self._MARGIN + 6, size=12, color=settings.COLOR_MENU_HINT
@@ -96,13 +91,22 @@ class Hud:
             font_name=PIXEL_FONT,
         )
 
-    def draw(self, data: HudData) -> None:
+    def draw(self, data: HudData, fade: float = 1.0) -> None:
         """Dessine le HUD a partir de l'instantane fourni."""
+        fade = max(0.0, min(1.0, fade))
+        if fade <= 0.02:
+            return
+        alpha = int(255 * fade)
         self._level_text.text = data.level_name
         self._state_text.text = data.state_label
         self._essence_text.text = f"Ames : {data.essence}  |  Fantome niv. {data.ghost_level}"
         self._key_text.text = "Cle : oui" if data.has_key else "Cle : non"
         self._hint_text.text = data.hint
+        self._level_text.color = (*settings.COLOR_HUD_TEXT, alpha)
+        self._state_text.color = (*settings.COLOR_HUD_TEXT, alpha)
+        self._essence_text.color = (*settings.COLOR_HUD_TEXT, alpha)
+        self._key_text.color = (*settings.COLOR_HUD_TEXT, alpha)
+        self._hint_text.color = (*settings.COLOR_HUD_TEXT, alpha)
 
         self._level_text.draw()
         self._state_text.draw()
@@ -110,74 +114,159 @@ class Hud:
         self._key_text.draw()
         if data.fps is not None:
             self._fps_text.text = f"{data.fps:.0f} FPS"
+            self._fps_text.color = (*settings.COLOR_MENU_HINT, alpha)
             self._fps_text.draw()
-        if data.controls == "playing":
-            keys.draw_prompt_row(
-                self.screen_width / 2,
-                self._MARGIN + settings.UI_KEY_ICON_HEIGHT / 2 + 4,
-                keys.playing_prompts(show_esprit=data.show_esprit),
-                data.pressed_keys,
-            )
-        elif data.controls == "ghost":
-            keys.draw_prompt_row(
-                self.screen_width / 2,
-                self._MARGIN + settings.UI_KEY_ICON_HEIGHT / 2 + 4,
-                keys.GHOST_PROMPTS,
-                data.pressed_keys,
-            )
-        elif data.hint:
-            self._hint_text.text = data.hint
-            self._hint_text.draw()
-        if data.dash_ratio is not None:
-            self._draw_dash_gauge(data)
-        if data.ghost_time_left is not None:
-            self._draw_ghost_gauges(data)
+        if fade > 0.45:
+            if data.controls == "playing":
+                keys.draw_prompt_row(
+                    self.screen_width / 2,
+                    self._MARGIN + settings.UI_KEY_ICON_HEIGHT / 2 + 4,
+                    keys.playing_prompts(show_esprit=data.show_esprit),
+                    data.pressed_keys,
+                )
+            elif data.controls == "ghost":
+                keys.draw_prompt_row(
+                    self.screen_width / 2,
+                    self._MARGIN + settings.UI_KEY_ICON_HEIGHT / 2 + 4,
+                    keys.GHOST_PROMPTS,
+                    data.pressed_keys,
+                )
+            elif data.hint:
+                self._hint_text.text = data.hint
+                self._hint_text.draw()
+            if data.dash_ratio is not None:
+                flash = data.dash_flash
+                fill = settings.COLOR_DASH if data.dash_ready else settings.COLOR_DASH_GAUGE
+                self._draw_action_gauge(data.dash_ratio, fill, "dash", flash)
+            if data.ghost_time_left is not None:
+                duration = max(data.ghost_duration, 0.001)
+                ratio = max(0.0, min(1.0, data.ghost_time_left / duration))
+                flash = 0.0
+                if ratio <= settings.HUD_GAUGE_LOW:
+                    flash = 0.45 + 0.55 * abs((data.ghost_time_left * 6.0) % 1.0 - 0.5) * 2.0
+                self._draw_action_gauge(ratio, settings.COLOR_HUD_GHOST_GAUGE, "ghost", flash)
 
-    def _draw_dash_gauge(self, data: HudData) -> None:
-        """Petite jauge de recharge du dash, en bas a droite."""
-        width, height = 88, 8
-        right = self.screen_width - self._MARGIN
-        left = right - width
-        bottom = self._MARGIN + settings.UI_KEY_ICON_HEIGHT + 12
+    def _gauge_geometry(self) -> tuple[float, float, float, float, float, float]:
+        """Retourne (icon_x, bar_left, bar_right, bottom, top, icon_half)."""
+        icon = settings.HUD_GAUGE_ICON
+        width = settings.HUD_GAUGE_WIDTH
+        height = settings.HUD_GAUGE_HEIGHT
+        gap = settings.HUD_GAUGE_GAP
+        total = icon + gap + width
+        left = self.screen_width / 2 - total / 2
+        bottom = self._MARGIN + settings.UI_KEY_ICON_HEIGHT + settings.HUD_GAUGE_LIFT
         top = bottom + height
-        ratio = max(0.0, min(1.0, data.dash_ratio or 0.0))
+        icon_x = left + icon / 2
+        bar_left = left + icon + gap
+        bar_right = bar_left + width
+        icon_half = icon / 2
+        return icon_x, bar_left, bar_right, bottom, top, icon_half
+
+    def _draw_action_gauge(
+        self,
+        ratio: float,
+        fill: tuple[int, int, int],
+        kind: str,
+        flash: float,
+    ) -> None:
+        """Jauge bas-centre, dash ou fantome, meme gabarit."""
+        ratio = max(0.0, min(1.0, ratio))
+        icon_x, bar_left, bar_right, bottom, top, icon_half = self._gauge_geometry()
+        mid_y = (bottom + top) / 2
+        icon_bottom = mid_y - icon_half
+        icon_top = mid_y + icon_half
         arcade.draw_lrbt_rectangle_filled(
-            left, right, bottom, top, settings.COLOR_HUD_BAR_BACKGROUND
+            icon_x - icon_half,
+            icon_x + icon_half,
+            icon_bottom,
+            icon_top,
+            settings.COLOR_HUD_BAR_BACKGROUND,
         )
-        fill_color = settings.COLOR_DASH if data.dash_ready else settings.COLOR_DASH_GAUGE
+        arcade.draw_lrbt_rectangle_outline(
+            icon_x - icon_half,
+            icon_x + icon_half,
+            icon_bottom,
+            icon_top,
+            fill,
+            1,
+        )
+        if kind == "dash":
+            self._draw_dash_icon(icon_x, mid_y, fill)
+        else:
+            self._draw_ghost_icon(icon_x, mid_y, fill)
+        arcade.draw_lrbt_rectangle_filled(
+            bar_left, bar_right, bottom, top, settings.COLOR_HUD_BAR_BACKGROUND
+        )
         if ratio > 0.0:
             arcade.draw_lrbt_rectangle_filled(
-                left, left + width * ratio, bottom, top, fill_color
+                bar_left, bar_left + settings.HUD_GAUGE_WIDTH * ratio, bottom, top, fill
             )
-        if data.dash_flash > 0.0:
-            pad = 2 + 6 * data.dash_flash
+        arcade.draw_lrbt_rectangle_outline(bar_left, bar_right, bottom, top, fill, 1)
+        if flash > 0.0:
+            pad = 1 + 5 * flash
             arcade.draw_lrbt_rectangle_outline(
-                left - pad,
-                right + pad,
+                bar_left - pad,
+                bar_right + pad,
                 bottom - pad,
                 top + pad,
-                (*settings.COLOR_DASH, int(230 * data.dash_flash)),
+                (*fill, int(220 * flash)),
                 2,
             )
-        elif data.dash_ready:
-            arcade.draw_lrbt_rectangle_outline(
-                left - 1, right + 1, bottom - 1, top + 1, settings.COLOR_DASH, 1
+
+    def _draw_dash_icon(self, center_x: float, center_y: float, color: tuple[int, int, int]) -> None:
+        """Deux chevrons >>."""
+        span = settings.HUD_GAUGE_ICON * 0.28
+        depth = settings.HUD_GAUGE_ICON * 0.22
+        for shift in (-settings.HUD_GAUGE_ICON * 0.16, settings.HUD_GAUGE_ICON * 0.16):
+            tip_x = center_x + shift + depth * 0.65
+            back_x = center_x + shift - depth
+            arcade.draw_triangle_filled(
+                tip_x,
+                center_y,
+                back_x,
+                center_y + span,
+                back_x,
+                center_y - span,
+                color,
             )
 
-    def _draw_ghost_gauges(self, data: HudData) -> None:
-        """Jauge de temps restant du fantome."""
-        time_left = max(0.0, data.ghost_time_left or 0.0)
-        ratio = time_left / data.ghost_duration if data.ghost_duration else 0.0
-        center_x = self.screen_width / 2
-        left = center_x - self._BAR_WIDTH / 2
-        top = self.screen_height - self._MARGIN - 6
-        bottom = top - self._BAR_HEIGHT
-
-        arcade.draw_lrbt_rectangle_filled(
-            left, left + self._BAR_WIDTH, bottom, top, settings.COLOR_HUD_BAR_BACKGROUND
+    def _draw_ghost_icon(self, center_x: float, center_y: float, color: tuple[int, int, int]) -> None:
+        """Losange d'ame, plus un noyau clair."""
+        size = settings.HUD_GAUGE_ICON * 0.32
+        core = size * 0.42
+        arcade.draw_triangle_filled(
+            center_x,
+            center_y + size,
+            center_x - size,
+            center_y,
+            center_x + size,
+            center_y,
+            color,
         )
-        arcade.draw_lrbt_rectangle_filled(
-            left, left + self._BAR_WIDTH * ratio, bottom, top, settings.COLOR_HUD_BAR_FILL
+        arcade.draw_triangle_filled(
+            center_x,
+            center_y - size,
+            center_x - size,
+            center_y,
+            center_x + size,
+            center_y,
+            color,
         )
-        self._timer_text.text = f"Retour au corps dans {time_left:0.1f} s"
-        self._timer_text.draw()
+        arcade.draw_triangle_filled(
+            center_x,
+            center_y + core,
+            center_x - core,
+            center_y,
+            center_x + core,
+            center_y,
+            settings.COLOR_TRAIL_GHOST_CORE,
+        )
+        arcade.draw_triangle_filled(
+            center_x,
+            center_y - core,
+            center_x - core,
+            center_y,
+            center_x + core,
+            center_y,
+            settings.COLOR_TRAIL_GHOST_CORE,
+        )
