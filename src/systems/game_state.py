@@ -33,6 +33,7 @@ from src.entities.glow import additive_blend
 from src.entities.item import ItemKind
 from src.entities.player import Player
 from src.systems import collisions
+from src.systems.ghost_emergence import GhostEmergence
 from src.systems.play_events import bind_play_view, emit_ghost_end, emit_player_death, emit_player_win
 from src.systems.upgrades import SoulProgression
 from src.ui.debug import DebugOverlay, DebugSnapshot
@@ -196,6 +197,7 @@ class PlayView(arcade.View):
         self.player: Player
         self.ghost: Ghost | None = None
         self.anchor_corpse: Corpse | None = None
+        self._emergence: GhostEmergence | None = None
         self.held_keys: set[int] = set()
         self._respawn_timer = 0.0
         self._delivered_items: list[ItemKind] = []
@@ -228,11 +230,24 @@ class PlayView(arcade.View):
         self.camera.snap_to(self.player)
         self.ghost = None
         self.anchor_corpse = None
+        self._emergence = None
         self.held_keys.clear()
         self._respawn_timer = 0.0
         self._delivered_items.clear()
         self.machine = GameStateMachine(GameState.MENU)
         self.machine.to(GameState.PLAYING)
+
+    @property
+    def ghost_emerging(self) -> bool:
+        return self._emergence is not None and self._emergence.active
+
+    def start_ghost_emergence(self, origin_x: float, origin_y: float) -> None:
+        """Lance le gros plan, les particules et la sortie du fantome."""
+        if self.ghost is not None:
+            self.ghost.begin_emerge()
+        sequence = GhostEmergence(origin_x, origin_y)
+        sequence.capture_zoom(self.camera)
+        self._emergence = sequence
 
     def _static_platforms(self) -> list[arcade.SpriteList]:
         """Plateformes solides hors cadavres (un cadavre ne doit pas se bloquer lui-meme)."""
@@ -255,7 +270,7 @@ class PlayView(arcade.View):
         self.atmosphere.draw(self.camera.world)
         if self.ghost is not None:
             if self.machine.state is GameState.GHOST:
-                self._draw_ghost_layer(self.ghost)
+                self._draw_ghost_or_emergence(self.ghost)
             elif self.ghost.vanishing:
                 draw_pixel_sprite(self.ghost)
         if settings.DEBUG_SHOW_HITBOXES:
@@ -267,6 +282,9 @@ class PlayView(arcade.View):
         warp = 0.0
         if self.machine.state is GameState.GHOST and self.ghost is not None:
             warp = self.ghost.warp_strength
+            emergence = self._emergence
+            if emergence is not None and emergence.active:
+                warp *= emergence.fog_strength
         self.camera.present(warp)
 
     def _draw_hitboxes(self) -> None:
@@ -281,6 +299,24 @@ class PlayView(arcade.View):
             self.player.draw_hit_box(color)
         if self.ghost is not None:
             self.ghost.draw_hit_box(color)
+
+    def _draw_ghost_or_emergence(self, ghost: Ghost) -> None:
+        """Voile du fantome, ou cinematique de sortie hors du corps."""
+        emergence = self._emergence
+        if emergence is None or not emergence.active:
+            self._draw_ghost_layer(ghost)
+            return
+        fade = emergence.player_fade
+        if fade > 0.0:
+            self.player.alpha = int(255 * fade)
+            draw_pixel_sprite(self.player)
+            self.player.alpha = 255
+        if emergence.shows_fog:
+            self._draw_ghost_layer(ghost)
+        elif ghost.alpha > 0:
+            ghost.draw_fx()
+            draw_pixel_sprite(ghost)
+        emergence.draw_fx()
 
     def _draw_ghost_layer(self, ghost: Ghost) -> None:
         """Voile radial, auras toujours visibles, secrets dans le champ, fantome."""
@@ -371,14 +407,24 @@ class PlayView(arcade.View):
             hint=self._hint_for(state),
             has_key=self.player.has_item(ItemKind.KEY),
             corpse_count=len(self.level.corpses),
-            ghost_time_left=self.ghost.time_left if state is GameState.GHOST and self.ghost is not None else None,
+            ghost_time_left=(
+                self.ghost.time_left
+                if state is GameState.GHOST
+                and self.ghost is not None
+                and not self.ghost_emerging
+                else None
+            ),
             ghost_duration=self.ghost.stats.duration if self.ghost is not None else settings.GHOST_DURATION,
             leash_ratio=self.ghost.leash_ratio if self.ghost is not None else 0.0,
             fps=self._fps if settings.DEBUG_SHOW_FPS and not self._debug_enabled else None,
             dash_ratio=self.player.dash_ratio if state is GameState.PLAYING else None,
             dash_ready=self.player.dash_ready,
             dash_flash=self.player.dash_flash,
-            controls="ghost" if state is GameState.GHOST else ("playing" if state is GameState.PLAYING else ""),
+            controls=(
+                "ghost"
+                if state is GameState.GHOST and not self.ghost_emerging
+                else ("playing" if state is GameState.PLAYING else "")
+            ),
             pressed_keys=frozenset(self.held_keys),
             show_esprit=self.session.knows_esprit,
         )
@@ -451,7 +497,12 @@ class PlayView(arcade.View):
         attractor: arcade.Sprite | None = None
         if state is GameState.PLAYING and self.player.alive:
             attractor = self.player
-        elif state is GameState.GHOST and self.ghost is not None and not self.ghost.vanishing:
+        elif (
+            state is GameState.GHOST
+            and self.ghost is not None
+            and not self.ghost.vanishing
+            and not self.ghost_emerging
+        ):
             attractor = self.ghost
         self.level.update(delta_time, attractor)
         self._update_mechanisms()
@@ -494,6 +545,8 @@ class PlayView(arcade.View):
         ghost = self.ghost
         if ghost is None:
             return
+        if self._update_emergence(delta_time, ghost):
+            return
         ghost.steer(self._horizontal_input(), self._vertical_input())
         if self.anchor_corpse is not None and self.anchor_corpse.time_left > 0:
             ghost.anchor = (self.anchor_corpse.center_x, self.anchor_corpse.center_y)
@@ -506,6 +559,17 @@ class PlayView(arcade.View):
             emit_ghost_end(self, "timer")
         elif ghost.vanished:
             emit_ghost_end(self, "manual")
+
+    def _update_emergence(self, delta_time: float, ghost: Ghost) -> bool:
+        """Avance la cinematique. True tant qu'elle bloque le pilotage."""
+        emergence = self._emergence
+        if emergence is None:
+            return False
+        emergence.update(delta_time, self.camera, ghost)
+        if emergence.active:
+            return True
+        self._emergence = None
+        return False
 
     def _update_respawning(self, delta_time: float) -> None:
         if self.ghost is not None:
@@ -653,6 +717,8 @@ class PlayView(arcade.View):
             elif symbol == _PROJECT_KEY:
                 emit_player_death(self, "sacrifice")
         elif state is GameState.GHOST and symbol == _RETURN_KEY:
+            if self.ghost_emerging:
+                return
             if self.ghost is not None:
                 self.ghost.start_vanish()
 

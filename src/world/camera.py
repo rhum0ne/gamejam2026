@@ -153,6 +153,33 @@ class CameraRig:
         self._shake_time = self._shake_duration
         self._shake_phase = 0.0
 
+    @property
+    def zoom(self) -> float:
+        return self._zoom
+
+    def apply_cinematic(
+        self,
+        x: float,
+        y: float,
+        zoom: float,
+        delta_time: float,
+    ) -> None:
+        """Cadre un point avec un zoom impose, sans look-ahead.
+
+        Sert a la transition mort -> fantome : le zoom est pilote par la
+        cinematique (courbe finie), la position reste collee au corps.
+        """
+        self._zoom = zoom
+        self.world.zoom = zoom
+        self._look_x = 0.0
+        self._look_y = 0.0
+        desired_x, desired_y = self._clamp(x, y)
+        alpha = _exp_alpha(delta_time, settings.DEATH_CAMERA_LOCK_TIME)
+        self._anchor_x += (desired_x - self._anchor_x) * alpha
+        self._anchor_y += (desired_y - self._anchor_y) * alpha
+        self._tick_shake(delta_time)
+        self._apply_offset()
+
     def follow(
         self,
         target: arcade.Sprite,
