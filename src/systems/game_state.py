@@ -235,6 +235,7 @@ class PlayView(arcade.View):
                 self._draw_ghost_layer(self.ghost)
             elif self.ghost.vanishing:
                 arcade.draw_sprite(self.ghost)
+        self.atmosphere.draw(self.camera.world)
         if settings.DEBUG_SHOW_HITBOXES:
             self._draw_hitboxes()
         self.camera.use_ui()

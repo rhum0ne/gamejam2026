@@ -87,11 +87,10 @@ ANIM_SPEED = 0.5
 # --------------------------------------------------------------------------- #
 
 GRAVITY = 1.0
+# Hitbox locale (taille du sprite). ENTITY_SCALE l'agrandit ensuite.
 PLAYER_WIDTH = SPRITE_FRAME_SIZE
 PLAYER_HEIGHT = SPRITE_FRAME_SIZE
 PLAYER_GRAVITY = 1  # un peu plus leger : saut legerement plus haut et plus lent
-PLAYER_WIDTH = 24
-PLAYER_HEIGHT = 44
 PLAYER_SPEED = 5.5
 PLAYER_JUMP_SPEED = 18.0
 PLAYER_COYOTE_TIME = 0.10  # secondes de tolerance pour sauter apres une chute

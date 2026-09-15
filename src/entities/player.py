@@ -29,8 +29,6 @@ def _walk_animation() -> sprites.StripAnimation:
     frames = sprites.load_strip(settings.SPRITE_PLAYER_WALK, settings.SPRITE_FRAME_SIZE)
     return sprites.StripAnimation(frames, settings.ANIM_WALK_FRAME_TIME, loop=True)
 
-
-class Player(arcade.Sprite):
 def _exp_alpha(delta_time: float, smooth_time: float) -> float:
     if smooth_time <= 0.0:
         return 1.0
@@ -43,7 +41,7 @@ def _approach(current: float, target: float, max_delta: float) -> float:
     return max(current - max_delta, target)
 
 
-class Player(arcade.SpriteSolidColor):
+class Player(arcade.Sprite):
     """Corps physique controle au clavier."""
 
     def __init__(self, center_x: float, center_y: float) -> None:
@@ -268,13 +266,7 @@ class Player(arcade.SpriteSolidColor):
     # ------------------------------------------------------------------ #
 
     def update(self, delta_time: float = settings.FRAME_TIME, *args, **kwargs) -> None:
-        if self._physics is not None and self.alive:
-            self._physics.update()
-            if self._physics.can_jump():
-                self._time_off_ground = 0.0
-            else:
-                self._time_off_ground += delta_time
-        if not self.alive:
+        if not self.alive or self._physics is None:
             return
         if abs(self.change_x) > 0.05:
             self._animator.play(self._walk)
