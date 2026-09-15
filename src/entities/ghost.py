@@ -17,6 +17,7 @@ import arcade
 import settings
 from src.entities.glow import draw_glow
 from src.entities.item import Item
+from src.entities.trail import PointTrail
 from src.systems.upgrades import GhostStats
 
 
@@ -44,6 +45,10 @@ class Ghost(arcade.SpriteSolidColor):
         self._input = (0.0, 0.0)
         self._solid_walls: arcade.SpriteList | None = None
         self._glow_time = 0.0
+        self._trail = PointTrail(
+            settings.COLOR_TRAIL_GHOST,
+            settings.COLOR_TRAIL_GHOST_CORE,
+        )
 
     # ------------------------------------------------------------------ #
     # Initialisation
@@ -112,7 +117,8 @@ class Ghost(arcade.SpriteSolidColor):
     # ------------------------------------------------------------------ #
 
     def draw_fx(self) -> None:
-        """Halo cyan leger, pulse doucement pour rester lisible dans le noir."""
+        """Trainee de points cyan, puis halo."""
+        self._trail.draw()
         pulse = 1.0 + settings.GHOST_GLOW_PULSE * math.sin(
             self._glow_time * settings.GHOST_GLOW_PULSE_SPEED
         )
@@ -136,6 +142,15 @@ class Ghost(arcade.SpriteSolidColor):
         self._move_axis("x")
         self._move_axis("y")
         self._clamp_to_leash()
+        speed = math.hypot(self.change_x, self.change_y)
+        self._trail.follow(
+            self.center_x,
+            self.center_y,
+            self.change_x,
+            self.change_y,
+            delta_time,
+            active=speed >= settings.TRAIL_MIN_SPEED,
+        )
 
     def _apply_steering(self, delta_time: float) -> None:
         dx, dy = self._input
