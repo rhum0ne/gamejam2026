@@ -13,7 +13,6 @@ n'apparait, mais le contexte OpenGL est bien reel, donc `on_draw` est teste.
 from __future__ import annotations
 
 import sys
-from dataclasses import replace
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -126,7 +125,7 @@ def check_gameplay_loop(window: arcade.Window) -> None:
     advance(view, 60)
     view.on_key_release(arcade.key.DOWN, 0)
     assert view.ghost is not None
-    assert view.ghost.distance_to_anchor <= view.ghost.stats.max_range + 1
+    assert view.machine.state is GameState.GHOST
 
     view.ghost.time_left = 0.0
     advance(view, 2)
@@ -155,9 +154,6 @@ def check_vertical_scroll(window: arcade.Window) -> None:
     view.on_key_press(arcade.key.F, 0)
     view.on_key_release(arcade.key.F, 0)
     assert view.ghost is not None
-    # La longe de base ne couvre pas spawn -> fond du puits ; le test
-    # verifie la camera, pas la longe.
-    view.ghost.stats = replace(view.ghost.stats, max_range=2000)
 
     # Le spawn est en haut du niveau : la camera y est deja clampee.
     # On descend dans le puits, puis on remonte, pour tester les deux axes.
@@ -196,7 +192,7 @@ def check_tutorial_is_solvable(window: arcade.Window) -> None:
     chercher la cle -> il la ramene au cadavre -> le corps reapparait avec la
     cle -> il franchit le puits et ouvre la porte.
 
-    Ce test protege le level design : si une valeur de `settings.py` (portee du
+    Ce test protege le level design : si une valeur de `settings.py` (duree du
     fantome, hauteur de saut, largeur du puits) casse la solution, il echoue.
     """
     view = PlayView(GameSession())
@@ -240,8 +236,7 @@ def check_tutorial_is_solvable(window: arcade.Window) -> None:
     assert fly_to(
         lambda: key_item.center_x, lambda: key_item.center_y, lambda: bool(view.ghost.carried)
     ), (
-        "le fantome doit pouvoir atteindre la cle au fond du puits "
-        f"(portee : {view.ghost.stats.max_range:.0f} px)"
+        "le fantome doit pouvoir atteindre la cle au fond du puits"
     )
     # Remontee en deux temps : d'abord au-dessus du cadavre, puis descente
     # dessus, pour ne pas raser la corniche (le fantome bute sur les murs).

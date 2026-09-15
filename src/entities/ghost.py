@@ -3,7 +3,6 @@
 Specificites par rapport au corps physique :
     - aucune gravite, deplacement libre dans les 8 directions ;
     - traverse les murs spectraux (`SpectralWall`) mais pas les murs normaux ;
-    - reste attache au cadavre par une "longe" de longueur `stats.max_range` ;
     - possede un timer : a zero, le corps reapparait au checkpoint ;
     - peut transporter des objets jusqu'au cadavre pour les livrer au corps.
 """
@@ -132,10 +131,8 @@ class Ghost(arcade.Sprite):
 
     @property
     def leash_ratio(self) -> float:
-        """Part de la longe consommee, entre 0.0 et 1.0."""
-        if self.stats.max_range <= 0:
-            return 1.0
-        return min(1.0, self.distance_to_anchor / self.stats.max_range)
+        """Ancienne tension de longe : plus de limite de distance, toujours 0."""
+        return 0.0
 
     def reveals(self, sprite: arcade.Sprite) -> bool:
         """Indique si `sprite` est dans le champ de revelation du fantome."""
@@ -215,7 +212,6 @@ class Ghost(arcade.Sprite):
         self._apply_steering(delta_time)
         self._move_axis("x")
         self._move_axis("y")
-        self._clamp_to_leash()
         speed = math.hypot(self.change_x, self.change_y)
         self._trail.follow(
             self.center_x,
@@ -260,19 +256,3 @@ class Ghost(arcade.Sprite):
             else:
                 self.center_y = previous
                 self.change_y = 0.0
-
-    def _clamp_to_leash(self) -> None:
-        """Empeche le fantome de s'eloigner du cadavre au-dela de sa portee."""
-        anchor_x, anchor_y = self.anchor
-        offset_x = self.center_x - anchor_x
-        offset_y = self.center_y - anchor_y
-        distance = math.hypot(offset_x, offset_y)
-        if distance <= self.stats.max_range or distance == 0:
-            return
-        scale = self.stats.max_range / distance
-        self.center_x = anchor_x + offset_x * scale
-        self.center_y = anchor_y + offset_y * scale
-        radial = (self.change_x * offset_x + self.change_y * offset_y) / distance
-        if radial > 0:
-            self.change_x -= radial * offset_x / distance
-            self.change_y -= radial * offset_y / distance
