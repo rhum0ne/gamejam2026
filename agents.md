@@ -119,7 +119,8 @@ gamejam2026/
 │   │   └── upgrades.py     Essence d'ame, niveaux, arbre de competences, GhostStats
 │   │
 │   └── ui/                 L'INTERFACE UTILISATEUR
-│       ├── hud.py          HudData + Hud : ames, timer fantome, niveau, cle, indice
+│       ├── keys.py         Atlas Kenney des touches (relache / enfonce)
+│       ├── hud.py          HudData + Hud : ames, timer fantome, icones clavier, jauge dash
 │       ├── debug.py        Overlay FPS / etats / tuiles visibles (DEBUG_OVERLAY, F3)
 │       ├── display.py      Redimensionnement et plein ecran
 │       └── menus.py        TitleView, GameOverView, VictoryView, UpgradeTreeView
@@ -260,7 +261,7 @@ separation : elle permet de tester les regles sans contexte OpenGL.
 ```json
 {
   "name": "Le Puits Mortel",
-  "hint": "texte affiche en bas de l'ecran",
+  "hint": "texte optionnel (les icones clavier du HUD le remplacent en jeu)",
   "tile_size": 32,
   "legend": { "#": "wall", "^": "spike", "P": "player_spawn" },
   "rows": ["########", "#..P...#"]
