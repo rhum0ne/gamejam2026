@@ -82,6 +82,7 @@ que les menus se dessinent. A lancer avant chaque commit.
 | `R` | En mode fantome : retourner immediatement au corps |
 | `Tab` | Arbre de competences |
 | `F11` (ou Alt/Cmd+Entree) | Plein ecran |
+| `F3` | Afficher / masquer l'overlay de debug (FPS, etat, tuiles a l'ecran) |
 | `Echap` | Retour au menu titre |
 
 ---
@@ -117,7 +118,7 @@ assets/          Ressources : sprites/, sons/, maps/ (niveaux JSON)
 src/entities/    Joueur, fantome, cadavre, ennemis, objets
 src/world/       Chargement des niveaux, camera, obstacles
 src/systems/     Etats de jeu, collisions, ameliorations
-src/ui/          HUD et menus
+src/ui/          HUD, overlay de debug et menus
 tools/           Outils de developpement (smoke test)
 ```
 

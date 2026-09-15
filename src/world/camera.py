@@ -16,6 +16,7 @@ import math
 
 import arcade
 from arcade.camera import Camera2D
+from arcade.types import LRBT
 
 import settings
 
@@ -68,6 +69,18 @@ class CameraRig:
 
     def use_ui(self) -> None:
         self.ui.use()
+
+    def visible_rect(self) -> LRBT:
+        """Rectangle monde actuellement a l'ecran (camera non tournee)."""
+        center_x, center_y = self.world.position
+        half_width = self.world.width / 2
+        half_height = self.world.height / 2
+        return LRBT(
+            center_x - half_width,
+            center_x + half_width,
+            center_y - half_height,
+            center_y + half_height,
+        )
 
     def on_resize(self, width: int, height: int) -> None:
         """Reajuste les viewports apres un redimensionnement de la fenetre."""

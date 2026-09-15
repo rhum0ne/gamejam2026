@@ -48,6 +48,14 @@ def _dynamic_sprite_list() -> arcade.SpriteList:
     return arcade.SpriteList(capacity=64)
 
 
+def _render_chunk_list() -> arcade.SpriteList:
+    """Liste de dessin d'un chunk : pas de hash, les tuiles n'y bougent jamais."""
+    return arcade.SpriteList(
+        use_spatial_hash=False,
+        capacity=settings.RENDER_CHUNK_TILES * settings.RENDER_CHUNK_TILES,
+    )
+
+
 class LevelFormatError(ValueError):
     """Carte invalide : symbole inconnu, lignes de longueurs differentes, etc."""
 
@@ -71,6 +79,16 @@ class Level:
     corpses: arcade.SpriteList = field(default_factory=_dynamic_sprite_list)
     player_spawn: tuple[float, float] = (0.0, 0.0)
     checkpoint_spawn: tuple[float, float] = (0.0, 0.0)
+    tiles_drawn: int = 0
+    walls_drawn: int = 0
+    chunks_drawn: int = 0
+    chunks_total: int = 0
+    _chunk_pixel_size: int = 0
+    _chunk_columns: int = 0
+    _chunk_rows: int = 0
+    _wall_chunks: list[arcade.SpriteList] = field(default_factory=list)
+    _spectral_chunks: list[arcade.SpriteList] = field(default_factory=list)
+    _hazard_chunks: list[arcade.SpriteList] = field(default_factory=list)
 
     # ------------------------------------------------------------------ #
     # Chargement
@@ -127,6 +145,7 @@ class Level:
                 center = self.tile_center(column_index, row_index, len(grid))
                 factory(self, *center)
         self._bind_initial_checkpoint()
+        self._build_render_chunks()
 
     def _bind_initial_checkpoint(self) -> None:
         """Le spawn initial est le checkpoint le plus proche du joueur, pas le premier 'C' du fichier.
@@ -183,16 +202,128 @@ class Level:
     def spawn_item(self, item: Item) -> None:
         self.items.append(item)
 
-    def draw(self) -> None:
-        """Dessine le decor puis les entites, dans l'ordre d'empilement voulu."""
-        self.walls.draw()
-        self.spectral_walls.draw()
-        self.hazards.draw()
+    def draw(self, view_rect=None) -> None:
+        """Dessine le decor puis les entites, dans l'ordre d'empilement voulu.
+
+        `view_rect` (camera) ne soumet que les chunks de terrain visibles.
+        Sans rectangle, tout le decor est dessine (outils / secours).
+        """
+        if view_rect is None or not self._wall_chunks:
+            self.walls.draw()
+            self.spectral_walls.draw()
+            self.hazards.draw()
+            self.walls_drawn = len(self.walls)
+            self.tiles_drawn = (
+                len(self.walls) + len(self.spectral_walls) + len(self.hazards)
+            )
+            self.chunks_drawn = self.chunks_total
+        else:
+            self.walls_drawn, self.tiles_drawn = self._draw_visible_terrain(view_rect)
         self.checkpoints.draw()
         self.doors.draw()
         self.corpses.draw()
         self.items.draw()
         self.enemies.draw()
+
+    def draw_static_hit_boxes(self, color, view_rect=None) -> None:
+        """Contours de collision du terrain, culles comme le rendu."""
+        if view_rect is None or not self._wall_chunks:
+            self.walls.draw_hit_boxes(color)
+            self.spectral_walls.draw_hit_boxes(color)
+            self.hazards.draw_hit_boxes(color)
+            return
+        for chunk in self._iter_visible_chunks(self._wall_chunks, view_rect):
+            chunk.draw_hit_boxes(color)
+        for chunk in self._iter_visible_chunks(self._spectral_chunks, view_rect):
+            chunk.draw_hit_boxes(color)
+        for chunk in self._iter_visible_chunks(self._hazard_chunks, view_rect):
+            chunk.draw_hit_boxes(color)
+
+    def count_visible_tiles(self, view_rect) -> tuple[int, int, int, int]:
+        """Retourne (tuiles visibles, tuiles totales, murs visibles, murs totaux)."""
+        walls = len(arcade.get_sprites_in_rect(view_rect, self.walls))
+        spectral = len(arcade.get_sprites_in_rect(view_rect, self.spectral_walls))
+        hazards = len(arcade.get_sprites_in_rect(view_rect, self.hazards))
+        visible = walls + spectral + hazards
+        total = len(self.walls) + len(self.spectral_walls) + len(self.hazards)
+        return visible, total, walls, len(self.walls)
+
+    def _build_render_chunks(self) -> None:
+        """Range le terrain immobile dans une grille de SpriteList de dessin."""
+        tiles_per_chunk = max(1, settings.RENDER_CHUNK_TILES)
+        self._chunk_pixel_size = self.tile_size * tiles_per_chunk
+        self._chunk_columns = max(1, math.ceil(self.columns / tiles_per_chunk))
+        self._chunk_rows = max(1, math.ceil(self.rows / tiles_per_chunk))
+        self.chunks_total = self._chunk_columns * self._chunk_rows
+        self._wall_chunks = [_render_chunk_list() for _ in range(self.chunks_total)]
+        self._spectral_chunks = [_render_chunk_list() for _ in range(self.chunks_total)]
+        self._hazard_chunks = [_render_chunk_list() for _ in range(self.chunks_total)]
+        self._fill_chunks(self.walls, self._wall_chunks)
+        self._fill_chunks(self.spectral_walls, self._spectral_chunks)
+        self._fill_chunks(self.hazards, self._hazard_chunks)
+
+    def _fill_chunks(self, sprites: arcade.SpriteList, chunks: list[arcade.SpriteList]) -> None:
+        for sprite in sprites:
+            chunks[self._chunk_index(sprite.center_x, sprite.center_y)].append(sprite)
+
+    def _chunk_index(self, x: float, y: float) -> int:
+        column = min(
+            self._chunk_columns - 1,
+            max(0, int(x // self._chunk_pixel_size)),
+        )
+        row = min(
+            self._chunk_rows - 1,
+            max(0, int(y // self._chunk_pixel_size)),
+        )
+        return row * self._chunk_columns + column
+
+    def _visible_chunk_range(self, view_rect) -> tuple[int, int, int, int]:
+        pad = self.tile_size
+        size = self._chunk_pixel_size
+        if size <= 0 or self._chunk_columns <= 0 or self._chunk_rows <= 0:
+            return 0, -1, 0, -1
+        col0 = max(0, int((view_rect.left - pad) // size))
+        col1 = min(self._chunk_columns - 1, int((view_rect.right + pad) // size))
+        row0 = max(0, int((view_rect.bottom - pad) // size))
+        row1 = min(self._chunk_rows - 1, int((view_rect.top + pad) // size))
+        return col0, col1, row0, row1
+
+    def _iter_visible_chunks(self, chunks: list[arcade.SpriteList], view_rect):
+        col0, col1, row0, row1 = self._visible_chunk_range(view_rect)
+        columns = self._chunk_columns
+        for row in range(row0, row1 + 1):
+            base = row * columns
+            for column in range(col0, col1 + 1):
+                chunk = chunks[base + column]
+                if chunk:
+                    yield chunk
+
+    def _draw_visible_terrain(self, view_rect) -> tuple[int, int]:
+        """Dessine les chunks de terrain qui chevauchent `view_rect`."""
+        walls_drawn = 0
+        tiles_drawn = 0
+        self.chunks_drawn = 0
+        col0, col1, row0, row1 = self._visible_chunk_range(view_rect)
+        columns = self._chunk_columns
+        for row in range(row0, row1 + 1):
+            base = row * columns
+            for column in range(col0, col1 + 1):
+                index = base + column
+                walls = self._wall_chunks[index]
+                spectral = self._spectral_chunks[index]
+                hazards = self._hazard_chunks[index]
+                if not (walls or spectral or hazards):
+                    continue
+                self.chunks_drawn += 1
+                if walls:
+                    walls.draw()
+                    walls_drawn += len(walls)
+                if spectral:
+                    spectral.draw()
+                if hazards:
+                    hazards.draw()
+                tiles_drawn += len(walls) + len(spectral) + len(hazards)
+        return walls_drawn, tiles_drawn
 
     def update(self, delta_time: float) -> None:
         """Met a jour les elements dont la logique ne depend pas de l'etat de jeu."""

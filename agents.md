@@ -108,8 +108,9 @@ gamejam2026/
 │   │   └── item.py         Objets ramassables (cle, bille bleue) et leurs regles de ramassage
 │   │
 │   ├── world/              L'ENVIRONNEMENT ET LE DECOR
-│   │   ├── level.py        Chargement des cartes JSON -> SpriteLists + points de spawn
+│   │   ├── level.py        Chargement JSON, SpriteLists, chunks de rendu (culling camera)
 │   │   ├── camera.py       CameraRig : camera monde (suivi lisse + clamp) + camera UI
+│   │   ├── fog.py          Voile radial du mode fantome (degrade noir -> transparent)
 │   │   └── obstacles.py    Wall, SpectralWall, Spike, Door, Checkpoint
 │   │
 │   ├── systems/            LES REGLES ET LA LOGIQUE GLOBALE
@@ -119,6 +120,8 @@ gamejam2026/
 │   │
 │   └── ui/                 L'INTERFACE UTILISATEUR
 │       ├── hud.py          HudData + Hud : ames, timer fantome, niveau, cle, indice
+│       ├── debug.py        Overlay FPS / etats / tuiles visibles (DEBUG_OVERLAY, F3)
+│       ├── display.py      Redimensionnement et plein ecran
 │       └── menus.py        TitleView, GameOverView, VictoryView, UpgradeTreeView
 │
 └── tools/
@@ -197,7 +200,8 @@ separation : elle permet de tester les regles sans contexte OpenGL.
 4. Ennemis : IA (cadavre > joueur > patrouille) puis physique.
 5. Collisions de gameplay -> consequences -> transitions d'etat.
 6. Camera (suivi du joueur ou du fantome).
-7. `on_draw` : camera monde (decor, entites, voile du fantome) puis camera UI (HUD).
+7. `on_draw` : camera monde (decor, entites, voile du fantome, hitboxes si
+   `DEBUG_SHOW_HITBOXES`) puis camera UI (HUD + overlay si `DEBUG_OVERLAY`).
 
 ---
 
@@ -334,10 +338,15 @@ transition de niveau est automatique (`GameSession.advance_level`).
 * **Vitesses en pixels par frame**, pas par seconde (convention Arcade). La base
   est 60 FPS ; un `delta_time` est quand meme utilise pour les timers. La fenetre
   est creee avec `vsync=True` et `update_rate = draw_rate = 1/60`. Le compteur
-  FPS du HUD (bas gauche) mesure le rythme de `on_draw`, pas seulement l'update.
+  FPS de l'overlay (`ui/debug.py`, actif si `DEBUG_OVERLAY`) mesure le rythme
+  de `on_draw`, pas seulement l'update. `F3` bascule l'overlay en jeu.
+  `DEBUG_SHOW_FPS` n'affiche le compteur HUD que lorsque l'overlay est masque.
+  `Level.draw(view_rect)` ne soumet que les chunks de terrain (`RENDER_CHUNK_TILES`)
+  qui chevauchent la camera ; `tiles_drawn` est le nombre reellement envoye au GPU.
 * **Hash spatial** sur les murs immobiles (`Level._static_sprite_list`). Sans ca,
   le moteur de physique teste 2000+ tuiles par frame et tombe vers 25 FPS. Les
-  cadavres passent dans `platforms`, pas dans `walls`.
+  cadavres passent dans `platforms`, pas dans `walls`. Le hash ne culle **pas**
+  le rendu : d'ou les chunks de `Level._build_render_chunks`.
 * **Deux cameras** : dessine le monde avec `camera.use_world()` et le HUD avec
   `camera.use_ui()`, sinon le HUD defile avec le niveau.
 * **Jamais `arcade.draw_text` dans une boucle de rendu** : Arcade emet un

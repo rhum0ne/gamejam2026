@@ -32,6 +32,7 @@ from src.entities.item import ItemKind
 from src.entities.player import Player
 from src.systems import collisions
 from src.systems.upgrades import SoulProgression
+from src.ui.debug import DebugOverlay, DebugSnapshot
 from src.ui.display import handle_display_key
 from src.ui.hud import Hud, HudData
 from src.world.camera import CameraRig
@@ -164,6 +165,8 @@ class PlayView(arcade.View):
         self.camera = CameraRig()
         self.fog = GhostFog()
         self.hud = Hud(self.window.width, self.window.height)
+        self.debug = DebugOverlay()
+        self._debug_enabled = settings.DEBUG_OVERLAY
         self.level: Level
         self.player: Player
         self.ghost: Ghost | None = None
@@ -216,13 +219,28 @@ class PlayView(arcade.View):
         self._sample_fps()
         self.clear()
         self.camera.use_world()
-        self.level.draw()
+        self.level.draw(self.camera.visible_rect())
         if self.player.alive:
             arcade.draw_sprite(self.player)
         if self.machine.state is GameState.GHOST and self.ghost is not None:
             self._draw_ghost_layer(self.ghost)
+        if settings.DEBUG_SHOW_HITBOXES:
+            self._draw_hitboxes()
         self.camera.use_ui()
         self.hud.draw(self._hud_data())
+        if self._debug_enabled:
+            self.debug.draw(self._debug_snapshot())
+
+    def _draw_hitboxes(self) -> None:
+        color = settings.COLOR_DEBUG_HITBOX
+        view_rect = self.camera.visible_rect()
+        self.level.draw_static_hit_boxes(color, view_rect)
+        self.level.enemies.draw_hit_boxes(color)
+        self.level.corpses.draw_hit_boxes(color)
+        if self.player.alive:
+            self.player.draw_hit_box(color)
+        if self.ghost is not None:
+            self.ghost.draw_hit_box(color)
 
     def _draw_ghost_layer(self, ghost: Ghost) -> None:
         """Voile radial, fleche vers le corps, et fantome."""
@@ -279,7 +297,7 @@ class PlayView(arcade.View):
             ghost_time_left=self.ghost.time_left if self.ghost is not None else None,
             ghost_duration=self.ghost.stats.duration if self.ghost is not None else settings.GHOST_DURATION,
             leash_ratio=self.ghost.leash_ratio if self.ghost is not None else 0.0,
-            fps=self._fps if settings.DEBUG_SHOW_FPS else None,
+            fps=self._fps if settings.DEBUG_SHOW_FPS and not self._debug_enabled else None,
         )
 
     def _sample_fps(self) -> None:
@@ -291,6 +309,48 @@ class PlayView(arcade.View):
                 instant = 1.0 / elapsed
                 self._fps = instant if self._fps == 0.0 else self._fps * 0.9 + instant * 0.1
         self._last_draw_time = now
+
+    def _debug_snapshot(self) -> DebugSnapshot:
+        """Collecte FPS, etat, tuiles a l'ecran et positions pour l'overlay."""
+        tiles_total = len(self.level.walls) + len(self.level.spectral_walls) + len(self.level.hazards)
+        ghost = self.ghost
+        seen: dict[str, int] = {}
+        for enemy in self.level.enemies:
+            seen[enemy.state.name] = seen.get(enemy.state.name, 0) + 1
+        enemy_states = " ".join(f"{name}={count}" for name, count in seen.items())
+        cam_x, cam_y = self.camera.world.position
+        return DebugSnapshot(
+            fps=self._fps,
+            state=self.machine.state.name,
+            player_x=self.player.center_x,
+            player_y=self.player.center_y,
+            player_vx=self.player.change_x,
+            player_vy=self.player.change_y,
+            on_ground=self.player.on_ground,
+            alive=self.player.alive,
+            ghost_x=ghost.center_x if ghost is not None else None,
+            ghost_y=ghost.center_y if ghost is not None else None,
+            ghost_time=ghost.time_left if ghost is not None else None,
+            leash_ratio=ghost.leash_ratio if ghost is not None else 0.0,
+            camera_x=cam_x,
+            camera_y=cam_y,
+            view_w=self.camera.world.viewport_width,
+            view_h=self.camera.world.viewport_height,
+            window_w=self.window.width,
+            window_h=self.window.height,
+            fullscreen=bool(self.window.fullscreen),
+            tiles_visible=self.level.tiles_drawn,
+            tiles_total=tiles_total,
+            walls_visible=self.level.walls_drawn,
+            walls_total=len(self.level.walls),
+            enemies=len(self.level.enemies),
+            items=len(self.level.items),
+            corpses=len(self.level.corpses),
+            enemy_states=enemy_states,
+            deaths=self.session.deaths,
+            essence=self.session.progression.essence,
+            extra=(f"chunks {self.level.chunks_drawn}/{self.level.chunks_total}",),
+        )
 
     # ------------------------------------------------------------------ #
     # Boucle de jeu
@@ -469,6 +529,9 @@ class PlayView(arcade.View):
         from src.ui.menus import TitleView, UpgradeTreeView
 
         if handle_display_key(self.window, symbol, modifiers):
+            return
+        if symbol == arcade.key.F3:
+            self._debug_enabled = not self._debug_enabled
             return
         self.held_keys.add(symbol)
         state = self.machine.state

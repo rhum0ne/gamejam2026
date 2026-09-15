@@ -40,6 +40,9 @@ FRAME_TIME = 1 / FPS
 # --------------------------------------------------------------------------- #
 
 TILE_SIZE = 32
+# Taille d'un paquet de rendu, en tuiles. Le hash spatial ne sert qu'aux
+# collisions : le draw ne soumet que les chunks qui touchent la camera.
+RENDER_CHUNK_TILES = 16
 
 # --------------------------------------------------------------------------- #
 # Physique du corps physique (joueur vivant)
@@ -147,5 +150,9 @@ CAMERA_RISE_LOOK_THRESHOLD = 10.0
 # Debug
 # --------------------------------------------------------------------------- #
 
+DEBUG_OVERLAY = True  # panneau : FPS, etat, tuiles a l'ecran, positions (F3 en jeu)
 DEBUG_SHOW_HITBOXES = False
-DEBUG_SHOW_FPS = True
+DEBUG_SHOW_FPS = True  # si l'overlay est off, affiche quand meme le FPS en bas a gauche
+COLOR_DEBUG = (140, 230, 160)
+COLOR_DEBUG_PANEL = (8, 12, 18, 180)
+COLOR_DEBUG_HITBOX = (80, 255, 120, 200)

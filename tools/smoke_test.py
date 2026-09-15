@@ -256,6 +256,23 @@ def check_menus(window: arcade.Window) -> None:
     window.show_view(play)
     play.on_resize(1600, 900)
     play.on_draw()
+    visible, total, walls_visible, walls_total = play.level.count_visible_tiles(
+        play.camera.visible_rect()
+    )
+    expected_total = (
+        len(play.level.walls) + len(play.level.spectral_walls) + len(play.level.hazards)
+    )
+    assert total == expected_total
+    assert 0 <= visible <= total
+    assert 0 <= walls_visible <= walls_total == len(play.level.walls)
+    assert 0 < play.level.tiles_drawn < expected_total, (
+        f"culling rendu inactif : {play.level.tiles_drawn}/{expected_total} tuiles"
+    )
+    assert 0 < play.level.chunks_drawn < play.level.chunks_total
+    play.on_key_press(arcade.key.F3, 0)
+    assert play._debug_enabled is not settings.DEBUG_OVERLAY
+    play.on_key_press(arcade.key.F3, 0)
+    assert play._debug_enabled is settings.DEBUG_OVERLAY
     play.on_resize(settings.SCREEN_WIDTH, settings.SCREEN_HEIGHT)
     print("  menus -> titre, victoire, arbre et resize OK")
 
