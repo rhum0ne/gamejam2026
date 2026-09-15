@@ -183,7 +183,7 @@ class PlayView(arcade.View):
         for checkpoint in self.level.checkpoints:
             if (checkpoint.center_x, checkpoint.center_y) == self.level.checkpoint_spawn:
                 checkpoint.activate()
-        self.player.bind_world(self.level.solid_platforms)
+        self.player.bind_world(self.level.static_walls, platforms=[self.level.corpses])
         for enemy in self.level.enemies:
             enemy.bind_world(self._static_platforms())
         self.camera.set_bounds(self.level.width, self.level.height)

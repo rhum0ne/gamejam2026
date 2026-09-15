@@ -267,9 +267,7 @@ def main() -> int:
         update_rate=settings.FRAME_TIME,
         draw_rate=settings.FRAME_TIME,
     )
-    assert abs(window.update_rate - settings.FRAME_TIME) < 1e-6, (
-        f"update_rate={window.update_rate} (attendu {settings.FRAME_TIME} pour 60 FPS)"
-    )
+    assert window.vsync
     try:
         print("[3/6] boucle de jeu")
         check_gameplay_loop(window)

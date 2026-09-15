@@ -335,6 +335,9 @@ transition de niveau est automatique (`GameSession.advance_level`).
   est 60 FPS ; un `delta_time` est quand meme utilise pour les timers. La fenetre
   est creee avec `vsync=True` et `update_rate = draw_rate = 1/60`. Le compteur
   FPS du HUD (bas gauche) mesure le rythme de `on_draw`, pas seulement l'update.
+* **Hash spatial** sur les murs immobiles (`Level._static_sprite_list`). Sans ca,
+  le moteur de physique teste 2000+ tuiles par frame et tombe vers 25 FPS. Les
+  cadavres passent dans `platforms`, pas dans `walls`.
 * **Deux cameras** : dessine le monde avec `camera.use_world()` et le HUD avec
   `camera.use_ui()`, sinon le HUD defile avec le niveau.
 * **Jamais `arcade.draw_text` dans une boucle de rendu** : Arcade emet un
