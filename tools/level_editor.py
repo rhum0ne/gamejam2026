@@ -26,6 +26,7 @@ except ModuleNotFoundError:
     raise SystemExit(bootstrap_and_relaunch(__file__, sys.argv[1:]))
 
 import settings  # noqa: E402
+from src.ui.display import center_on_primary_screen  # noqa: E402
 from src.editor.browser import BrowserView  # noqa: E402
 from src.editor.document import DocumentError, EditorDocument  # noqa: E402
 from src.editor.edit_view import EditView  # noqa: E402
@@ -58,9 +59,11 @@ def create_window(*, fullscreen: bool = False) -> arcade.Window:
         update_rate=settings.FRAME_TIME,
         draw_rate=settings.FRAME_TIME,
         vsync=True,
-        center_window=not fullscreen,
+        center_window=False,
     )
     window.set_minimum_size(settings.SCREEN_MIN_WIDTH, settings.SCREEN_MIN_HEIGHT)
+    if not fullscreen:
+        center_on_primary_screen(window)
     return window
 
 

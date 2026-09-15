@@ -28,6 +28,7 @@ except ModuleNotFoundError:
 
 import settings  # noqa: E402
 from src.systems.game_state import GameSession, PlayView  # noqa: E402
+from src.ui.display import center_on_primary_screen  # noqa: E402
 from src.ui.menus import TitleView  # noqa: E402
 
 
@@ -63,9 +64,11 @@ def create_window(*, fullscreen: bool = False) -> arcade.Window:
         update_rate=settings.FRAME_TIME,
         draw_rate=settings.FRAME_TIME,
         vsync=True,
-        center_window=not fullscreen,
+        center_window=False,
     )
     window.set_minimum_size(settings.SCREEN_MIN_WIDTH, settings.SCREEN_MIN_HEIGHT)
+    if not fullscreen:
+        center_on_primary_screen(window)
     arcade.enable_timings()
     return window
 
