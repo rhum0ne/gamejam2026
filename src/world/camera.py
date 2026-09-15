@@ -241,6 +241,28 @@ class CameraRig:
             center_y + half_height,
         )
 
+    def cull_rect(self) -> LRBT:
+        """Rectangle de culling, plus large que l'ecran pour eviter les pop-in."""
+        view = self.visible_rect()
+        pad = settings.RENDER_CULL_PAD
+        return LRBT(
+            view.left - pad,
+            view.right + pad,
+            view.bottom - pad,
+            view.top + pad,
+        )
+
+    def cull_rect_around(self, x: float, y: float, radius: float) -> LRBT:
+        """Intersection du culling camera et d'un disque (vision du fantome)."""
+        view = self.cull_rect()
+        left = max(view.left, x - radius)
+        right = min(view.right, x + radius)
+        bottom = max(view.bottom, y - radius)
+        top = min(view.top, y + radius)
+        if left >= right or bottom >= top:
+            return view
+        return LRBT(left, right, bottom, top)
+
     def begin_frame(self) -> None:
         """Efface l'image hors-ecran, avant que le monde et le HUD n'y dessinent."""
         self._target.clear(color=settings.COLOR_BACKGROUND)

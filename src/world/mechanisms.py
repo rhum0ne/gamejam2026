@@ -149,32 +149,21 @@ def draw_organic_link(
     strand_count: int,
     now: float,
 ) -> None:
-    """Trainee d'ame floue le long d'une vrille, plus quelques motes qui derivent."""
+    """Trainee d'ame : ruban continu (toujours lisible) + quelques motes lumineuses."""
     points = _organic_link_points(start, end, strand, strand_count, now)
     if len(points) < 2:
         return
     color = settings.COLOR_MECHANISM_LINK
-    blur_size = settings.MECHANISM_LINK_STAMP_SIZE * settings.MECHANISM_LINK_BLUR_SCALE
-    for x, y in _even_points(points, settings.MECHANISM_LINK_STAMP_SPACING * 1.5):
-        draw_glow(
-            x,
-            y,
-            blur_size,
-            blur_size,
-            color,
-            settings.MECHANISM_LINK_BLUR_ALPHA,
-            bind_blend=False,
-        )
-    for x, y in _even_points(points, settings.MECHANISM_LINK_STAMP_SPACING):
-        draw_glow(
-            x,
-            y,
-            settings.MECHANISM_LINK_STAMP_SIZE,
-            settings.MECHANISM_LINK_STAMP_SIZE,
-            color,
-            settings.MECHANISM_LINK_STAMP_ALPHA,
-            bind_blend=False,
-        )
+    arcade.draw_line_strip(
+        points,
+        (*color, settings.MECHANISM_LINK_ALPHA),
+        settings.MECHANISM_LINK_WIDTH,
+    )
+    arcade.draw_line_strip(
+        points,
+        (*settings.COLOR_DEATH_PARTICLE_CORE, settings.MECHANISM_LINK_CORE_ALPHA),
+        settings.MECHANISM_LINK_CORE_WIDTH,
+    )
     last = len(points) - 1
     mote_count = settings.MECHANISM_LINK_MOTE_COUNT
     for mote in range(mote_count):
@@ -212,7 +201,6 @@ def draw_sprite_soul_aura(sprite: arcade.Sprite, now: float, *, seed: int) -> No
     pad_x = _axis_pad(width)
     pad_y = _axis_pad(height)
     fill_alpha = int(settings.MECHANISM_AURA_FILL_ALPHA * pulse)
-    edge_alpha = int(settings.MECHANISM_AURA_EDGE_ALPHA * pulse)
     left, right, bottom, top = _visual_bounds(sprite)
     center_x = (left + right) / 2.0
     center_y = (bottom + top) / 2.0
@@ -221,7 +209,7 @@ def draw_sprite_soul_aura(sprite: arcade.Sprite, now: float, *, seed: int) -> No
         center_x,
         center_y,
         width + pad_x * outer,
-        height + pad_y,
+        height + pad_y * outer,
         color,
         max(1, fill_alpha // 2),
         bind_blend=False,
@@ -235,43 +223,8 @@ def draw_sprite_soul_aura(sprite: arcade.Sprite, now: float, *, seed: int) -> No
         fill_alpha,
         bind_blend=False,
     )
-    draw_glow(
-        center_x,
-        top,
-        width + pad_x,
-        pad_y,
-        color,
-        edge_alpha,
-        bind_blend=False,
-    )
-    draw_glow(
-        center_x,
-        bottom,
-        width + pad_x,
-        pad_y,
-        color,
-        edge_alpha,
-        bind_blend=False,
-    )
-    draw_glow(
-        left,
-        center_y,
-        pad_x,
-        height,
-        color,
-        edge_alpha,
-        bind_blend=False,
-    )
-    draw_glow(
-        right,
-        center_y,
-        pad_x,
-        height,
-        color,
-        edge_alpha,
-        bind_blend=False,
-    )
-    _draw_silhouette_motes(left, right, bottom, top, now, seed, color, pulse, pad_x, pad_y)
+    if max(width, height) >= settings.TILE_SIZE:
+        _draw_silhouette_motes(left, right, bottom, top, now, seed, color, pulse, pad_x, pad_y)
 
 
 def _visual_bounds(sprite: arcade.Sprite) -> tuple[float, float, float, float]:

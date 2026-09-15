@@ -65,6 +65,9 @@ TILE_SIZE = 32
 # Taille d'un paquet de rendu, en tuiles. Le hash spatial ne sert qu'aux
 # collisions : le draw ne soumet que les chunks qui touchent la camera.
 RENDER_CHUNK_TILES = 16
+# Marge autour de la camera (look-ahead, secousse, zoom). Sans ca, tout un
+# chunk de 512 px apparait d'un coup au bord de l'ecran.
+RENDER_CULL_PAD = 120.0
 
 # Noms de fichiers dans SPRITES_DIR, sans extension. La legende d'une carte
 # JSON reprend ces noms (ou un alias : rock, dirt). Le chargeur ajoute `.png`.
@@ -264,10 +267,9 @@ MECHANISM_AURA_EDGE = 20.0  # epaisseur max du voile, en px (blocs carres)
 MECHANISM_AURA_MIN_PAD = 3.0  # pad mini, meme sur une plaque tres plate
 MECHANISM_AURA_AXIS_RATIO = 0.35  # le pad d'un axe ne depasse pas ratio * taille
 MECHANISM_AURA_FILL_ALPHA = 16
-MECHANISM_AURA_EDGE_ALPHA = 34
 MECHANISM_AURA_OUTER_SCALE = 1.8  # deuxieme passe, plus large et plus faible
 MECHANISM_AURA_PULSE = 0.22
-MECHANISM_AURA_MOTE_SPACING = 26.0  # px de perimetre entre deux motes
+MECHANISM_AURA_MOTE_SPACING = 34.0  # px de perimetre entre deux motes
 MECHANISM_AURA_MOTE_SIZE = 11.0
 MECHANISM_AURA_MOTE_ALPHA = 40
 MECHANISM_AURA_MOTE_DRIFT = 7.0  # px vers l'exterieur de la forme
@@ -280,12 +282,14 @@ MECHANISM_LINK_WIGGLE_WAVES = 1.7
 MECHANISM_LINK_PULSE_SPEED = 1.15
 MECHANISM_LINK_SPACING = 10.0  # px entre deux samples de la courbe
 MECHANISM_LINK_MIN_SEGMENTS = 24
-MECHANISM_LINK_STAMP_SIZE = 5.0
-MECHANISM_LINK_STAMP_ALPHA = 32
-MECHANISM_LINK_STAMP_SPACING = 4.0
-MECHANISM_LINK_BLUR_SCALE = 2.2
-MECHANISM_LINK_BLUR_ALPHA = 10
-MECHANISM_LINK_MOTE_COUNT = 4
+MECHANISM_LINK_STAMP_SIZE = 18.0
+MECHANISM_LINK_STAMP_ALPHA = 70
+MECHANISM_LINK_STAMP_SPACING = 40.0
+MECHANISM_LINK_WIDTH = 7.0
+MECHANISM_LINK_CORE_WIDTH = 2.5
+MECHANISM_LINK_ALPHA = 90
+MECHANISM_LINK_CORE_ALPHA = 160
+MECHANISM_LINK_MOTE_COUNT = 3
 MECHANISM_LINK_MOTE_SIZE = 3.5
 MECHANISM_LINK_MOTE_ALPHA = 42
 MECHANISM_LINK_MOTE_SPEED = 0.18
