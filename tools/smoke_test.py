@@ -432,15 +432,101 @@ def check_menus(window: arcade.Window) -> None:
     print("  menus -> titre, victoire et resize OK")
 
 
+def check_editor_document() -> None:
+    """Le modele d'edition charge une carte, peint, annule, refait, reecrit."""
+    import json
+    import tempfile
+
+    from src.editor import palette
+    from src.editor.document import EditorDocument
+    from src.editor.selection import GridRect
+    from src.world.level import gameplay_kinds
+
+    kinds = {item.kind for item in palette.PALETTE}
+    for kind in gameplay_kinds():
+        assert kind in kinds, f"la palette doit lister le gameplay '{kind}'"
+    assert "rock" in kinds and "enemy" in kinds and "spike" in kinds
+
+    document = EditorDocument.from_file("level_1_tuto.json")
+    assert document.columns > 0 and document.rows > 0
+    assert document.counts().get("player_spawn", 0) >= 1
+
+    column, row = 4, 4
+    before = document.cell(column, row)
+    painted = document.paint(((column, row),), "spike")
+    assert painted
+    assert document.cell(column, row) == "spike"
+    document.undo()
+    assert document.cell(column, row) == before
+    document.redo()
+    assert document.cell(column, row) == "spike"
+    document.undo()
+
+    rect = GridRect(2, 2, 6, 5)
+    document.fill_rect(rect, "grass")
+    for cell_column, cell_row in rect.cells():
+        assert document.cell(cell_column, cell_row) == "grass"
+    document.replace_kind("grass", "rock", rect)
+    for cell_column, cell_row in rect.cells():
+        assert document.cell(cell_column, cell_row) == "rock"
+    document.undo()
+    document.undo()
+
+    block = document.block(GridRect(0, 0, 2, 2))
+    assert block is not None
+    stamped = document.stamp(8, 8, block)
+    assert stamped
+    document.undo()
+
+    target = Path(tempfile.mkdtemp()) / "editor_roundtrip.json"
+    saved = document.save(target)
+    payload = json.loads(saved.read_text(encoding="utf-8"))
+    assert payload["rows"], "la carte reecrite doit avoir des lignes"
+    assert "player_spawn" in payload["legend"].values()
+    saved.unlink()
+    print(f"  editeur document -> {document.columns}x{document.rows}, "
+          f"{len(palette.PALETTE)} elements de palette")
+
+
+def check_editor_views(window: arcade.Window) -> None:
+    """Le navigateur et la vue d'edition se dessinent, peignent et annulent."""
+    from src.editor.browser import BrowserView
+    from src.editor.document import EditorDocument
+    from src.editor.edit_view import EditView, Tool
+
+    browser = BrowserView()
+    window.show_view(browser)
+    browser.on_draw()
+    browser.on_resize(window.width, window.height)
+
+    document = EditorDocument.from_file("level_1_tuto.json")
+    view = EditView(document)
+    window.show_view(view)
+    view.on_show_view()
+    view.on_draw()
+    view.kind = "rock"
+    view.tool = Tool.BRUSH
+    screen_x = view.canvas.viewport.center_x
+    screen_y = view.canvas.viewport.center_y
+    view.on_mouse_press(screen_x, screen_y, arcade.MOUSE_BUTTON_LEFT, 0)
+    view.on_mouse_release(screen_x, screen_y, arcade.MOUSE_BUTTON_LEFT, 0)
+    view.on_key_press(arcade.key.Z, arcade.key.MOD_CTRL)
+    view.on_key_press(arcade.key.Z, arcade.key.MOD_CTRL | arcade.key.MOD_SHIFT)
+    view.on_draw()
+    print("  editeur vues -> navigateur et grille OK")
+
+
 def main() -> int:
     print("Project Astral Platformer - smoke test")
-    print("[1/8] chargement des cartes")
+    print("[1/10] chargement des cartes")
     check_levels()
-    print("[2/8] progression et ameliorations")
+    print("[2/10] progression et ameliorations")
     check_progression()
-    print("[3/8] event manager")
+    print("[3/10] event manager")
     check_event_manager()
-    print("[4/8] IA ennemie")
+    print("[4/10] modele de l'editeur")
+    check_editor_document()
+    print("[5/10] IA ennemie")
     check_enemy_ai()
 
     window = arcade.Window(
@@ -454,14 +540,16 @@ def main() -> int:
     )
     assert window.vsync
     try:
-        print("[5/8] boucle de jeu")
+        print("[6/10] boucle de jeu")
         check_gameplay_loop(window)
-        print("[6/8] defilement vertical de la camera")
+        print("[7/10] defilement vertical de la camera")
         check_vertical_scroll(window)
-        print("[7/8] solution du niveau tutoriel")
+        print("[8/10] solution du niveau tutoriel")
         check_tutorial_is_solvable(window)
-        print("[8/8] menus")
+        print("[9/10] menus")
         check_menus(window)
+        print("[10/10] vues de l'editeur")
+        check_editor_views(window)
     finally:
         window.close()
     print("OK : le squelette demarre et tourne.")

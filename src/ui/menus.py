@@ -156,6 +156,9 @@ class GameOverView(_HeldKeysMixin, arcade.View):
         if symbol in (arcade.key.ENTER, arcade.key.RETURN, arcade.key.NUM_ENTER):
             self.window.show_view(PlayView(self.session))
         elif symbol == arcade.key.ESCAPE:
+            if self.session.on_leave is not None:
+                self.session.on_leave()
+                return
             self.window.show_view(TitleView(self.session))
 
 
@@ -192,4 +195,7 @@ class VictoryView(_HeldKeysMixin, arcade.View):
         if handle_display_key(self.window, symbol, modifiers):
             return
         if symbol == arcade.key.ESCAPE:
+            if self.session.on_leave is not None:
+                self.session.on_leave()
+                return
             self.window.show_view(TitleView(self.session))

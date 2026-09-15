@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import math
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import Enum, auto
 
@@ -129,13 +130,21 @@ class GameSession:
     level_index: int = 0
     deaths: int = 0
     knows_esprit: bool = False
+    # Carte jouee a la place de LEVEL_SEQUENCE (essai depuis l'editeur).
+    map_override: str | None = None
+    # Si renseigne, Echap (et l'ecran de victoire) ramene a l'appelant.
+    on_leave: Callable[[], None] | None = None
 
     @property
     def level_file(self) -> str:
+        if self.map_override:
+            return self.map_override
         return settings.LEVEL_SEQUENCE[self.level_index]
 
     @property
     def is_last_level(self) -> bool:
+        if self.map_override:
+            return True
         return self.level_index >= len(settings.LEVEL_SEQUENCE) - 1
 
     def advance_level(self) -> bool:
@@ -151,6 +160,8 @@ class GameSession:
         self.level_index = 0
         self.deaths = 0
         self.knows_esprit = False
+        self.map_override = None
+        self.on_leave = None
 
 
 # --------------------------------------------------------------------------- #
@@ -626,6 +637,9 @@ class PlayView(arcade.View):
         self.held_keys.add(symbol)
         state = self.machine.state
         if symbol == arcade.key.ESCAPE:
+            if self.session.on_leave is not None:
+                self.session.on_leave()
+                return
             self.window.show_view(TitleView(self.session))
             return
         if state is GameState.PLAYING:
