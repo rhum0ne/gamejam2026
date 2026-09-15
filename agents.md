@@ -74,7 +74,8 @@ automatiquement (supprime `.venv/` pour forcer une reinstallation).
 
 `tools/smoke_test.py` cree une fenetre invisible (`visible=False`) : il ne
 demande aucune interaction et peut tourner en CI. Il verifie, dans l'ordre :
-les cartes se chargent, la progression d'ames fonctionne, la boucle
+les cartes se chargent, la progression d'ames fonctionne, les pieges caches
+s'arment avec leur delai et la vision spectrale les signale, la boucle
 `PLAYING -> GHOST -> RESPAWNING -> PLAYING` s'enchaine, **le niveau 1 est
 resolvable de bout en bout**, et les menus se dessinent. Un `exit code` non nul
 signifie que le squelette est casse : repare avant de continuer.
@@ -219,6 +220,9 @@ separation : elle permet de tester les regles sans contexte OpenGL.
 * Ramasse automatiquement au contact les objets `ghost_can_carry`, et les
   **livre en touchant le cadavre** (`_delivered_items` -> inventaire du corps a
   la reapparition).
+* Dans son rayon de vision, revele les textes secrets (`ghost_messages`) et
+  anime une nuee de petits fantomes autour des `hidden_spike`, sans rendre le
+  piege lui-meme visible.
 * Fin du mode : timer a zero, ou touche `R`.
 
 ### Cadavre — `entities/corpse.py`
@@ -252,7 +256,10 @@ separation : elle permet de tester les regles sans contexte OpenGL.
   "name": "Le Puits Mortel",
   "hint": "texte affiche en bas de l'ecran",
   "tile_size": 32,
-  "legend": { "#": "wall", "^": "spike", "P": "player_spawn" },
+  "legend": { "#": "wall", "^": "spike", "!": "hidden_spike", "P": "player_spawn" },
+  "ghost_messages": [
+    { "column": 4, "row": 1, "text": "Texte visible par le fantome" }
+  ],
   "rows": ["########", "#..P...#"]
 }
 ```
@@ -262,8 +269,12 @@ separation : elle permet de tester les regles sans contexte OpenGL.
   `LevelFormatError`).
 * `.` = vide (implicite). Tout autre symbole doit figurer dans `legend`.
 * Types disponibles (cles de `_FACTORIES` dans `world/level.py`) :
-  `wall`, `spectral_wall`, `spike`, `door`, `checkpoint`, `player_spawn`,
-  `key`, `soul_orb`, `enemy`.
+  `wall`, `spectral_wall`, `spike`, `hidden_spike`, `door`, `checkpoint`,
+  `player_spawn`, `key`, `soul_orb`, `enemy`.
+* `hidden_spike` est invisible et s'active apres un contact continu de
+  `settings.HIDDEN_TRAP_ACTIVATION_DELAY` secondes. `ghost_messages` est
+  optionnel et accepte des textes places par coordonnees de grille
+  (`column`, `row`).
 
 **Ajouter un type de tuile** : creer la classe dans `world/obstacles.py` (ou
 l'entite dans `entities/`), ajouter une petite fonction `_add_xxx` et son entree
@@ -406,5 +417,5 @@ transition de niveau est automatique (`GameSession.advance_level`).
 | Portee / longe | `GhostStats.max_range`, `Ghost.leash_ratio` |
 | Perception extra-sensorielle | `GhostStats.vision_radius`, `Ghost.reveals()` |
 | Mur passe-muraille | `SpectralWall` |
-| Piques | `Spike` |
+| Piques | `Spike`, `HiddenSpike` |
 | Arbre d'ameliorations | `UPGRADES`, `UpgradeTreeView` |

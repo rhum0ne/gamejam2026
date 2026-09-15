@@ -27,12 +27,17 @@ from src.world.obstacles import Door
 
 def player_hits_hazard(player: Player, level: Level) -> bool:
     """Le corps physique touche-t-il un piege mortel (piques) ?"""
-    if not player.alive:
-        return False
     return any(
         getattr(hazard, "lethal_for_body", True)
-        for hazard in arcade.check_for_collision_with_list(player, level.hazards)
+        for hazard in hazards_touched_by_player(player, level)
     )
+
+
+def hazards_touched_by_player(player: Player, level: Level) -> list[arcade.Sprite]:
+    """Retourne les pieges en contact avec le corps physique vivant."""
+    if not player.alive:
+        return []
+    return arcade.check_for_collision_with_list(player, level.hazards)
 
 
 def player_out_of_bounds(player: Player, level: Level) -> bool:

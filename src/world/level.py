@@ -30,11 +30,19 @@ import arcade
 import settings
 from src.entities.enemy import Enemy
 from src.entities.item import Item, ItemKind
-from src.world.obstacles import Checkpoint, Door, SpectralWall, Spike, Wall
+from src.world.obstacles import Checkpoint, Door, HiddenSpike, SpectralWall, Spike, Wall
 
 
 class LevelFormatError(ValueError):
     """Carte invalide : symbole inconnu, lignes de longueurs differentes, etc."""
+
+
+@dataclass(slots=True)
+class GhostMessage:
+    """Texte present dans le monde et lisible uniquement en mode fantome."""
+
+    text: str
+    position: tuple[float, float]
 
 
 @dataclass(slots=True)
@@ -54,6 +62,7 @@ class Level:
     items: arcade.SpriteList = field(default_factory=arcade.SpriteList)
     enemies: arcade.SpriteList = field(default_factory=arcade.SpriteList)
     corpses: arcade.SpriteList = field(default_factory=arcade.SpriteList)
+    ghost_messages: list[GhostMessage] = field(default_factory=list)
     player_spawn: tuple[float, float] = (0.0, 0.0)
     checkpoint_spawn: tuple[float, float] = (0.0, 0.0)
 
@@ -93,6 +102,7 @@ class Level:
             rows=len(grid),
         )
         level._build(grid, legend)
+        level._build_ghost_messages(data.get("ghost_messages", []))
         return level
 
     def _build(self, grid: list[str], legend: dict[str, str]) -> None:
@@ -111,6 +121,37 @@ class Level:
                     raise LevelFormatError(f"type de tuile inconnu : '{kind}'")
                 center = self.tile_center(column_index, row_index, len(grid))
                 factory(self, *center)
+
+    def _build_ghost_messages(self, raw_messages: object) -> None:
+        """Valide et convertit les textes secrets en positions monde."""
+        if raw_messages is None:
+            return
+        if not isinstance(raw_messages, list):
+            raise LevelFormatError("'ghost_messages' doit etre une liste")
+
+        for index, raw_message in enumerate(raw_messages):
+            if not isinstance(raw_message, dict):
+                raise LevelFormatError(f"message fantome invalide a l'index {index}")
+            text = raw_message.get("text")
+            if not isinstance(text, str) or not text.strip():
+                raise LevelFormatError(f"message fantome sans texte a l'index {index}")
+            try:
+                column = int(raw_message["column"])
+                row = int(raw_message["row"])
+            except (KeyError, TypeError, ValueError) as error:
+                raise LevelFormatError(
+                    f"coordonnees invalides pour le message fantome a l'index {index}"
+                ) from error
+            if not (0 <= column < self.columns and 0 <= row < self.rows):
+                raise LevelFormatError(
+                    f"message fantome hors de la carte a l'index {index}"
+                )
+            self.ghost_messages.append(
+                GhostMessage(
+                    text=text,
+                    position=self.tile_center(column, row, self.rows),
+                )
+            )
 
     def tile_center(self, column: int, row: int, total_rows: int) -> tuple[float, float]:
         """Convertit des coordonnees de grille en coordonnees monde (pixels)."""
@@ -146,7 +187,9 @@ class Level:
         """Dessine le decor puis les entites, dans l'ordre d'empilement voulu."""
         self.walls.draw()
         self.spectral_walls.draw()
-        self.hazards.draw()
+        for hazard in self.hazards:
+            if not getattr(hazard, "hidden", False):
+                arcade.draw_sprite(hazard)
         self.checkpoints.draw()
         self.doors.draw()
         self.corpses.draw()
@@ -174,6 +217,10 @@ def _add_spectral_wall(level: Level, x: float, y: float) -> None:
 
 def _add_spike(level: Level, x: float, y: float) -> None:
     level.hazards.append(Spike(x, y, size=level.tile_size))
+
+
+def _add_hidden_spike(level: Level, x: float, y: float) -> None:
+    level.hazards.append(HiddenSpike(x, y, size=level.tile_size))
 
 
 def _add_door(level: Level, x: float, y: float) -> None:
@@ -207,6 +254,7 @@ _FACTORIES: dict[str, Callable[[Level, float, float], None]] = {
     "wall": _add_wall,
     "spectral_wall": _add_spectral_wall,
     "spike": _add_spike,
+    "hidden_spike": _add_hidden_spike,
     "door": _add_door,
     "checkpoint": _add_checkpoint,
     "player_spawn": _add_player_spawn,

@@ -56,6 +56,36 @@ def check_progression() -> None:
           f"portee fantome {progression.ghost_stats.max_range:.0f} px")
 
 
+def check_ghost_hints(window: arcade.Window) -> None:
+    """Les pieges caches s'arment avec delai et sont signales au fantome."""
+    view = PlayView(GameSession())
+    window.show_view(view)
+    hidden_trap = next(
+        hazard for hazard in view.level.hazards if getattr(hazard, "ghost_warning", False)
+    )
+    assert getattr(hidden_trap, "hidden", False)
+    assert not hidden_trap.lethal_for_body
+
+    hidden_trap.update_contact(True, settings.HIDDEN_TRAP_ACTIVATION_DELAY - FRAME)
+    assert hidden_trap.activation_ratio < 1.0
+    assert not hidden_trap.lethal_for_body, "le piege ne doit pas tuer avant le delai"
+    hidden_trap.update_contact(True, FRAME)
+    assert hidden_trap.lethal_for_body, "le piege doit s'activer apres un contact continu"
+    hidden_trap.update_contact(False, FRAME)
+    assert not hidden_trap.lethal_for_body, "sortir du piege doit annuler son activation"
+
+    assert view.level.ghost_messages
+    view.on_key_press(arcade.key.F, 0)
+    assert view.machine.state is GameState.GHOST
+    assert view.ghost is not None
+    view.ghost.center_x = hidden_trap.center_x
+    view.ghost.center_y = hidden_trap.center_y
+    assert view.ghost.reveals(hidden_trap)
+    assert view.ghost.reveals_position(view.level.ghost_messages[0].position)
+    view.on_draw()
+    print("  vision spectrale -> nuee animee et texte secret visibles au rapprochement")
+
+
 def advance(view: arcade.View, frames: int) -> None:
     for _ in range(frames):
         view.on_update(FRAME)
@@ -201,9 +231,9 @@ def check_menus(window: arcade.Window) -> None:
 
 def main() -> int:
     print("Project Astral Platformer - smoke test")
-    print("[1/5] chargement des cartes")
+    print("[1/6] chargement des cartes")
     check_levels()
-    print("[2/5] progression et ameliorations")
+    print("[2/6] progression et ameliorations")
     check_progression()
 
     window = arcade.Window(
@@ -213,11 +243,13 @@ def main() -> int:
         visible=False,
     )
     try:
-        print("[3/5] boucle de jeu")
+        print("[3/6] vision spectrale")
+        check_ghost_hints(window)
+        print("[4/6] boucle de jeu")
         check_gameplay_loop(window)
-        print("[4/5] solution du niveau tutoriel")
+        print("[5/6] solution du niveau tutoriel")
         check_tutorial_is_solvable(window)
-        print("[5/5] menus")
+        print("[6/6] menus")
         check_menus(window)
     finally:
         window.close()

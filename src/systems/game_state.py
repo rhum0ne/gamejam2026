@@ -18,6 +18,7 @@ methodes, pour eviter un import circulaire.
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
 from enum import Enum, auto
 
@@ -166,6 +167,8 @@ class PlayView(arcade.View):
         self.held_keys: set[int] = set()
         self._respawn_timer = 0.0
         self._delivered_items: list[ItemKind] = []
+        self._ghost_hint_time = 0.0
+        self._ghost_message_labels: list[arcade.Text] = []
         self.setup()
 
     # ------------------------------------------------------------------ #
@@ -175,6 +178,17 @@ class PlayView(arcade.View):
     def setup(self) -> None:
         """(Re)charge le niveau courant de la session et remet les entites a zero."""
         self.level = Level.from_file(self.session.level_file)
+        self._ghost_message_labels = [
+            arcade.Text(
+                message.text,
+                message.position[0],
+                message.position[1] + settings.TILE_SIZE,
+                settings.COLOR_GHOST_TEXT,
+                font_size=settings.GHOST_TEXT_SIZE,
+                anchor_x="center",
+            )
+            for message in self.level.ghost_messages
+        ]
         self.player = Player(*self.level.player_spawn)
         self.player.respawn_point = self.level.checkpoint_spawn
         self.player.bind_world(self.level.solid_platforms)
@@ -187,6 +201,7 @@ class PlayView(arcade.View):
         self.held_keys.clear()
         self._respawn_timer = 0.0
         self._delivered_items.clear()
+        self._ghost_hint_time = 0.0
         self.machine = GameStateMachine(GameState.MENU)
         self.machine.to(GameState.PLAYING)
 
@@ -233,11 +248,78 @@ class PlayView(arcade.View):
             for sprite in sprite_list:
                 if ghost.reveals(sprite):
                     arcade.draw_sprite(sprite)
+        for message, label in zip(self.level.ghost_messages, self._ghost_message_labels):
+            if ghost.reveals_position(message.position):
+                label.draw()
+        for hazard in self.level.hazards:
+            if getattr(hazard, "ghost_warning", False) and ghost.reveals(hazard):
+                self._draw_ghost_trap_warning(ghost, hazard)
         arcade.draw_line(*ghost.anchor, ghost.center_x, ghost.center_y, settings.COLOR_GHOST, 1)
         arcade.draw_circle_outline(
             ghost.center_x, ghost.center_y, ghost.vision_radius, settings.COLOR_GHOST, 1
         )
         arcade.draw_sprite(ghost)
+
+    def _draw_ghost_trap_warning(self, ghost: Ghost, trap: arcade.Sprite) -> None:
+        """Dessine une nuee animee qui signale un piege encore invisible."""
+        distance = math.dist((ghost.center_x, ghost.center_y), trap.position)
+        reveal_ratio = 1.0 - distance / max(1.0, ghost.vision_radius)
+        reveal_ratio = max(0.0, min(1.0, reveal_ratio))
+        offsets = settings.GHOST_TRAP_MARKER_OFFSETS
+        visible_count = max(1, math.ceil(reveal_ratio * len(offsets)))
+
+        for index, (offset_x, offset_y) in enumerate(offsets[:visible_count]):
+            phase = self._ghost_hint_time * 5.0 + index * 0.75
+            wave = math.sin(phase)
+            pulse = (math.sin(phase * 1.35) + 1.0) / 2.0
+            scale = 0.72 + reveal_ratio * 0.28 + pulse * 0.08
+            marker_size = settings.GHOST_TRAP_MARKER_SIZE * scale
+            center_x = trap.center_x + offset_x
+            center_y = trap.center_y + offset_y + wave * 2.5
+            alpha = int(80 + reveal_ratio * 145 + pulse * 25)
+            color = (*settings.COLOR_GHOST_WARNING, alpha)
+
+            body_half_width = marker_size * 0.9
+            body_bottom = center_y - marker_size * 1.2
+            body_top = center_y + marker_size * 0.55
+            arcade.draw_circle_filled(
+                center_x,
+                center_y + marker_size * 0.75,
+                marker_size,
+                color,
+            )
+            arcade.draw_lrbt_rectangle_filled(
+                center_x - body_half_width,
+                center_x + body_half_width,
+                body_bottom,
+                body_top,
+                color,
+            )
+            arcade.draw_circle_filled(
+                center_x - marker_size * 0.55,
+                body_bottom,
+                marker_size * 0.45,
+                color,
+            )
+            arcade.draw_circle_filled(
+                center_x + marker_size * 0.55,
+                body_bottom,
+                marker_size * 0.45,
+                color,
+            )
+            eye_size = max(1.0, marker_size * 0.18)
+            arcade.draw_circle_filled(
+                center_x - marker_size * 0.35,
+                center_y + marker_size * 0.85,
+                eye_size,
+                settings.COLOR_BACKGROUND,
+            )
+            arcade.draw_circle_filled(
+                center_x + marker_size * 0.35,
+                center_y + marker_size * 0.85,
+                eye_size,
+                settings.COLOR_BACKGROUND,
+            )
 
     def _hud_data(self) -> HudData:
         state = self.machine.state
@@ -272,7 +354,7 @@ class PlayView(arcade.View):
         self.player.walk(self._horizontal_input())
         self.player.update(delta_time)
         self._update_enemies(delta_time)
-        self._resolve_player_collisions()
+        self._resolve_player_collisions(delta_time)
         if self.machine.state is GameState.PLAYING:
             self.camera.follow(self.player, delta_time)
 
@@ -280,6 +362,7 @@ class PlayView(arcade.View):
         ghost = self.ghost
         if ghost is None:
             return
+        self._ghost_hint_time += delta_time
         ghost.steer(self._horizontal_input(), self._vertical_input())
         if self.anchor_corpse is not None and self.anchor_corpse.time_left > 0:
             ghost.anchor = (self.anchor_corpse.center_x, self.anchor_corpse.center_y)
@@ -309,7 +392,7 @@ class PlayView(arcade.View):
     # Consequences des collisions
     # ------------------------------------------------------------------ #
 
-    def _resolve_player_collisions(self) -> None:
+    def _resolve_player_collisions(self, delta_time: float = settings.FRAME_TIME) -> None:
         stomped = collisions.enemy_stomped_by_player(self.player, self.level.enemies)
         if stomped is not None:
             orb = stomped.take_damage()
@@ -327,8 +410,15 @@ class PlayView(arcade.View):
             self._complete_level()
             return
 
+        touched_hazards = collisions.hazards_touched_by_player(self.player, self.level)
+        touched_hazard_ids = {id(hazard) for hazard in touched_hazards}
+        for hazard in self.level.hazards:
+            update_contact = getattr(hazard, "update_contact", None)
+            if update_contact is not None:
+                update_contact(id(hazard) in touched_hazard_ids, delta_time)
+
         lethal = (
-            collisions.player_hits_hazard(self.player, self.level)
+            any(getattr(hazard, "lethal_for_body", True) for hazard in touched_hazards)
             or collisions.player_out_of_bounds(self.player, self.level)
             or collisions.enemy_touching_player(self.player, self.level.enemies) is not None
         )

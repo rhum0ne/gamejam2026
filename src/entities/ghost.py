@@ -74,9 +74,13 @@ class Ghost(arcade.SpriteSolidColor):
             return 1.0
         return min(1.0, self.distance_to_anchor / self.stats.max_range)
 
+    def reveals_position(self, position: tuple[float, float]) -> bool:
+        """Indique si une position est dans le champ de revelation du fantome."""
+        return math.dist((self.center_x, self.center_y), position) <= self.vision_radius
+
     def reveals(self, sprite: arcade.Sprite) -> bool:
         """Indique si `sprite` est dans le champ de revelation du fantome."""
-        return math.dist((self.center_x, self.center_y), sprite.position) <= self.vision_radius
+        return self.reveals_position(sprite.position)
 
     # ------------------------------------------------------------------ #
     # Commandes

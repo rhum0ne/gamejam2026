@@ -96,6 +96,10 @@ que les menus se dessinent. A lancer avant chaque commit.
 5. Le timer expire (ou `R`) : tu reapparais au checkpoint avec la cle. Franchis
    le puits d'un saut et ouvre la porte.
 
+En mode fantome, les pieges caches restent invisibles. Une nuee de petits
+fantomes apparait progressivement quand tu t'en approches pour signaler le
+danger, tandis que les textes secrets ne sont lisibles que par le fantome.
+
 Un bonus est cache dans le niveau : une **ame** enfermee derriere un mur qui
 ressemble a de la roche ordinaire. Seul le fantome le revele, en s'en
 approchant, et peut le traverser.

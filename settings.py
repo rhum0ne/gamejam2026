@@ -63,6 +63,20 @@ GHOST_DURATION = 12.0  # duree de base du mode fantome, en secondes
 GHOST_MAX_RANGE = 480.0  # distance max autour du cadavre d'ancrage, en pixels
 GHOST_VISION_RADIUS = 160.0  # rayon de revelation des elements caches
 GHOST_CARRY_CAPACITY = 1  # nombre d'objets transportables simultanement
+GHOST_TRAP_MARKER_OFFSETS: tuple[tuple[float, float], ...] = (
+    (-30.0, -2.0),
+    (-20.0, 14.0),
+    (-10.0, 25.0),
+    (0.0, 30.0),
+    (10.0, 25.0),
+    (20.0, 14.0),
+    (30.0, -2.0),
+)
+GHOST_TRAP_MARKER_SIZE = 5.0
+GHOST_TEXT_SIZE = 16
+
+# Un piege cache s'active apres un court contact avec le corps physique.
+HIDDEN_TRAP_ACTIVATION_DELAY = 0.50
 
 # --------------------------------------------------------------------------- #
 # Cadavre
@@ -107,6 +121,8 @@ COLOR_DOOR_OPEN = (96, 170, 110)
 COLOR_CHECKPOINT = (86, 148, 196)
 COLOR_PLAYER = (232, 232, 240)
 COLOR_GHOST = (128, 200, 255)
+COLOR_GHOST_WARNING = (174, 224, 255)
+COLOR_GHOST_TEXT = (182, 220, 255)
 COLOR_CORPSE = (140, 120, 120)
 COLOR_ENEMY = (188, 92, 160)
 COLOR_KEY = (232, 204, 96)
