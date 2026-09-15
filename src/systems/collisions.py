@@ -13,6 +13,7 @@ testables sans fenetre Arcade.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from collections.abc import Iterable
 
 import arcade
@@ -31,10 +32,13 @@ def player_hits_hazard(player: Player, level: Level) -> bool:
     """Le corps physique touche-t-il un piege mortel (piques) ?"""
     if not player.alive:
         return False
-    return any(
-        getattr(hazard, "lethal_for_body", True)
-        for hazard in arcade.check_for_collision_with_list(player, level.hazards)
-    )
+    for hazard_list in (level.hazards, level.falling_spikes):
+        if any(
+            getattr(hazard, "lethal_for_body", True)
+            for hazard in arcade.check_for_collision_with_list(player, hazard_list)
+        ):
+            return True
+    return False
 
 
 def player_out_of_bounds(player: Player, level: Level) -> bool:
@@ -112,3 +116,25 @@ def enemy_stomped_by_player(player: Player, enemies: arcade.SpriteList) -> Enemy
         if player.center_y > enemy.center_y + settings.ENEMY_HEIGHT / 4:
             return enemy
     return None
+
+
+def plate_is_weighted(plate: arcade.Sprite, weights: Sequence[arcade.Sprite]) -> bool:
+    """Un poids (corps, cadavre, ennemi) appuie-t-il sur la plaque ?"""
+    return any(arcade.check_for_collision(plate, body) for body in weights)
+
+
+def enemies_hit_by_falling_spikes(
+    enemies: arcade.SpriteList,
+    falling_spikes: arcade.SpriteList,
+) -> list[Enemy]:
+    """Ennemis touches par une pique en chute."""
+    hit: list[Enemy] = []
+    seen: set[int] = set()
+    for spike in falling_spikes:
+        for enemy in arcade.check_for_collision_with_list(spike, enemies):
+            ident = id(enemy)
+            if ident in seen:
+                continue
+            seen.add(ident)
+            hit.append(enemy)
+    return hit

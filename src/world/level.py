@@ -15,6 +15,27 @@ l'ecran. Chaque caractere est traduit via `legend` :
     - un type de gameplay (`door`, `key`, `player_spawn`, `spectral_wall`, ...) ;
     - ou le nom d'un sprite de terrain (`rock`, `grass`, `spike`, `bedrock`, ...).
 
+Les plaques d'activation sont declarees a part, en coordonnees de grille
+(x = colonne, y = ligne depuis le haut, comme `rows`) :
+
+    "activators": [
+      {
+        "x": 13,
+        "y": 31,
+        "width": 4,
+        "activate": {
+          "setBlock": [
+            {"x": 17, "y": 40, "type": "void"}
+          ]
+        }
+      }
+    ]
+
+`setBlock type=void` retire le bloc existant tant qu'un poids (joueur, cadavre,
+ennemi) reste sur la plaque. `width` est optionnel (1 tuile par defaut).
+Une pique de plafond (`spike_up`) tombe si le bloc au-dessus d'elle disparait :
+elle tue au contact puis se brise au sol.
+
 Pour ajouter un sprite de terrain : deposer le PNG dans `assets/sprites/`,
 l'enregistrer dans `TILE_SPECS` (`src/world/obstacles.py`), puis l'utiliser
 dans la legende de la carte.
@@ -35,6 +56,7 @@ import arcade
 import settings
 from src.entities.enemy import Enemy
 from src.entities.item import Item, ItemKind
+from src.world.mechanisms import GatedTile, Mechanism, PressurePlate, plate_geometry
 from src.world.obstacles import (
     TILE_SPECS,
     Checkpoint,
@@ -91,6 +113,9 @@ class Level:
     items: arcade.SpriteList = field(default_factory=_dynamic_sprite_list)
     enemies: arcade.SpriteList = field(default_factory=_dynamic_sprite_list)
     corpses: arcade.SpriteList = field(default_factory=_dynamic_sprite_list)
+    plates: arcade.SpriteList = field(default_factory=_dynamic_sprite_list)
+    falling_spikes: arcade.SpriteList = field(default_factory=_dynamic_sprite_list)
+    mechanisms: list[Mechanism] = field(default_factory=list)
     torches: arcade.SpriteList = field(default_factory=_dynamic_sprite_list)
     player_spawn: tuple[float, float] = (0.0, 0.0)
     checkpoint_spawn: tuple[float, float] = (0.0, 0.0)
@@ -141,6 +166,7 @@ class Level:
             rows=len(grid),
         )
         level._build(grid, legend)
+        level._bind_activators(data.get("activators", []))
         return level
 
     def _build(self, grid: list[str], legend: dict[str, str]) -> None:
@@ -186,6 +212,71 @@ class Level:
             self.checkpoint_spawn = (nearest.center_x, nearest.center_y)
             return
         self.checkpoint_spawn = self.player_spawn
+
+    def _bind_activators(self, entries: object) -> None:
+        """Pose les plaques et relie chaque `setBlock` au sprite de terrain deja construit."""
+        if not entries:
+            return
+        if not isinstance(entries, list):
+            raise LevelFormatError("activators doit etre une liste")
+        for index, raw in enumerate(entries):
+            if not isinstance(raw, dict):
+                raise LevelFormatError(f"activators[{index}] doit etre un objet JSON")
+            try:
+                mechanism = self._parse_activator(raw)
+            except LevelFormatError as error:
+                raise LevelFormatError(f"activators[{index}] : {error}") from error
+            self.plates.append(mechanism.plate)
+            self.mechanisms.append(mechanism)
+
+    def _parse_activator(self, raw: dict) -> Mechanism:
+        column = _coord(raw, "x", "x_activator", "x_Activator")
+        row = _coord(raw, "y", "y_activator", "y_Activator")
+        width_tiles = int(raw.get("width", 1))
+        if width_tiles < 1:
+            raise LevelFormatError("width doit etre un entier >= 1")
+        self._ensure_in_bounds(column, row)
+        self._ensure_in_bounds(column + width_tiles - 1, row)
+        center_x, center_y, width, height = plate_geometry(
+            column, row, width_tiles, self.tile_size, self.rows
+        )
+        plate = PressurePlate(center_x, center_y, width, height)
+        targets = [
+            self._gated_tile_at(tile_column, tile_row)
+            for tile_column, tile_row in _parse_set_blocks(raw.get("activate"))
+        ]
+        if not targets:
+            raise LevelFormatError("activate.setBlock ne cible aucun bloc")
+        return Mechanism(plate=plate, targets=targets)
+
+    def _gated_tile_at(self, column: int, row: int) -> GatedTile:
+        self._ensure_in_bounds(column, row)
+        sprite = self._terrain_at(column, row)
+        if sprite is None:
+            raise LevelFormatError(
+                f"setBlock void : aucun bloc a ({column}, {row})"
+            )
+        lists = tuple(sprite.sprite_lists)
+        if not lists:
+            raise LevelFormatError(
+                f"setBlock void : le bloc a ({column}, {row}) n'appartient a aucune liste"
+            )
+        return GatedTile(sprite=sprite, lists=lists)
+
+    def _terrain_at(self, column: int, row: int) -> arcade.Sprite | None:
+        x, y = self.tile_center(column, row, self.rows)
+        for sprite_list in (self.walls, self.spectral_walls, self.hazards):
+            for sprite in sprite_list:
+                if abs(sprite.center_x - x) < 1 and abs(sprite.center_y - y) < 1:
+                    return sprite
+        return None
+
+    def _ensure_in_bounds(self, column: int, row: int) -> None:
+        if column < 0 or column >= self.columns or row < 0 or row >= self.rows:
+            raise LevelFormatError(
+                f"coordonnees hors carte : ({column}, {row}) "
+                f"(taille {self.columns}x{self.rows})"
+            )
 
     def tile_center(self, column: int, row: int, total_rows: int) -> tuple[float, float]:
         """Convertit des coordonnees de grille en coordonnees monde (pixels)."""
@@ -239,6 +330,8 @@ class Level:
             self.chunks_drawn = self.chunks_total
         else:
             self.walls_drawn, self.tiles_drawn = self._draw_visible_terrain(view_rect)
+        self.plates.draw()
+        self.falling_spikes.draw()
         self.checkpoints.draw()
         self.doors.draw()
         self._draw_torches(view_rect)
@@ -374,6 +467,34 @@ class Level:
             item.update(delta_time, attractor=attractor)
         self.torches.update(delta_time)
 
+    def update_spikes(self) -> None:
+        """Detache les piques sans plafond, puis les fait tomber jusqu'au sol."""
+        self._release_unsupported_spikes()
+        self._move_falling_spikes()
+
+    def _release_unsupported_spikes(self) -> None:
+        for spike in list(self.hazards):
+            if not getattr(spike, "hanging", False) or getattr(spike, "falling", False):
+                continue
+            if self._ceiling_holds(spike):
+                continue
+            spike.remove_from_sprite_lists()
+            spike.start_fall()
+            self.falling_spikes.append(spike)
+
+    def _ceiling_holds(self, spike: arcade.Sprite) -> bool:
+        probe = (spike.center_x, spike.center_y + self.tile_size)
+        return bool(
+            arcade.get_sprites_at_point(probe, self.walls)
+            or arcade.get_sprites_at_point(probe, self.spectral_walls)
+        )
+
+    def _move_falling_spikes(self) -> None:
+        ground = (self.walls, self.spectral_walls, self.corpses)
+        for spike in list(self.falling_spikes):
+            if spike.fall(ground):
+                spike.remove_from_sprite_lists()
+
 
 # --------------------------------------------------------------------------- #
 # Fabriques de tuiles
@@ -418,6 +539,45 @@ def _add_enemy(level: Level, x: float, y: float) -> None:
     level.enemies.append(Enemy(x, y))
 
 
+def _coord(raw: dict, *keys: str) -> int:
+    for key in keys:
+        if key in raw:
+            return _as_int(raw[key], key)
+    raise LevelFormatError(f"champ manquant ({', '.join(keys)})")
+
+
+def _as_int(value: object, name: str) -> int:
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise LevelFormatError(f"{name} doit etre un entier")
+    return value
+
+
+def _parse_set_blocks(activate: object) -> list[tuple[int, int]]:
+    """Extrait les tuiles `setBlock type=void` d'un objet `activate`."""
+    if activate is None:
+        raise LevelFormatError("activate est requis")
+    if not isinstance(activate, dict):
+        raise LevelFormatError("activate doit etre un objet { setBlock: ... }")
+    if "setBlock" not in activate:
+        raise LevelFormatError("activate.setBlock est requis")
+    block = activate["setBlock"]
+    if isinstance(block, dict):
+        entries = [block]
+    elif isinstance(block, list):
+        entries = block
+    else:
+        raise LevelFormatError("setBlock doit etre un objet ou une liste d'objets")
+    tiles: list[tuple[int, int]] = []
+    for index, entry in enumerate(entries):
+        if not isinstance(entry, dict):
+            raise LevelFormatError(f"setBlock[{index}] doit etre un objet")
+        kind = entry.get("type", "void")
+        if kind != "void":
+            raise LevelFormatError(
+                f"setBlock type '{kind}' non supporte (uniquement 'void')"
+            )
+        tiles.append((_coord(entry, "x"), _coord(entry, "y")))
+    return tiles
 def _add_torch(level: Level, x: float, y: float) -> None:
     level.torches.append(Torch(x, y))
 

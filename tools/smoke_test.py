@@ -42,8 +42,14 @@ def check_levels() -> None:
         assert level.player_spawn != (0.0, 0.0), f"{name} : pas de spawn joueur ('P')"
         assert len(level.walls) > 0, f"{name} : aucun mur"
         assert level.width > 0 and level.height > 0
+        extra = ""
+        if name == "level_1_tuto.json":
+            assert len(level.mechanisms) >= 1, f"{name} : plaque d'activation manquante"
+            hanging = sum(1 for hazard in level.hazards if getattr(hazard, "hanging", False))
+            assert hanging >= 1, f"{name} : pique de plafond manquante"
+            extra = f", {len(level.mechanisms)} plaque(s), {hanging} pique(s) plafond"
         print(f"  carte '{name}' -> {level.name}: {level.columns}x{level.rows} tuiles, "
-              f"{len(level.walls)} murs, {len(level.items)} objets, {len(level.enemies)} ennemis")
+              f"{len(level.walls)} murs, {len(level.items)} objets, {len(level.enemies)} ennemis{extra}")
 
 
 def check_progression() -> None:
@@ -293,6 +299,16 @@ def check_tutorial_is_solvable(window: arcade.Window) -> None:
     assert view.session.knows_esprit
     corpse = view.level.corpses[0]
     key_item = next(item for item in view.level.items if item.kind is ItemKind.KEY)
+    view.on_update(FRAME)
+    view.on_draw()
+    assert view.level.mechanisms, "le tutoriel doit contenir une plaque d'activation"
+    assert view.level.mechanisms[0].pressed, (
+        "le cadavre au bord du puits doit enfoncer la plaque "
+        f"(corpse x={corpse.center_x:.0f}, plate x={view.level.mechanisms[0].plate.center_x:.0f})"
+    )
+    assert all(tile.hidden for tile in view.level.mechanisms[0].targets), (
+        "la plaque doit ouvrir le passage du puits tant que le cadavre appuie"
+    )
 
     def fly_to(target_x: float, target_y: float, is_done, limit: int = 600) -> bool:
         """Pilote le fantome vers un point, avec une zone neutre comme un joueur."""

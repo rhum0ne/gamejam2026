@@ -12,6 +12,7 @@ rectangle plein : changer un PNG ne doit pas modifier la physique.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 import math
 from dataclasses import dataclass
 
@@ -169,11 +170,40 @@ class Spike(arcade.Sprite):
         )
         self.lethal_for_body = True
         self.lethal_for_ghost = False
+        self.hanging = spec.hanging
+        self.falling = False
+        self._tile_size = size
         hit_height = size // 2
         offset_y = (size - hit_height) / 2
         if not spec.hanging:
             offset_y = -offset_y
         sprites.apply_rect_hit_box(self, size, hit_height, offset_y=offset_y)
+
+    def start_fall(self) -> None:
+        """Detache la pique du plafond : elle devient un projectile mortel."""
+        if self.falling:
+            return
+        self.hanging = False
+        self.falling = True
+        self.change_y = 0.0
+        sprites.apply_rect_hit_box(self, self._tile_size, self._tile_size)
+
+    def fall(self, walls: Sequence[arcade.SpriteList]) -> bool:
+        """Fait tomber la pique. Retourne True si elle a touche le sol (a casser)."""
+        if not self.falling:
+            return False
+        self.change_y -= settings.SPIKE_FALL_GRAVITY
+        if self.change_y < -settings.SPIKE_FALL_MAX_SPEED:
+            self.change_y = -settings.SPIKE_FALL_MAX_SPEED
+        previous_y = self.center_y
+        self.center_y += self.change_y
+        for wall_list in walls:
+            if arcade.check_for_collision_with_list(self, wall_list):
+                self.center_y = previous_y
+                return True
+        if self.top < -settings.TILE_SIZE:
+            return True
+        return False
 
 
 class Torch(arcade.SpriteSolidColor):
