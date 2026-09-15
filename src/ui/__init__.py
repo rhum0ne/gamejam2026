@@ -1,1 +1,1 @@
-"""Interface utilisateur : HUD en jeu et ecrans de menu."""
+"""Interface utilisateur : HUD, menus, et chargement des textures."""

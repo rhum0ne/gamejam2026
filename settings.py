@@ -41,6 +41,22 @@ FRAME_TIME = 1 / FPS
 
 TILE_SIZE = 32
 
+# Noms de fichiers dans SPRITES_DIR, sans extension. La legende d'une carte
+# JSON reprend ces noms (ou un alias : rock, dirt). Le chargeur ajoute `.png`.
+SPRITE_DIRT = "dirt_1"
+SPRITE_BEDROCK = "bedrock"
+SPRITE_ROCK_1 = "rock_1"
+SPRITE_ROCK_2 = "rock_2"
+SPRITE_GRASS = "grass"
+SPRITE_GRASS_VARIANT = "grass_1"
+SPRITE_GRASS_CORNER = "grass_corner"
+SPRITE_DIRT_TOP = "dirt_top"
+SPRITE_DIRT_CORNER = "dirt_corner"
+SPRITE_DIRT_CORNER_RIGHT = "dirt_corner_right"
+SPRITE_DIRT_FLOATING = "dirt_floating_block"
+SPRITE_SPIKE = "spike"
+SPRITE_SPIKE_HANGING = "spike_up"
+
 # --------------------------------------------------------------------------- #
 # Physique du corps physique (joueur vivant)
 # --------------------------------------------------------------------------- #

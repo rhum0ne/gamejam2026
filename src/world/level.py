@@ -6,16 +6,18 @@ Format attendu (voir `assets/maps/level_1_tuto.json`) :
       "name": "Le Puits Mortel",
       "hint": "texte affiche dans le HUD",
       "tile_size": 32,
-      "legend": {"#": "wall", ...},
-      "rows": ["####...", "#..P..#", ...]
+      "legend": {"#": "rock", "G": "grass", "^": "spike", ...},
+      "rows": ["####...", "#.P..G#", ...]
     }
 
 `rows` se lit de haut en bas : la premiere chaine est la ligne la plus haute de
-l'ecran. Chaque caractere est traduit via `legend` en un nom de type, lui-meme
-associe a une fabrique de sprite dans `_FACTORIES`.
+l'ecran. Chaque caractere est traduit via `legend` :
+    - un type de gameplay (`door`, `key`, `player_spawn`, `spectral_wall`, ...) ;
+    - ou le nom d'un sprite de terrain (`rock`, `grass`, `spike`, `bedrock`, ...).
 
-Pour ajouter un type de tuile : ajouter le symbole dans la legende de la carte,
-puis une entree dans `_FACTORIES` (et si besoin une classe dans `obstacles.py`).
+Pour ajouter un sprite de terrain : deposer le PNG dans `assets/sprites/`,
+l'enregistrer dans `TILE_SPECS` (`src/world/obstacles.py`), puis l'utiliser
+dans la legende de la carte.
 """
 
 from __future__ import annotations
@@ -31,7 +33,16 @@ import arcade
 import settings
 from src.entities.enemy import Enemy
 from src.entities.item import Item, ItemKind
-from src.world.obstacles import Checkpoint, Door, SpectralWall, Spike, Wall
+from src.world.obstacles import (
+    TILE_SPECS,
+    Checkpoint,
+    Door,
+    SpectralWall,
+    Spike,
+    TileSpec,
+    Wall,
+    tile_spec,
+)
 
 
 def _static_sprite_list() -> arcade.SpriteList:
@@ -122,12 +133,16 @@ class Level:
                 if kind == "vide":
                     continue
                 factory = _FACTORIES.get(kind)
-                if factory is None:
-                    raise LevelFormatError(f"type de tuile inconnu : '{kind}'")
-                center = self.tile_center(column_index, row_index, len(grid))
-                factory(self, *center)
+                if factory is not None:
+                    center = self.tile_center(column_index, row_index, len(grid))
+                    factory(self, *center)
+                    continue
+                if kind in TILE_SPECS:
+                    center = self.tile_center(column_index, row_index, len(grid))
+                    _add_terrain(self, *center, kind)
+                    continue
+                raise LevelFormatError(f"type de tuile inconnu : '{kind}'")
         self._bind_initial_checkpoint()
-
     def _bind_initial_checkpoint(self) -> None:
         """Le spawn initial est le checkpoint le plus proche du joueur, pas le premier 'C' du fichier.
 
@@ -205,16 +220,16 @@ class Level:
 # --------------------------------------------------------------------------- #
 
 
-def _add_wall(level: Level, x: float, y: float) -> None:
-    level.walls.append(Wall(x, y, size=level.tile_size))
+def _add_terrain(level: Level, x: float, y: float, kind: str) -> None:
+    spec: TileSpec = tile_spec(kind)
+    if spec.role == "spike":
+        level.hazards.append(Spike(x, y, size=level.tile_size, tile=kind))
+        return
+    level.walls.append(Wall(x, y, size=level.tile_size, tile=kind))
 
 
 def _add_spectral_wall(level: Level, x: float, y: float) -> None:
     level.spectral_walls.append(SpectralWall(x, y, size=level.tile_size))
-
-
-def _add_spike(level: Level, x: float, y: float) -> None:
-    level.hazards.append(Spike(x, y, size=level.tile_size))
 
 
 def _add_door(level: Level, x: float, y: float) -> None:
@@ -244,9 +259,7 @@ def _add_enemy(level: Level, x: float, y: float) -> None:
 
 
 _FACTORIES: dict[str, Callable[[Level, float, float], None]] = {
-    "wall": _add_wall,
     "spectral_wall": _add_spectral_wall,
-    "spike": _add_spike,
     "door": _add_door,
     "checkpoint": _add_checkpoint,
     "player_spawn": _add_player_spawn,
