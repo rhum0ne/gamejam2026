@@ -17,9 +17,20 @@ import arcade
 import settings
 from src.entities.item import Item
 from src.systems.upgrades import GhostStats
+from src.ui import sprites
 
 
-class Ghost(arcade.SpriteSolidColor):
+def _walk_animation() -> sprites.StripAnimation:
+    frames = sprites.load_strip(settings.SPRITE_GHOST_WALK, settings.SPRITE_FRAME_SIZE)
+    return sprites.StripAnimation(frames, settings.ANIM_WALK_FRAME_TIME, loop=True)
+
+
+def _disappear_animation() -> sprites.StripAnimation:
+    frames = sprites.load_strip(settings.SPRITE_GHOST_DISAPPEAR, settings.SPRITE_FRAME_SIZE)
+    return sprites.StripAnimation(frames, settings.ANIM_GHOST_DISAPPEAR_FRAME_TIME, loop=False)
+
+
+class Ghost(arcade.Sprite):
     """Esprit desincarne, ancre sur le cadavre qui vient d'etre laisse."""
 
     def __init__(
@@ -29,17 +40,18 @@ class Ghost(arcade.SpriteSolidColor):
         stats: GhostStats,
         anchor: tuple[float, float] | None = None,
     ) -> None:
-        super().__init__(
-            settings.GHOST_WIDTH,
-            settings.GHOST_HEIGHT,
-            center_x=center_x,
-            center_y=center_y,
-            color=settings.COLOR_GHOST,
-        )
+        self._walk = _walk_animation()
+        self._disappear = _disappear_animation()
+        super().__init__(self._walk.textures[0], center_x=center_x, center_y=center_y)
+        sprites.apply_rect_hit_box(self, settings.GHOST_WIDTH, settings.GHOST_HEIGHT)
+        self.scale = settings.ENTITY_SCALE
+        self._animator = sprites.Animator(self._walk)
         self.stats = stats
         self.anchor = anchor if anchor is not None else (center_x, center_y)
         self.time_left = stats.duration
         self.carried: list[Item] = []
+        self.facing = 1
+        self._vanishing = False
         self._input = (0.0, 0.0)
         self._solid_walls: arcade.SpriteList | None = None
 
@@ -50,6 +62,15 @@ class Ghost(arcade.SpriteSolidColor):
     def bind_world(self, solid_walls: arcade.SpriteList) -> None:
         """Definit les murs opaques au fantome (murs spectraux exclus)."""
         self._solid_walls = solid_walls
+        self._separate_from_walls()
+
+    def _separate_from_walls(self) -> None:
+        """Remonte le fantome s'il nait a cheval sur un mur (sprite agrandi)."""
+        max_lift = int(abs(self.height)) + settings.TILE_SIZE
+        for _ in range(max_lift):
+            if not arcade.check_for_collision_with_list(self, self._solid_walls):
+                return
+            self.center_y += 1
 
     # ------------------------------------------------------------------ #
     # Etat
@@ -62,6 +83,20 @@ class Ghost(arcade.SpriteSolidColor):
     @property
     def expired(self) -> bool:
         return self.time_left <= 0.0
+
+    @property
+    def vanishing(self) -> bool:
+        return self._vanishing
+
+    @property
+    def vanished(self) -> bool:
+        return self._vanishing and self._animator.finished
+
+    @property
+    def vanish_duration(self) -> float:
+        """Duree reelle de l'animation de disparition, deja affectee par ANIM_SPEED."""
+        animation = self._disappear
+        return animation.frame_time * len(animation.textures) / self._animator.speed
 
     @property
     def distance_to_anchor(self) -> float:
@@ -84,7 +119,20 @@ class Ghost(arcade.SpriteSolidColor):
 
     def steer(self, dx: float, dy: float) -> None:
         """Enregistre la direction demandee par le joueur (composantes -1..1)."""
+        if self._vanishing:
+            self._input = (0.0, 0.0)
+            return
         self._input = (dx, dy)
+
+    def start_vanish(self) -> None:
+        """Joue l'animation de disparition une fois, sans deplacement."""
+        if self._vanishing:
+            return
+        self._vanishing = True
+        self.change_x = 0.0
+        self.change_y = 0.0
+        self._input = (0.0, 0.0)
+        self._animator.play(self._disappear)
 
     def can_carry_more(self) -> bool:
         return len(self.carried) < self.stats.carry_capacity
@@ -111,10 +159,22 @@ class Ghost(arcade.SpriteSolidColor):
 
     def update(self, delta_time: float = settings.FRAME_TIME, *args, **kwargs) -> None:
         self.time_left = max(0.0, self.time_left - delta_time)
+        if not self._vanishing and self.time_left <= self.vanish_duration:
+            self.start_vanish()
+        if self._vanishing:
+            self._advance_animation(delta_time)
+            return
         self._apply_steering(delta_time)
         self._move_axis("x")
         self._move_axis("y")
         self._clamp_to_leash()
+        if abs(self.change_x) > 0.05:
+            self.facing = 1 if self.change_x > 0 else -1
+        self._advance_animation(delta_time)
+
+    def _advance_animation(self, delta_time: float) -> None:
+        self.texture = self._animator.update(delta_time)
+        sprites.apply_facing(self, self.facing)
 
     def _apply_steering(self, delta_time: float) -> None:
         dx, dy = self._input

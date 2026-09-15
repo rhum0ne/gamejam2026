@@ -105,7 +105,7 @@ def on_player_ghost_end(view: PlayView, data: dict) -> None:
     if view.ghost is not None:
         for item in view.ghost.release_all():
             item.drop_at(item.center_x, item.center_y)
-    view.ghost = None
+        view.ghost.start_vanish()
     for wall in view.level.spectral_walls:
         wall.set_revealed(False)
     view._respawn_timer = settings.PLAYER_RESPAWN_DELAY

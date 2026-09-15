@@ -56,14 +56,27 @@ SPRITE_DIRT_CORNER_RIGHT = "dirt_corner_right"
 SPRITE_DIRT_FLOATING = "dirt_floating_block"
 SPRITE_SPIKE = "spike"
 SPRITE_SPIKE_HANGING = "spike_up"
+# Bandeaux d'entites (fichiers tels quels, y compris le typo "gost").
+SPRITE_PLAYER_WALK = "player_walk"
+SPRITE_PLAYER_IDLE = "player_idle"
+SPRITE_GHOST_WALK = "gost_walk"
+SPRITE_GHOST_DISAPPEAR = "gost_disappears"
+SPRITE_FRAME_SIZE = 32
+# Taille a l'ecran des sprites joueur / fantome (1.0 = 32 px).
+ENTITY_SCALE = 1.5
+ANIM_WALK_FRAME_TIME = 0.07
+ANIM_IDLE_FRAME_TIME = 0.12
+ANIM_GHOST_DISAPPEAR_FRAME_TIME = 0.08
+# 1.0 = rythme de base ; plus petit = plus lent (0.5 = deux fois plus lent).
+ANIM_SPEED = 0.5
 
 # --------------------------------------------------------------------------- #
 # Physique du corps physique (joueur vivant)
 # --------------------------------------------------------------------------- #
 
 GRAVITY = 1.0
-PLAYER_WIDTH = 24
-PLAYER_HEIGHT = 44
+PLAYER_WIDTH = SPRITE_FRAME_SIZE
+PLAYER_HEIGHT = SPRITE_FRAME_SIZE
 PLAYER_SPEED = 5.5
 PLAYER_JUMP_SPEED = 17.0
 PLAYER_COYOTE_TIME = 0.10  # secondes de tolerance pour sauter apres une chute

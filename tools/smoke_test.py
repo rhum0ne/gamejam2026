@@ -13,6 +13,7 @@ n'apparait, mais le contexte OpenGL est bien reel, donc `on_draw` est teste.
 from __future__ import annotations
 
 import sys
+from dataclasses import replace
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -149,19 +150,14 @@ def check_vertical_scroll(window: arcade.Window) -> None:
     view.on_key_press(arcade.key.F, 0)
     view.on_key_release(arcade.key.F, 0)
     assert view.ghost is not None
+    # La longe de base ne couvre pas spawn -> fond du puits ; le test
+    # verifie la camera, pas la longe.
+    view.ghost.stats = replace(view.ghost.stats, max_range=2000)
 
-    view.held_keys = {arcade.key.UP}
-    for _ in range(200):
-        view.ghost.time_left = settings.GHOST_DURATION
-        view.on_update(FRAME)
-    up_y = _camera_y(view)
-    assert up_y > start_y + 40, (
-        f"la camera doit monter avec le fantome (depart {start_y:.0f}, haut {up_y:.0f})"
-    )
-
+    # Le spawn est en haut du niveau : la camera y est deja clampee.
+    # On descend dans le puits, puis on remonte, pour tester les deux axes.
     pit_x = 18 * settings.TILE_SIZE + settings.TILE_SIZE / 2
-    view.held_keys.clear()
-    for _ in range(250):
+    for _ in range(300):
         view.held_keys.clear()
         if view.ghost.center_x < pit_x - 6:
             view.held_keys.add(arcade.key.RIGHT)
@@ -175,7 +171,16 @@ def check_vertical_scroll(window: arcade.Window) -> None:
     assert down_y < start_y - 20, (
         f"la camera doit descendre dans le puits (sol {start_y:.0f}, puits {down_y:.0f})"
     )
-    print(f"  camera Y -> {start_y:.0f} (sol) / {up_y:.0f} (montee) / {down_y:.0f} (descente), "
+
+    view.held_keys = {arcade.key.UP}
+    for _ in range(200):
+        view.ghost.time_left = settings.GHOST_DURATION
+        view.on_update(FRAME)
+    up_y = _camera_y(view)
+    assert up_y > down_y + 40, (
+        f"la camera doit remonter avec le fantome (puits {down_y:.0f}, haut {up_y:.0f})"
+    )
+    print(f"  camera Y -> {start_y:.0f} (sol) / {down_y:.0f} (descente) / {up_y:.0f} (montee), "
           f"monde {view.level.height:.0f} px")
 
 
