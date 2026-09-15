@@ -1,1 +1,1 @@
-"""Environnement et decor : chargement de niveau, camera, obstacles."""
+"""Environnement et decor : chargement de niveau, camera, obstacles, atmosphere."""

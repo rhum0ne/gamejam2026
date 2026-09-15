@@ -1,8 +1,11 @@
-"""HUD en jeu : compteur d'ames, timer du fantome, niveau courant.
+"""HUD en jeu : compteur d'ames, timer du fantome, icones clavier.
 
 Le HUD est "sans etat" : la vue de jeu construit un `HudData` a chaque frame et
 le passe a `Hud.draw()`. Les objets `arcade.Text` sont crees une seule fois
 (leur creation est couteuse) puis mis a jour via leur attribut `.text`.
+
+Les invites de commandes sont des icones PNG (`src.ui.keys`) qui passent en
+etat enfonce (glyphes bleus) d'apres `HudData.pressed_keys`.
 
 Le HUD se dessine en coordonnees ecran : il faut donc activer la camera UI
 (`CameraRig.use_ui()`) avant de l'appeler.
@@ -15,6 +18,8 @@ from dataclasses import dataclass
 import arcade
 
 import settings
+from src.ui import keys
+from src.ui.fonts import PIXEL_FONT
 
 
 @dataclass(frozen=True, slots=True)
@@ -32,6 +37,12 @@ class HudData:
     ghost_duration: float = settings.GHOST_DURATION
     leash_ratio: float = 0.0
     fps: float | None = None
+    dash_ratio: float | None = None
+    dash_ready: bool = False
+    dash_flash: float = 0.0
+    controls: str = ""
+    pressed_keys: frozenset[int] = frozenset()
+    show_esprit: bool = False
 
 
 class Hud:
@@ -82,13 +93,8 @@ class Hud:
             color,
             font_size=size,
             anchor_x=anchor_x,
+            font_name=PIXEL_FONT,
         )
-
-    def resize(self, screen_width: int, screen_height: int) -> None:
-        """Repositionne les textes apres un redimensionnement de la fenetre."""
-        self.screen_width = screen_width
-        self.screen_height = screen_height
-        self._build_texts()
 
     def draw(self, data: HudData) -> None:
         """Dessine le HUD a partir de l'instantane fourni."""
@@ -102,16 +108,64 @@ class Hud:
         self._state_text.draw()
         self._essence_text.draw()
         self._key_text.draw()
-        if data.hint:
-            self._hint_text.draw()
         if data.fps is not None:
             self._fps_text.text = f"{data.fps:.0f} FPS"
             self._fps_text.draw()
+        if data.controls == "playing":
+            keys.draw_prompt_row(
+                self.screen_width / 2,
+                self._MARGIN + settings.UI_KEY_ICON_HEIGHT / 2 + 4,
+                keys.playing_prompts(show_esprit=data.show_esprit),
+                data.pressed_keys,
+            )
+        elif data.controls == "ghost":
+            keys.draw_prompt_row(
+                self.screen_width / 2,
+                self._MARGIN + settings.UI_KEY_ICON_HEIGHT / 2 + 4,
+                keys.GHOST_PROMPTS,
+                data.pressed_keys,
+            )
+        elif data.hint:
+            self._hint_text.text = data.hint
+            self._hint_text.draw()
+        if data.dash_ratio is not None:
+            self._draw_dash_gauge(data)
         if data.ghost_time_left is not None:
             self._draw_ghost_gauges(data)
 
+    def _draw_dash_gauge(self, data: HudData) -> None:
+        """Petite jauge de recharge du dash, en bas a droite."""
+        width, height = 88, 8
+        right = self.screen_width - self._MARGIN
+        left = right - width
+        bottom = self._MARGIN + settings.UI_KEY_ICON_HEIGHT + 12
+        top = bottom + height
+        ratio = max(0.0, min(1.0, data.dash_ratio or 0.0))
+        arcade.draw_lrbt_rectangle_filled(
+            left, right, bottom, top, settings.COLOR_HUD_BAR_BACKGROUND
+        )
+        fill_color = settings.COLOR_DASH if data.dash_ready else settings.COLOR_DASH_GAUGE
+        if ratio > 0.0:
+            arcade.draw_lrbt_rectangle_filled(
+                left, left + width * ratio, bottom, top, fill_color
+            )
+        if data.dash_flash > 0.0:
+            pad = 2 + 6 * data.dash_flash
+            arcade.draw_lrbt_rectangle_outline(
+                left - pad,
+                right + pad,
+                bottom - pad,
+                top + pad,
+                (*settings.COLOR_DASH, int(230 * data.dash_flash)),
+                2,
+            )
+        elif data.dash_ready:
+            arcade.draw_lrbt_rectangle_outline(
+                left - 1, right + 1, bottom - 1, top + 1, settings.COLOR_DASH, 1
+            )
+
     def _draw_ghost_gauges(self, data: HudData) -> None:
-        """Jauge de temps restant du fantome et tension de la longe."""
+        """Jauge de temps restant du fantome."""
         time_left = max(0.0, data.ghost_time_left or 0.0)
         ratio = time_left / data.ghost_duration if data.ghost_duration else 0.0
         center_x = self.screen_width / 2
@@ -127,8 +181,3 @@ class Hud:
         )
         self._timer_text.text = f"Retour au corps dans {time_left:0.1f} s"
         self._timer_text.draw()
-
-        if data.leash_ratio > 0.75:
-            arcade.draw_lrbt_rectangle_outline(
-                left - 3, left + self._BAR_WIDTH + 3, bottom - 3, top + 3, settings.COLOR_SPIKE, 2
-            )

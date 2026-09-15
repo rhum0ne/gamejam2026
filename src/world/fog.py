@@ -1,7 +1,7 @@
 """Voile de vision du fantome : degrade radial noir -> transparent.
 
-Le rayon du degrade suit `Ghost.vision_radius` (donc les ameliorations
-`vision_*` de l'arbre de competences). L'opacite maximale vient de
+Le rayon du degrade suit `Ghost.vision_radius` (bonus des paliers
+`vision_*`, puis reduction au fil du timer). L'opacite maximale vient de
 `settings.FOG_ALPHA`. La texture est construite une seule fois et seulement
 mise a l'echelle a l'affichage.
 """
@@ -25,6 +25,7 @@ class GhostFog:
         self._resolution = max(32, resolution)
         self._fog_alpha = settings.FOG_ALPHA
         self._clear_ratio = settings.GHOST_VISION_CLEAR_RATIO
+        self._falloff_power = settings.GHOST_VISION_FALLOFF_POWER
         self._texture = self._build_texture()
 
     def draw(self, ghost: arcade.Sprite, camera: Camera2D) -> None:
@@ -45,8 +46,8 @@ class GhostFog:
     ) -> None:
         """Remplit de noir tout le viewport sauf le carre du degrade."""
         cam_x, cam_y = camera.position
-        half_w = camera.viewport_width / 2
-        half_h = camera.viewport_height / 2
+        half_w = camera.width / 2
+        half_h = camera.height / 2
         view_left = cam_x - half_w
         view_right = cam_x + half_w
         view_bottom = cam_y - half_h
@@ -80,6 +81,7 @@ class GhostFog:
         fade_span = max(1.0, radius - inner)
         pixels = bytearray(size * size * 4)
         fog_alpha = max(0, min(255, self._fog_alpha))
+        power = max(1.0, self._falloff_power)
         for y in range(size):
             dy = y + 0.5 - radius
             row = y * size * 4
@@ -91,12 +93,11 @@ class GhostFog:
                     alpha = 0
                 else:
                     t = (dist - inner) / fade_span
-                    t = t * t * (3.0 - 2.0 * t)
-                    alpha = int(fog_alpha * t)
+                    alpha = int(fog_alpha * (t ** power))
                 index = row + x * 4
                 pixels[index + 3] = alpha
         image = Image.frombytes("RGBA", (size, size), bytes(pixels))
         return arcade.Texture(
             image,
-            hash=f"ghost-fog-{size}-{fog_alpha}-{self._clear_ratio:.3f}",
+            hash=f"ghost-fog-{size}-{fog_alpha}-{self._clear_ratio:.3f}-{power:.2f}",
         )

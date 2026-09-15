@@ -9,7 +9,8 @@ l'ambiance.
 > traverse certains murs, revele les secrets et rapporte des objets, pendant que
 > le **cadavre** reste sur place et devient un element de gameplay (marchepied,
 > bouclier sur les piques, appat pour les ennemis). Les ames des ennemis vaincus
-> font monter le fantome en niveau.
+> font monter le fantome en niveau : assez d'ames debloquent automatiquement
+plus de portee, de duree, de vision et de capacite de port.
 
 **Etat actuel : squelette jouable.** Le jeu demarre, la boucle complete
 (corps -> mort -> fantome -> cadavre -> reapparition) fonctionne et le niveau
@@ -75,13 +76,15 @@ que les menus se dessinent. A lancer avant chaque commit.
 
 | Touche | Action |
 | --- | --- |
-| `Q` / `D`, ou fleches gauche / droite | Se deplacer |
+| `Q` / `D`, ou fleches gauche / droite | Se deplacer (acceleration ~1 s, glissade tres courte) |
+| `Espace`, `Z` ou fleche haut | Sauter (hauteur variable : relache pour ecourter) |
+| `Maj` | Dash dans la direction actuelle (jauge en bas a droite) |
 | `Espace`, `Z` ou fleche haut | Sauter (hauteur variable : relache pour ecourter) |
 | `ZQSD` / fleches | Diriger le fantome (vol libre, 8 directions) |
 | `F` | Projeter son esprit (le corps meurt sur place et laisse un cadavre) |
-| `R` | En mode fantome : retourner immediatement au corps |
-| `Tab` | Arbre de competences |
+| `R` | En mode fantome : ecourter la projection et reapparaitre tout de suite au dernier checkpoint (au lieu d'attendre la fin du timer) |
 | `F11` (ou Alt/Cmd+Entree) | Plein ecran |
+| `F3` | Afficher / masquer l'overlay de debug (FPS, etat, tuiles a l'ecran) |
 | `Echap` | Retour au menu titre |
 
 ---
@@ -94,14 +97,39 @@ que les menus se dessinent. A lancer avant chaque commit.
 3. Descends dans la fosse avec le fantome (il ne craint ni la chute ni les
    piques) et touche la cle pour la saisir.
 4. Remonte et touche le cadavre pour **livrer** la cle a ton corps.
-5. Le timer expire (ou `R`) : tu reapparais au checkpoint avec la cle. Franchis
-   le puits d'un saut, puis traverse le parcours (fosses, piques, caisses) jusqu'a
-   la porte au bout du niveau. Apres le puits, un **escalier de plateformes**
-   monte hors ecran : la camera te suit aussi a la verticale.
+5. Le timer expire (ou `R` pour ecourter) : tu reapparais au checkpoint avec
+   la cle. Franchis le puits d'un saut, puis traverse le parcours (fosses,
+   piques, caisses) jusqu'a la porte au bout du niveau. Apres le puits, un
+   **escalier de plateformes** monte hors ecran : la camera te suit aussi a
+   la verticale.
 
 Des **checkpoints** jalonnent la course : les toucher met a jour le point de
 reapparition. Plusieurs **ames** sont cachees derriere des murs qui ressemblent
 a de la roche ordinaire : seul le fantome les revele et peut les traverser.
+
+---
+
+## Ames et paliers du fantome
+
+Ramasser une **bille bleue** (orbe d'ame) compte pour 1 ame. Le niveau du
+fantome depend du **total cumule** sur la partie, pas d'un achat : des qu'un
+seuil est atteint, ses bonus s'appliquent tout seuls.
+
+| Niveau fantome | Ames cumulees | Bonus debloques |
+| --- | --- | --- |
+| 1 (depart) | 0 | Stats de base : 480 px de longe, 12 s de timer, 160 px de vision, 1 objet porte |
+| 2 | 3 | **Longe astrale I** (+120 px) et **Persistance I** (+4 s) |
+| 3 | 8 | **Perception I** (+60 px de revelation) |
+| 4 | 15 | **Poigne spectrale I** (+1 objet transporte) |
+| 5 | 25 | (pas de bonus extra pour l'instant) |
+| 6 | 40 | (pas de bonus extra pour l'instant) |
+
+Les bonus sont **additifs** et se cumulent. Exemple au niveau 4 : 600 px de
+longe, 16 s de timer, 220 px de vision, 2 objets.
+
+Les seuils vivent dans `settings.SOUL_LEVEL_THRESHOLDS`, la liste des bonus
+dans `PALIERS` (`src/systems/upgrades.py`). Pour en ajouter un, une entree
+dans `PALIERS` suffit.
 
 ---
 
@@ -116,8 +144,8 @@ settings.py      Toutes les constantes (ecran, FPS, gravite, timers, couleurs)
 assets/          Ressources : sprites/, sons/, maps/ (niveaux JSON)
 src/entities/    Joueur, fantome, cadavre, ennemis, objets
 src/world/       Chargement des niveaux, camera, obstacles
-src/systems/     Etats de jeu, collisions, ameliorations
-src/ui/          HUD et menus
+src/systems/     Etats de jeu, collisions, paliers du fantome
+src/ui/          HUD, overlay de debug et menus
 tools/           Outils de developpement (smoke test)
 ```
 
