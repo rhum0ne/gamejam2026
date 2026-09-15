@@ -87,8 +87,13 @@ SPRITE_PLAYER_IDLE = "player_idle"
 SPRITE_GHOST_WALK = "gost_walk"
 SPRITE_GHOST_DISAPPEAR = "gost_disappears"
 SPRITE_KEY = "key"
+SPRITE_CHECKPOINT = "Check_Point"
+SPRITE_CHECKPOINT_ACTIVE = "Check_Point_actif"
+# PNG natif 32 px, agrandi x2 en nearest-neighbor (pas de flou).
+CHECKPOINT_SIZE = TILE_SIZE * 2
 SPRITE_FRAME_SIZE = 32
 # Taille a l'ecran des sprites joueur / fantome (1.0 = 32 px).
+# L'agrandissement est fait en nearest-neighbor dans `load_strip`.
 ENTITY_SCALE = 1.5
 ANIM_WALK_FRAME_TIME = 0.07
 ANIM_IDLE_FRAME_TIME = 0.12
@@ -124,7 +129,6 @@ SPIKE_GHOST_GLOW_INNER_SCALE = 1.7
 SPIKE_GHOST_GLOW_INNER_ALPHA = 180
 SPIKE_GHOST_GLOW_PULSE = 0.14
 SPIKE_GHOST_GLOW_PULSE_SPEED = 3.2
-# Hitbox locale (taille du sprite). ENTITY_SCALE l'agrandit ensuite.
 PLAYER_WIDTH = SPRITE_FRAME_SIZE
 PLAYER_HEIGHT = SPRITE_FRAME_SIZE
 PLAYER_GRAVITY = 1  # un peu plus leger : saut legerement plus haut et plus lent
@@ -133,6 +137,19 @@ PLAYER_JUMP_SPEED = 18.0
 PLAYER_MAX_FALL_SPEED = 14.0  # px/frame, vitesse verticale max en chute
 PLAYER_COYOTE_TIME = 0.10  # secondes de tolerance pour sauter apres une chute
 PLAYER_RESPAWN_DELAY = 0.4  # secondes avant de reprendre le controle du corps
+# Eclat d'ames bleues sur le totem au moment du respawn.
+CHECKPOINT_BURST_COUNT = 22
+CHECKPOINT_BURST_LIFE = 0.9
+CHECKPOINT_BURST_SPEED_X = 70.0
+CHECKPOINT_BURST_SPEED_Y = 110.0
+CHECKPOINT_BURST_GRAVITY = 80.0  # ralentit la montee (fontaine d'ames)
+CHECKPOINT_BURST_SIZE_MIN = 10.0
+CHECKPOINT_BURST_SIZE_MAX = 22.0
+CHECKPOINT_BURST_CORE_SIZE = 3.2
+CHECKPOINT_BURST_GLOW_ALPHA = 150
+CHECKPOINT_BURST_CORE_ALPHA = 220
+CHECKPOINT_BURST_SPREAD = 10.0
+CHECKPOINT_BURST_MAX = 48
 # Temps pour atteindre PLAYER_SPEED en maintenant une direction au sol.
 PLAYER_ACCEL_TIME = 0.25
 # Glissade a l'arret (sol) : 2-3 frames, quelques pixels tout au plus.
@@ -362,6 +379,8 @@ COLOR_SPIKE_GLOW_CORE = (255, 110, 72)
 COLOR_DOOR_LOCKED = (150, 110, 46)
 COLOR_DOOR_OPEN = (96, 170, 110)
 COLOR_CHECKPOINT = (86, 148, 196)
+COLOR_CHECKPOINT_PARTICLE = (90, 186, 255)
+COLOR_CHECKPOINT_PARTICLE_CORE = (210, 240, 255)
 COLOR_PRESSURE_PLATE = (92, 108, 132)
 COLOR_PRESSURE_PLATE_PRESSED = (64, 168, 214)
 COLOR_MECHANISM_LINK = (80, 190, 255)

@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import math
 import random
 from dataclasses import dataclass
 
 import arcade
 
 import settings
+from src.entities.glow import additive_blend, draw_glow
 
 
 @dataclass(slots=True)
@@ -156,3 +158,95 @@ class DustParticles:
                 color=color,
             )
         )
+
+
+class SoulBurst:
+    """Eclat de motes bleues, utilise au respawn sur un checkpoint."""
+
+    def __init__(self, rng: random.Random | None = None) -> None:
+        self._grains: list[_Grain] = []
+        self._rng = rng if rng is not None else random.Random()
+
+    def clear(self) -> None:
+        self._grains.clear()
+
+    def emit(self, x: float, y: float) -> None:
+        """Propulse un nuage de motes autour de `(x, y)`."""
+        spread = settings.CHECKPOINT_BURST_SPREAD
+        for _ in range(settings.CHECKPOINT_BURST_COUNT):
+            angle = self._rng.uniform(math.pi * 0.18, math.pi * 0.82)
+            speed_x = self._rng.uniform(0.25, 1.0) * settings.CHECKPOINT_BURST_SPEED_X
+            speed_y = self._rng.uniform(0.45, 1.0) * settings.CHECKPOINT_BURST_SPEED_Y
+            vx = math.cos(angle) * speed_x
+            vy = math.sin(angle) * speed_y
+            life = settings.CHECKPOINT_BURST_LIFE * self._rng.uniform(0.65, 1.15)
+            size = self._rng.uniform(
+                settings.CHECKPOINT_BURST_SIZE_MIN,
+                settings.CHECKPOINT_BURST_SIZE_MAX,
+            )
+            color = (
+                settings.COLOR_CHECKPOINT_PARTICLE_CORE
+                if self._rng.random() > 0.55
+                else settings.COLOR_CHECKPOINT_PARTICLE
+            )
+            self._grains.append(
+                _Grain(
+                    x=x + self._rng.uniform(-spread, spread),
+                    y=y + self._rng.uniform(-spread * 0.4, spread),
+                    vx=vx,
+                    vy=vy,
+                    life=life,
+                    max_life=max(life, 0.001),
+                    size=size,
+                    gravity=settings.CHECKPOINT_BURST_GRAVITY,
+                    color=color,
+                )
+            )
+        self._grains = self._grains[-settings.CHECKPOINT_BURST_MAX :]
+
+    def update(self, delta_time: float = settings.FRAME_TIME) -> None:
+        dt = max(0.0, delta_time)
+        alive: list[_Grain] = []
+        for grain in self._grains:
+            grain.life -= dt
+            if grain.life <= 0.0:
+                continue
+            grain.vy -= grain.gravity * dt
+            grain.x += grain.vx * dt
+            grain.y += grain.vy * dt
+            grain.vx *= max(0.0, 1.0 - 1.6 * dt)
+            alive.append(grain)
+        self._grains = alive
+
+    def draw(self) -> None:
+        if not self._grains:
+            return
+        core = settings.CHECKPOINT_BURST_CORE_SIZE
+        with additive_blend():
+            for grain in self._grains:
+                fade = max(0.0, min(1.0, grain.life / grain.max_life))
+                alpha = int(settings.CHECKPOINT_BURST_GLOW_ALPHA * fade)
+                if alpha <= 0:
+                    continue
+                draw_glow(
+                    grain.x,
+                    grain.y,
+                    grain.size,
+                    grain.size,
+                    grain.color,
+                    alpha,
+                    bind_blend=False,
+                )
+        for grain in self._grains:
+            fade = max(0.0, min(1.0, grain.life / grain.max_life))
+            alpha = int(settings.CHECKPOINT_BURST_CORE_ALPHA * fade)
+            if alpha <= 0:
+                continue
+            half = core * (0.45 + 0.55 * fade) / 2
+            arcade.draw_lrbt_rectangle_filled(
+                grain.x - half,
+                grain.x + half,
+                grain.y - half,
+                grain.y + half,
+                (*settings.COLOR_CHECKPOINT_PARTICLE_CORE, alpha),
+            )

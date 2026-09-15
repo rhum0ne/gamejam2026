@@ -204,14 +204,33 @@ class Level:
         nearest = None
         nearest_distance = None
         for checkpoint in self.checkpoints:
-            distance = math.dist(checkpoint.position, self.player_spawn)
+            distance = math.dist(checkpoint.spawn_point, self.player_spawn)
             if nearest_distance is None or distance < nearest_distance:
                 nearest = checkpoint
                 nearest_distance = distance
         if nearest is not None and nearest_distance <= 3 * self.tile_size:
-            self.checkpoint_spawn = (nearest.center_x, nearest.center_y)
+            self.checkpoint_spawn = nearest.spawn_point
             return
         self.checkpoint_spawn = self.player_spawn
+
+    def activate_checkpoint(self, checkpoint: Checkpoint) -> None:
+        """Allume `checkpoint` et eteint les autres totems."""
+        if checkpoint.active:
+            return
+        for other in self.checkpoints:
+            if other is checkpoint:
+                other.activate()
+            else:
+                other.deactivate()
+
+    def checkpoint_at(self, position: tuple[float, float]) -> Checkpoint | None:
+        """Totem dont le point de spawn coincide avec `position`, s'il existe."""
+        x, y = position
+        for checkpoint in self.checkpoints:
+            spawn_x, spawn_y = checkpoint.spawn_point
+            if abs(spawn_x - x) < 1 and abs(spawn_y - y) < 1:
+                return checkpoint
+        return None
 
     def _bind_activators(self, entries: object) -> None:
         """Pose les plaques et relie chaque `setBlock` au sprite de terrain deja construit."""
@@ -332,7 +351,9 @@ class Level:
             self.walls_drawn, self.tiles_drawn = self._draw_visible_terrain(view_rect)
         self.plates.draw()
         self.falling_spikes.draw()
-        self.checkpoints.draw()
+        self.checkpoints.draw(pixelated=True)
+        for checkpoint in self.checkpoints:
+            checkpoint.draw_fx()
         self.doors.draw()
         self._draw_torches(view_rect)
         self.corpses.draw()
@@ -463,6 +484,7 @@ class Level:
         derivent quand elles sont assez proches.
         """
         self.corpses.update(delta_time)
+        self.checkpoints.update(delta_time)
         for item in self.items:
             item.update(delta_time, attractor=attractor)
         self.torches.update(delta_time)

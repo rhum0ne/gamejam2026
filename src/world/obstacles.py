@@ -21,6 +21,7 @@ import arcade
 
 import settings
 from src.entities.glow import draw_glow
+from src.entities.particles import SoulBurst
 from src.ui import sprites
 
 
@@ -313,22 +314,48 @@ class Door(arcade.SpriteSolidColor):
         self.color = settings.COLOR_DOOR_OPEN
 
 
-class Checkpoint(arcade.SpriteSolidColor):
+class Checkpoint(arcade.Sprite):
     """Point de reapparition du corps physique apres la fin du mode fantome."""
 
     def __init__(self, center_x: float, center_y: float, size: int = settings.TILE_SIZE) -> None:
-        super().__init__(
-            size // 2,
-            size,
-            center_x=center_x,
-            center_y=center_y,
-            color=settings.COLOR_CHECKPOINT,
-        )
+        display = settings.CHECKPOINT_SIZE
+        self._idle = sprites.load_texture(settings.SPRITE_CHECKPOINT, size=display)
+        self._lit = sprites.load_texture(settings.SPRITE_CHECKPOINT_ACTIVE, size=display)
+        lift = (display - size) / 2
+        self._spawn = (center_x, center_y)
+        super().__init__(self._idle, center_x=center_x, center_y=center_y + lift)
+        sprites.apply_rect_hit_box(self, size, size, offset_y=-lift)
         self.active = False
+        self._burst = SoulBurst()
+
+    @property
+    def spawn_point(self) -> tuple[float, float]:
+        """Centre de la tuile, pas du sprite (le totem est plus haut que la case)."""
+        return self._spawn
 
     def activate(self) -> None:
+        """Passe a la texture allumee. No-op si deja le checkpoint courant."""
+        if self.active:
+            return
         self.active = True
-        self.color = settings.COLOR_HUD_BAR_FILL
+        self.texture = self._lit
+
+    def deactivate(self) -> None:
+        """Revient a la texture eteinte."""
+        if not self.active:
+            return
+        self.active = False
+        self.texture = self._idle
+
+    def play_respawn(self) -> None:
+        """Eclat de motes bleues : le corps revient ici."""
+        self._burst.emit(self.center_x, self.center_y + self.height * 0.15)
+
+    def update(self, delta_time: float = settings.FRAME_TIME, *args, **kwargs) -> None:
+        self._burst.update(delta_time)
+
+    def draw_fx(self) -> None:
+        self._burst.draw()
 
 
 def is_solid_for_ghost(wall: arcade.Sprite) -> bool:

@@ -131,17 +131,23 @@ def load_strip(
     name: str | Path,
     frame_width: int,
     frame_height: int | None = None,
+    *,
+    scale: float = 1.0,
 ) -> tuple[arcade.Texture, ...]:
     """Decoupe un bandeau horizontal en frames, avec cache.
 
     `frame_height` defaut a la hauteur de l'image. Les pixels restants a
     droite (largeur non multiple) sont ignores.
+
+    `scale` agrandit chaque frame en nearest-neighbor (pixel art, pas de flou).
     """
     if frame_width <= 0:
         raise ValueError("frame_width doit etre strictement positif")
     if frame_height is not None and frame_height <= 0:
         raise ValueError("frame_height doit etre strictement positif")
-    cache_key = f"strip:{name}|{frame_width}|{frame_height or 0}"
+    if scale <= 0:
+        raise ValueError("scale doit etre strictement positif")
+    cache_key = f"strip:{name}|{frame_width}|{frame_height or 0}|{scale:.4f}"
     cached = _STRIP_CACHE.get(cache_key)
     if cached is not None:
         return cached
@@ -152,10 +158,14 @@ def load_strip(
     if columns <= 0 or height > image.height:
         raise ValueError(f"bandeau '{name}' trop petit pour des frames {frame_width}x{height}")
 
+    scaled_width = max(1, round(frame_width * scale))
+    scaled_height = max(1, round(height * scale))
     frames: list[arcade.Texture] = []
     for index in range(columns):
         left = index * frame_width
         crop = image.crop((left, 0, left + frame_width, height))
+        if crop.size != (scaled_width, scaled_height):
+            crop = crop.resize((scaled_width, scaled_height), Image.Resampling.NEAREST)
         texture_key = f"{cache_key}|{index}"
         frames.append(arcade.Texture(crop, hash=texture_key))
     strip = tuple(frames)
@@ -271,6 +281,11 @@ def apply_rect_hit_box(
         (-half_width + offset_x, half_height + offset_y),
     )
     sprite.hit_box = HitBox(points, position=sprite.position)
+
+
+def draw_pixel_sprite(sprite: arcade.Sprite) -> None:
+    """Dessine un sprite en nearest-neighbor (pas de flou GPU)."""
+    arcade.draw_sprite(sprite, pixelated=True)
 
 
 def _open_image(name: str | Path) -> Image.Image:

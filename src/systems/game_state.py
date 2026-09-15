@@ -37,6 +37,7 @@ from src.systems.upgrades import SoulProgression
 from src.ui.debug import DebugOverlay, DebugSnapshot
 from src.ui.display import handle_display_key
 from src.ui.hud import Hud, HudData
+from src.ui.sprites import draw_pixel_sprite
 from src.world.atmosphere import ForegroundAtmosphere
 from src.world.camera import CameraRig
 from src.world.fog import GhostFog
@@ -205,8 +206,9 @@ class PlayView(arcade.View):
         self.player = Player(*self.level.player_spawn)
         self.player.respawn_point = self.level.checkpoint_spawn
         for checkpoint in self.level.checkpoints:
-            if (checkpoint.center_x, checkpoint.center_y) == self.level.checkpoint_spawn:
-                checkpoint.activate()
+            if checkpoint.spawn_point == self.level.checkpoint_spawn:
+                self.level.activate_checkpoint(checkpoint)
+                break
         self.player.bind_world(self.level.static_walls, platforms=[self.level.corpses])
         for enemy in self.level.enemies:
             enemy.bind_world(self._static_platforms())
@@ -236,7 +238,7 @@ class PlayView(arcade.View):
         self.level.draw(self.camera.visible_rect())
         if self.player.alive:
             self.player.draw_fx()
-            arcade.draw_sprite(self.player)
+            draw_pixel_sprite(self.player)
             self.player.draw_particles()
         # Premier plan : passe devant le monde, reste sous le voile fantome et le HUD.
         self.atmosphere.draw(self.camera.world)
@@ -244,7 +246,7 @@ class PlayView(arcade.View):
             if self.machine.state is GameState.GHOST:
                 self._draw_ghost_layer(self.ghost)
             elif self.ghost.vanishing:
-                arcade.draw_sprite(self.ghost)
+                draw_pixel_sprite(self.ghost)
         if settings.DEBUG_SHOW_HITBOXES:
             self._draw_hitboxes()
         self.camera.use_ui()
@@ -284,7 +286,7 @@ class PlayView(arcade.View):
         self._draw_ghost_danger_auras(ghost)
         self._draw_mechanism_hints()
         ghost.draw_fx()
-        arcade.draw_sprite(ghost)
+        draw_pixel_sprite(ghost)
         self._draw_body_arrow(ghost)
 
     def _draw_ghost_danger_auras(self, ghost: Ghost) -> None:
@@ -541,8 +543,8 @@ class PlayView(arcade.View):
 
         checkpoint = collisions.checkpoint_touched_by_player(self.player, self.level)
         if checkpoint is not None:
-            self.player.respawn_point = (checkpoint.center_x, checkpoint.center_y)
-            checkpoint.activate()
+            self.player.respawn_point = checkpoint.spawn_point
+            self.level.activate_checkpoint(checkpoint)
 
         door = collisions.door_touched_by_player(self.player, self.level)
         if door is not None and self.player.has_item(ItemKind.KEY):
