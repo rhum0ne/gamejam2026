@@ -20,6 +20,18 @@ SPRITES_DIR = ASSETS_DIR / "sprites"
 UI_DIR = ASSETS_DIR / "ui"
 SOUNDS_DIR = ASSETS_DIR / "sons"
 MAPS_DIR = ASSETS_DIR / "maps"
+FONTS_DIR = ASSETS_DIR / "fonts"
+
+# --------------------------------------------------------------------------- #
+# Police
+# --------------------------------------------------------------------------- #
+
+# Chargee une fois au demarrage (`main.create_window`) via `arcade.load_font`.
+# "Press Start 2P" est le nom de famille tel qu'embarque dans le fichier .ttf
+# (Google Fonts, licence OFL) : c'est ce nom qu'il faut passer a chaque
+# `arcade.Text(font_name=...)`.
+FONT_FILE = FONTS_DIR / "PressStart2P-Regular.ttf"
+FONT_PIXEL = "Press Start 2P"
 
 # Ordre de parcours des niveaux : le nom du fichier dans assets/maps/.
 LEVEL_SEQUENCE: tuple[str, ...] = ("level_1_tuto.json",)

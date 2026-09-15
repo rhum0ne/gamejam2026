@@ -10,6 +10,7 @@ from dataclasses import dataclass
 import arcade
 
 import settings
+from src.ui.fonts import PIXEL_FONT
 
 _LINE_COUNT = 12
 _LINE_HEIGHT = 16
@@ -63,6 +64,7 @@ class DebugOverlay:
                 _PADDING + 6 + index * _LINE_HEIGHT,
                 settings.COLOR_DEBUG,
                 font_size=11,
+                font_name=PIXEL_FONT,
             )
             for index in range(_LINE_COUNT)
         ]
