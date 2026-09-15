@@ -58,7 +58,8 @@ PLAYER_RESPAWN_DELAY = 0.4  # secondes avant de reprendre le controle du corps
 GHOST_WIDTH = 22
 GHOST_HEIGHT = 30
 GHOST_SPEED = 6.0
-GHOST_ACCELERATION = 0.45  # facteur de lissage du deplacement (0 = inerte)
+GHOST_ACCEL_TIME = 0.20  # secondes pour atteindre la vitesse visee (plus grand = plus mou)
+GHOST_COAST_TIME = 0.48  # secondes pour glisser a l'arret une fois les touches lachees
 GHOST_DURATION = 12.0  # duree de base du mode fantome, en secondes
 GHOST_MAX_RANGE = 480.0  # distance max autour du cadavre d'ancrage, en pixels
 GHOST_VISION_RADIUS = 160.0  # rayon de revelation des elements caches
