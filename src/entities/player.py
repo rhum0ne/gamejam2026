@@ -17,6 +17,7 @@ import arcade
 import settings
 from src.entities.glow import draw_glow
 from src.entities.item import ItemKind
+from src.entities.particles import DustParticles
 
 
 def _exp_alpha(delta_time: float, smooth_time: float) -> float:
@@ -56,6 +57,7 @@ class Player(arcade.SpriteSolidColor):
         self._dash_cooldown = 0.0
         self._ready_flash = 0.0
         self._trail: list[list[float]] = []
+        self._dust = DustParticles()
 
     # ------------------------------------------------------------------ #
     # Initialisation
@@ -125,6 +127,7 @@ class Player(arcade.SpriteSolidColor):
         self._dash_timer = 0.0
         self._landing_timer = 0.0
         self._trail.clear()
+        self._dust.clear()
 
     def respawn_at(self, position: tuple[float, float]) -> None:
         """Fait reapparaitre le corps au checkpoint fourni."""
@@ -140,6 +143,7 @@ class Player(arcade.SpriteSolidColor):
         self._dash_cooldown = 0.0
         self._ready_flash = 0.0
         self._trail.clear()
+        self._dust.clear()
 
     # ------------------------------------------------------------------ #
     # Commandes
@@ -186,7 +190,7 @@ class Player(arcade.SpriteSolidColor):
             self.change_y *= 0.4
 
     def draw_fx(self) -> None:
-        """Trainee de dash (afterimages + halo) et anneau quand la jauge est pleine."""
+        """Trainee de dash (afterimages + halo) et anneau 'dash pret'."""
         life_max = max(settings.PLAYER_DASH_TRAIL_LIFE, 0.001)
         for pos_x, pos_y, life in self._trail:
             fade = max(0.0, min(1.0, life / life_max))
@@ -246,6 +250,10 @@ class Player(arcade.SpriteSolidColor):
                 2,
             )
 
+    def draw_particles(self) -> None:
+        """Poussiere de pied, dessinee apres le corps pour rester visible."""
+        self._dust.draw()
+
     # ------------------------------------------------------------------ #
     # Boucle de jeu
     # ------------------------------------------------------------------ #
@@ -258,17 +266,38 @@ class Player(arcade.SpriteSolidColor):
             self.change_x = self._dash_dir * settings.PLAYER_DASH_SPEED
         else:
             self._apply_horizontal(delta_time)
+        fall_speed = max(0.0, -self.change_y)
         self._physics.update()
         grounded = self._physics.can_jump()
         if grounded and not self._was_on_ground:
             self._landing_timer = settings.PLAYER_LANDING_SLOW_TIME
+            self._dust.emit_landing(
+                self.center_x,
+                self.bottom,
+                fall_speed,
+                body_half=self.width / 2,
+            )
         self._was_on_ground = grounded
         if grounded:
             self._time_off_ground = 0.0
             self._landing_timer = max(0.0, self._landing_timer - delta_time)
+            self._tick_run_dust(delta_time)
         else:
             self._time_off_ground += delta_time
+            self._dust.stop_run()
         self._update_trail(delta_time)
+        self._dust.update(delta_time)
+
+    def _tick_run_dust(self, delta_time: float) -> None:
+        if self.is_dashing:
+            self._dust.stop_run()
+            return
+        full_speed = abs(self.change_x) >= settings.PLAYER_SPEED * settings.PARTICLE_RUN_SPEED_RATIO
+        if not full_speed or self._move_dir == 0:
+            self._dust.stop_run()
+            return
+        behind_x = self.center_x - self.facing * (self.width * 0.55)
+        self._dust.tick_run(behind_x, self.bottom, self.facing, delta_time)
 
     def _update_trail(self, delta_time: float) -> None:
         if self.is_dashing:

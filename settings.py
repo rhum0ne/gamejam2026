@@ -102,6 +102,28 @@ PLAYER_DASH_TRAIL_GLOW_SCALE = 3.2
 PLAYER_DASH_TRAIL_GLOW_ALPHA = 28
 PLAYER_DASH_GLOW_STRETCH = 1.55  # etirement du halo dans l'axe du dash
 PLAYER_DASH_GLOW_OFFSET = 0.32  # recul du halo, en fractions de PLAYER_WIDTH
+# Poussiere au sol : atterrissage (plus si chute haute) et course a fond.
+PARTICLE_LAND_MIN_SPEED = 4.0  # px/frame, en dessous : pas de burst
+PARTICLE_LAND_MAX_SPEED = 22.0  # px/frame, burst maximal
+PARTICLE_LAND_COUNT_MIN = 5
+PARTICLE_LAND_COUNT_MAX = 18
+PARTICLE_LAND_LIFE = 0.42
+PARTICLE_LAND_SPEED_X = 180.0  # px/s
+PARTICLE_LAND_SPEED_Y = 140.0
+PARTICLE_LAND_GRAVITY = 480.0
+PARTICLE_LAND_SIZE_MIN = 3.5
+PARTICLE_LAND_SIZE_MAX = 7.5
+PARTICLE_RUN_SPEED_RATIO = 0.88  # fraction de PLAYER_SPEED pour declencher
+PARTICLE_RUN_INTERVAL = 0.040  # secondes entre deux grains
+PARTICLE_RUN_LIFE = 0.28
+PARTICLE_RUN_SPEED_X = 55.0
+PARTICLE_RUN_SPEED_Y = 36.0
+PARTICLE_RUN_SIZE = 3.8
+PARTICLE_MAX = 64
+PARTICLE_MIN_DRAW_SIZE = 3.0
+PARTICLE_FOOT_CLEARANCE = 3.0  # au-dessus du sol, pour ne pas naitre dans la tuile
+
+
 
 
 # --------------------------------------------------------------------------- #
@@ -182,6 +204,8 @@ COLOR_HUD_BAR_FILL = (128, 200, 255)
 COLOR_DASH = (255, 214, 120)
 COLOR_DASH_GLOW = (255, 224, 150)
 COLOR_DASH_GAUGE = (255, 186, 72)
+COLOR_DUST = (236, 228, 208)
+COLOR_DUST_DARK = (186, 174, 150)
 COLOR_MENU_TITLE = (200, 220, 255)
 COLOR_MENU_HINT = (150, 155, 175)
 

@@ -230,6 +230,7 @@ class PlayView(arcade.View):
         if self.player.alive:
             self.player.draw_fx()
             arcade.draw_sprite(self.player)
+            self.player.draw_particles()
         if self.machine.state is GameState.GHOST and self.ghost is not None:
             self._draw_ghost_layer(self.ghost)
         # Premier plan : passe devant le monde, reste sous le HUD.
