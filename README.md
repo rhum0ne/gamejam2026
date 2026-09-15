@@ -34,7 +34,7 @@ Les options sont transmises au jeu :
 ```bash
 ./play.sh --play          # demarre directement le niveau, sans passer par le menu
 ./play.sh --level 0       # choisit le niveau de depart
-./play.sh --check         # lance le test de demarrage au lieu du jeu
+./play.sh --fullscreen      # demarre en plein ecran (F11 pour quitter)
 ```
 
 `python main.py` fonctionne aussi : si Arcade manque dans l'interpreteur
@@ -75,12 +75,16 @@ que les menus se dessinent. A lancer avant chaque commit.
 
 | Touche | Action |
 | --- | --- |
-| `Q` / `D`, ou fleches gauche / droite | Se deplacer |
+| `Q` / `D`, ou fleches gauche / droite | Se deplacer (acceleration ~1 s, glissade tres courte) |
+| `Espace`, `Z` ou fleche haut | Sauter (hauteur variable : relache pour ecourter) |
+| `Maj` | Dash dans la direction actuelle (jauge en bas a droite) |
 | `Espace`, `Z` ou fleche haut | Sauter (hauteur variable : relache pour ecourter) |
 | `ZQSD` / fleches | Diriger le fantome (vol libre, 8 directions) |
 | `F` | Projeter son esprit (le corps meurt sur place et laisse un cadavre) |
 | `R` | En mode fantome : ecourter la projection et reapparaitre tout de suite au dernier checkpoint (au lieu d'attendre la fin du timer) |
 | `Tab` | Arbre de competences |
+| `F11` (ou Alt/Cmd+Entree) | Plein ecran |
+| `F3` | Afficher / masquer l'overlay de debug (FPS, etat, tuiles a l'ecran) |
 | `Echap` | Retour au menu titre |
 
 ---
@@ -117,7 +121,7 @@ assets/          Ressources : sprites/, sons/, maps/ (niveaux JSON)
 src/entities/    Joueur, fantome, cadavre, ennemis, objets
 src/world/       Chargement des niveaux, camera, obstacles
 src/systems/     Etats de jeu, collisions, ameliorations
-src/ui/          HUD et menus
+src/ui/          HUD, overlay de debug et menus
 tools/           Outils de developpement (smoke test)
 ```
 

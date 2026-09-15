@@ -29,27 +29,72 @@ LEVEL_SEQUENCE: tuple[str, ...] = ("level_1_tuto.json",)
 
 SCREEN_WIDTH = 1280
 SCREEN_HEIGHT = 720
+SCREEN_MIN_WIDTH = 640
+SCREEN_MIN_HEIGHT = 360
 SCREEN_TITLE = "Project Astral Platformer"
 FPS = 60
 FRAME_TIME = 1 / FPS
+
+# Etendue de monde (en unites monde, = pixels a zoom 1) que la camera montre
+# a l'ecran, quelle que soit la taille reelle de la fenetre/du moniteur. Sans
+# ca, passer en plein ecran revelerait plus de niveau (donc plus de chunks a
+# soumettre au rendu) et ferait chuter le FPS rien qu'a cause du changement
+# de dimensions : voir `CameraRig` dans `src/world/camera.py`.
+WORLD_VIEW_WIDTH = SCREEN_WIDTH
+WORLD_VIEW_HEIGHT = SCREEN_HEIGHT
 
 # --------------------------------------------------------------------------- #
 # Monde / tuiles
 # --------------------------------------------------------------------------- #
 
 TILE_SIZE = 32
+# Taille d'un paquet de rendu, en tuiles. Le hash spatial ne sert qu'aux
+# collisions : le draw ne soumet que les chunks qui touchent la camera.
+RENDER_CHUNK_TILES = 16
+
+# Noms de fichiers dans SPRITES_DIR, sans extension. La legende d'une carte
+# JSON reprend ces noms (ou un alias : rock, dirt). Le chargeur ajoute `.png`.
+SPRITE_DIRT = "dirt_1"
+SPRITE_BEDROCK = "bedrock"
+SPRITE_ROCK_1 = "rock_1"
+SPRITE_ROCK_2 = "rock_2"
+SPRITE_GRASS = "grass"
+SPRITE_GRASS_VARIANT = "grass_1"
+SPRITE_GRASS_CORNER = "grass_corner"
+SPRITE_DIRT_TOP = "dirt_top"
+SPRITE_DIRT_CORNER = "dirt_corner"
+SPRITE_DIRT_CORNER_RIGHT = "dirt_corner_right"
+SPRITE_DIRT_FLOATING = "dirt_floating_block"
+SPRITE_SPIKE = "spike"
+SPRITE_SPIKE_HANGING = "spike_up"
 
 # --------------------------------------------------------------------------- #
 # Physique du corps physique (joueur vivant)
 # --------------------------------------------------------------------------- #
 
 GRAVITY = 1.0
+PLAYER_GRAVITY = 1  # un peu plus leger : saut legerement plus haut et plus lent
 PLAYER_WIDTH = 24
 PLAYER_HEIGHT = 44
 PLAYER_SPEED = 5.5
-PLAYER_JUMP_SPEED = 17.0
+PLAYER_JUMP_SPEED = 18.0
 PLAYER_COYOTE_TIME = 0.10  # secondes de tolerance pour sauter apres une chute
 PLAYER_RESPAWN_DELAY = 0.4  # secondes avant de reprendre le controle du corps
+# Temps pour atteindre PLAYER_SPEED en maintenant une direction au sol.
+PLAYER_ACCEL_TIME = 0.25
+# Glissade a l'arret (sol) : 2-3 frames, quelques pixels tout au plus.
+PLAYER_SLIDE_TIME = 0.01
+# Fraction de l'acceleration au sol quand le joueur est en l'air.
+PLAYER_AIR_CONTROL = 5.0
+# Ralentissement juste apres l'atterrissage.
+PLAYER_LANDING_SLOW_TIME = 0.12
+PLAYER_LANDING_SPEED_SCALE = 0.86
+# Dash horizontal (Shift), vitesse en px/frame, duree et recharge en secondes.
+PLAYER_DASH_SPEED = 30.0
+PLAYER_DASH_DURATION = 0.12
+PLAYER_DASH_COOLDOWN = 3.0
+PLAYER_DASH_READY_FLASH = 0.38
+PLAYER_DASH_TRAIL_LIFE = 0.22  # duree de vie d'une afterimage, en secondes
 
 # --------------------------------------------------------------------------- #
 # Forme fantome
@@ -58,11 +103,17 @@ PLAYER_RESPAWN_DELAY = 0.4  # secondes avant de reprendre le controle du corps
 GHOST_WIDTH = 22
 GHOST_HEIGHT = 30
 GHOST_SPEED = 6.0
-GHOST_ACCELERATION = 0.45  # facteur de lissage du deplacement (0 = inerte)
+GHOST_ACCEL_TIME = 0.20  # secondes pour atteindre la vitesse visee (plus grand = plus mou)
+GHOST_COAST_TIME = 0.48  # secondes pour glisser a l'arret une fois les touches lachees
 GHOST_DURATION = 12.0  # duree de base du mode fantome, en secondes
 GHOST_MAX_RANGE = 480.0  # distance max autour du cadavre d'ancrage, en pixels
 GHOST_VISION_RADIUS = 160.0  # rayon de revelation des elements caches
 GHOST_CARRY_CAPACITY = 1  # nombre d'objets transportables simultanement
+# Fleche de rappel vers le corps : cachee tant que le fantome est assez proche.
+GHOST_HOME_ARROW_MIN_DISTANCE = 96.0
+GHOST_HOME_ARROW_OFFSET = 42.0  # distance du centre du fantome a la pointe
+GHOST_HOME_ARROW_LENGTH = 12.0
+GHOST_HOME_ARROW_WIDTH = 9.0
 
 # --------------------------------------------------------------------------- #
 # Cadavre
@@ -114,11 +165,15 @@ COLOR_SOUL_ORB = (110, 190, 255)
 COLOR_HUD_TEXT = (228, 228, 236)
 COLOR_HUD_BAR_BACKGROUND = (48, 48, 62)
 COLOR_HUD_BAR_FILL = (128, 200, 255)
+COLOR_DASH = (255, 214, 120)
+COLOR_DASH_GAUGE = (255, 186, 72)
 COLOR_MENU_TITLE = (200, 220, 255)
 COLOR_MENU_HINT = (150, 155, 175)
 
-# Opacite du voile d'obscurite hors du champ de vision du fantome (0-255).
-FOG_ALPHA = 170
+# Opacite du voile hors du champ de vision du fantome (0-255).
+FOG_ALPHA = 200
+# Part du rayon entierement transparente au centre (0 = degrade des le centre).
+GHOST_VISION_CLEAR_RATIO = 0.25
 
 # --------------------------------------------------------------------------- #
 # Camera
@@ -132,10 +187,17 @@ CAMERA_LOOK_AHEAD = 56.0  # pixels d'avance a pleine vitesse
 # Seuils en pixels/frame : ignore les micro-secousses de la physique au sol.
 CAMERA_FALL_LOOK_THRESHOLD = 4.0
 CAMERA_RISE_LOOK_THRESHOLD = 10.0
+# Secousse du dash : amplitude en pixels, duree en secondes.
+CAMERA_DASH_SHAKE = 5.5
+CAMERA_DASH_SHAKE_TIME = 0.18
 
 # --------------------------------------------------------------------------- #
 # Debug
 # --------------------------------------------------------------------------- #
 
+DEBUG_OVERLAY = True  # panneau : FPS, etat, tuiles a l'ecran, positions (F3 en jeu)
 DEBUG_SHOW_HITBOXES = False
-DEBUG_SHOW_FPS = True
+DEBUG_SHOW_FPS = True  # si l'overlay est off, affiche quand meme le FPS en bas a gauche
+COLOR_DEBUG = (140, 230, 160)
+COLOR_DEBUG_PANEL = (8, 12, 18, 180)
+COLOR_DEBUG_HITBOX = (80, 255, 120, 200)

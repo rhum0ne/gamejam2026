@@ -45,6 +45,7 @@ class Enemy(arcade.SpriteSolidColor):
         self.state = EnemyState.PATROL
         self.facing = -1
         self.hit_points = 1
+        self.max_hit_points = self.hit_points
         self._physics: arcade.PhysicsEnginePlatformer | None = None
         self._ground: arcade.SpriteList | None = None
 
@@ -75,6 +76,23 @@ class Enemy(arcade.SpriteSolidColor):
         orb = make_soul_orb(self.center_x, self.center_y)
         self.remove_from_sprite_lists()
         return orb
+
+    def respawn(self, center_x: float, center_y: float) -> None:
+        """Remet l'ennemi a un point de spawn, vivant et reinitialise.
+
+        Repositionne, annule la vitesse acquise et restaure les PV/etat/
+        orientation d'origine. Ne touche pas a l'appartenance aux SpriteList :
+        si l'ennemi avait ete retire via `take_damage`, c'est a l'appelant de
+        le rajouter (voir `PlayView._respawn_enemies`), car `Enemy` ne garde
+        pas de reference vers les listes qui le contiennent.
+        """
+        self.center_x = center_x
+        self.center_y = center_y
+        self.change_x = 0.0
+        self.change_y = 0.0
+        self.hit_points = self.max_hit_points
+        self.state = EnemyState.PATROL
+        self.facing = -1
 
     # ------------------------------------------------------------------ #
     # Boucle de jeu

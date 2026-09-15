@@ -111,21 +111,22 @@ class Ghost(arcade.SpriteSolidColor):
 
     def update(self, delta_time: float = settings.FRAME_TIME, *args, **kwargs) -> None:
         self.time_left = max(0.0, self.time_left - delta_time)
-        self._apply_steering()
+        self._apply_steering(delta_time)
         self._move_axis("x")
         self._move_axis("y")
         self._clamp_to_leash()
 
-    def _apply_steering(self) -> None:
+    def _apply_steering(self, delta_time: float) -> None:
         dx, dy = self._input
         length = math.hypot(dx, dy)
         if length > 0:
             dx, dy = dx / length, dy / length
-        target_x = dx * settings.GHOST_SPEED
-        target_y = dy * settings.GHOST_SPEED
-        smoothing = settings.GHOST_ACCELERATION
-        self.change_x += (target_x - self.change_x) * smoothing
-        self.change_y += (target_y - self.change_y) * smoothing
+            smooth_time = settings.GHOST_ACCEL_TIME
+        else:
+            smooth_time = settings.GHOST_COAST_TIME
+        alpha = 1.0 - math.exp(-max(delta_time, 0.0) / max(smooth_time, 0.001))
+        self.change_x += (dx * settings.GHOST_SPEED - self.change_x) * alpha
+        self.change_y += (dy * settings.GHOST_SPEED - self.change_y) * alpha
 
     def _move_axis(self, axis: str) -> None:
         """Deplace le fantome sur un seul axe et annule le pas en cas de collision."""
@@ -154,3 +155,7 @@ class Ghost(arcade.SpriteSolidColor):
         scale = self.stats.max_range / distance
         self.center_x = anchor_x + offset_x * scale
         self.center_y = anchor_y + offset_y * scale
+        radial = (self.change_x * offset_x + self.change_y * offset_y) / distance
+        if radial > 0:
+            self.change_x -= radial * offset_x / distance
+            self.change_y -= radial * offset_y / distance

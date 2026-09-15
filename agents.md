@@ -108,8 +108,9 @@ gamejam2026/
 │   │   └── item.py         Objets ramassables (cle, bille bleue) et leurs regles de ramassage
 │   │
 │   ├── world/              L'ENVIRONNEMENT ET LE DECOR
-│   │   ├── level.py        Chargement des cartes JSON -> SpriteLists + points de spawn
+│   │   ├── level.py        Chargement JSON, SpriteLists, chunks de rendu (culling camera)
 │   │   ├── camera.py       CameraRig : camera monde (suivi lisse + clamp) + camera UI
+│   │   ├── fog.py          Voile radial du mode fantome (degrade noir -> transparent)
 │   │   └── obstacles.py    Wall, SpectralWall, Spike, Door, Checkpoint
 │   │
 │   ├── systems/            LES REGLES ET LA LOGIQUE GLOBALE
@@ -119,6 +120,8 @@ gamejam2026/
 │   │
 │   └── ui/                 L'INTERFACE UTILISATEUR
 │       ├── hud.py          HudData + Hud : ames, timer fantome, niveau, cle, indice
+│       ├── debug.py        Overlay FPS / etats / tuiles visibles (DEBUG_OVERLAY, F3)
+│       ├── display.py      Redimensionnement et plein ecran
 │       └── menus.py        TitleView, GameOverView, VictoryView, UpgradeTreeView
 │
 └── tools/
@@ -197,16 +200,23 @@ separation : elle permet de tester les regles sans contexte OpenGL.
 4. Ennemis : IA (cadavre > joueur > patrouille) puis physique.
 5. Collisions de gameplay -> consequences -> transitions d'etat.
 6. Camera (suivi du joueur ou du fantome).
-7. `on_draw` : camera monde (decor, entites, voile du fantome) puis camera UI (HUD).
+7. `on_draw` : camera monde (decor, entites, voile du fantome, hitboxes si
+   `DEBUG_SHOW_HITBOXES`) puis camera UI (HUD + overlay si `DEBUG_OVERLAY`).
 
 ---
 
 ## 6. Specification des mecaniques (etat actuel du code)
 
 ### Corps physique — `entities/player.py`
-* Vitesse `PLAYER_SPEED`, saut `PLAYER_JUMP_SPEED`, gravite `GRAVITY`.
-* `PLAYER_COYOTE_TIME` : tolerance de saut apres avoir quitte le sol.
+* Vitesse max `PLAYER_SPEED`, atteinte en `PLAYER_ACCEL_TIME` (1 s) de course continue.
+* Glissade `PLAYER_SLIDE_TIME` a l'arret (sol), controle aerien `PLAYER_AIR_CONTROL`.
+* Atterrissage : `PLAYER_LANDING_SLOW_TIME` a `PLAYER_LANDING_SPEED_SCALE`.
+* Saut `PLAYER_JUMP_SPEED`, gravite joueur `PLAYER_GRAVITY` (plus legere que
+  `GRAVITY` des cadavres / ennemis), coyote `PLAYER_COYOTE_TIME`.
 * `cut_jump()` : saut a hauteur variable quand la touche est relachee.
+* Dash `Maj` : `PLAYER_DASH_SPEED` pendant `PLAYER_DASH_DURATION`, recharge
+  `PLAYER_DASH_COOLDOWN` (jauge HUD + flash quand elle est pleine). Trainee
+  d'afterimages + secousse camera (`CAMERA_DASH_SHAKE`).
 * Meurt au contact des piques, d'un ennemi, ou en sortant du niveau.
 * `inventory` : ensemble de `ItemKind` (la cle ouvre la porte).
 
@@ -334,10 +344,15 @@ transition de niveau est automatique (`GameSession.advance_level`).
 * **Vitesses en pixels par frame**, pas par seconde (convention Arcade). La base
   est 60 FPS ; un `delta_time` est quand meme utilise pour les timers. La fenetre
   est creee avec `vsync=True` et `update_rate = draw_rate = 1/60`. Le compteur
-  FPS du HUD (bas gauche) mesure le rythme de `on_draw`, pas seulement l'update.
+  FPS de l'overlay (`ui/debug.py`, actif si `DEBUG_OVERLAY`) mesure le rythme
+  de `on_draw`, pas seulement l'update. `F3` bascule l'overlay en jeu.
+  `DEBUG_SHOW_FPS` n'affiche le compteur HUD que lorsque l'overlay est masque.
+  `Level.draw(view_rect)` ne soumet que les chunks de terrain (`RENDER_CHUNK_TILES`)
+  qui chevauchent la camera ; `tiles_drawn` est le nombre reellement envoye au GPU.
 * **Hash spatial** sur les murs immobiles (`Level._static_sprite_list`). Sans ca,
   le moteur de physique teste 2000+ tuiles par frame et tombe vers 25 FPS. Les
-  cadavres passent dans `platforms`, pas dans `walls`.
+  cadavres passent dans `platforms`, pas dans `walls`. Le hash ne culle **pas**
+  le rendu : d'ou les chunks de `Level._build_render_chunks`.
 * **Deux cameras** : dessine le monde avec `camera.use_world()` et le HUD avec
   `camera.use_ui()`, sinon le HUD defile avec le niveau.
 * **Jamais `arcade.draw_text` dans une boucle de rendu** : Arcade emet un
@@ -354,7 +369,7 @@ transition de niveau est automatique (`GameSession.advance_level`).
 
 ### Fait
 * Squelette complet, importable, qui demarre et tourne (`smoke_test` vert).
-* Corps physique : marche, saut, coyote time, mort, checkpoint, inventaire.
+* Corps physique : marche acceleree, glissade, dash, saut, coyote time, mort, checkpoint, inventaire.
 * Fantome : vol, murs spectraux, longe, timer, revelation, transport/livraison.
 * Cadavre : solide, gravite, dissipation, devorable.
 * Ennemi : patrouille, poursuite, festin, bille bleue.
@@ -364,15 +379,14 @@ transition de niveau est automatique (`GameSession.advance_level`).
 ### A faire (par ordre de priorite pour la jam)
 1. **Assets** : remplacer les `SpriteSolidColor` par des sprites et des
    animations (`assets/sprites/`), ajouter sons et musique (`assets/sons/`).
-2. **Feel** : acceleration/friction du joueur, coyote time affine, jump buffer,
-   particules, tremblement de camera, transitions de niveau.
+2. **Feel** : jump buffer, particules, tremblement de camera, transitions de niveau.
 3. **Niveaux** : 3 a 5 cartes apres le tutoriel, introduisant le cadavre comme
    plateforme puis comme bouclier anti-piques.
 4. **Combat** : attaque du corps physique (pour l'instant seul l'ecrasement
    tue), varietes d'ennemis (volant, spectral visible seulement en mode fantome).
-5. **Revelation** : remplacer le voile rectangulaire par un vrai masque en
-   shader (cone de vision aux bords adoucis) — `TODO(rendu)` dans
-   `PlayView._draw_ghost_layer`.
+5. **Revelation** : le voile est un degrade radial (`src/world/fog.py`) dont
+   le rayon suit `GhostStats.vision_radius`. Un cone oriente (shader) reste
+   optionnel si le feel le demande.
 6. **Sauvegarde** de la `GameSession` (JSON) et menu pause.
 7. **Tests** : extraire des tests unitaires `pytest` de `tools/smoke_test.py`
    (les fonctions de `collisions.py` et `upgrades.py` se testent sans fenetre).
