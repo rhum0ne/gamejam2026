@@ -63,6 +63,11 @@ GHOST_DURATION = 12.0  # duree de base du mode fantome, en secondes
 GHOST_MAX_RANGE = 480.0  # distance max autour du cadavre d'ancrage, en pixels
 GHOST_VISION_RADIUS = 160.0  # rayon de revelation des elements caches
 GHOST_CARRY_CAPACITY = 1  # nombre d'objets transportables simultanement
+# Fleche de rappel vers le corps : cachee tant que le fantome est assez proche.
+GHOST_HOME_ARROW_MIN_DISTANCE = 96.0
+GHOST_HOME_ARROW_OFFSET = 42.0  # distance du centre du fantome a la pointe
+GHOST_HOME_ARROW_LENGTH = 12.0
+GHOST_HOME_ARROW_WIDTH = 9.0
 
 # --------------------------------------------------------------------------- #
 # Cadavre
@@ -117,8 +122,10 @@ COLOR_HUD_BAR_FILL = (128, 200, 255)
 COLOR_MENU_TITLE = (200, 220, 255)
 COLOR_MENU_HINT = (150, 155, 175)
 
-# Opacite du voile d'obscurite hors du champ de vision du fantome (0-255).
-FOG_ALPHA = 170
+# Opacite du voile hors du champ de vision du fantome (0-255).
+FOG_ALPHA = 200
+# Part du rayon entierement transparente au centre (0 = degrade des le centre).
+GHOST_VISION_CLEAR_RATIO = 0.25
 
 # --------------------------------------------------------------------------- #
 # Camera
