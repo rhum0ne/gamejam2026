@@ -31,6 +31,7 @@ class HudData:
     ghost_time_left: float | None = None
     ghost_duration: float = settings.GHOST_DURATION
     leash_ratio: float = 0.0
+    fps: float | None = None
 
 
 class Hud:
@@ -61,6 +62,9 @@ class Hud:
         self._timer_text = self._make_text(
             "", screen_width / 2, screen_height - 52, size=13, anchor_x="center"
         )
+        self._fps_text = self._make_text(
+            "", self._MARGIN, self._MARGIN + 6, size=12, color=settings.COLOR_MENU_HINT
+        )
 
     def _make_text(
         self,
@@ -69,12 +73,13 @@ class Hud:
         y: float,
         size: float = 16,
         anchor_x: str = "left",
+        color: tuple[int, int, int] = settings.COLOR_HUD_TEXT,
     ) -> arcade.Text:
         return arcade.Text(
             content,
             x,
             y,
-            settings.COLOR_HUD_TEXT,
+            color,
             font_size=size,
             anchor_x=anchor_x,
         )
@@ -99,6 +104,9 @@ class Hud:
         self._key_text.draw()
         if data.hint:
             self._hint_text.draw()
+        if data.fps is not None:
+            self._fps_text.text = f"{data.fps:.0f} FPS"
+            self._fps_text.draw()
         if data.ghost_time_left is not None:
             self._draw_ghost_gauges(data)
 

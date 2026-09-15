@@ -4,6 +4,7 @@ Usage :
     python main.py               # demarre sur l'ecran titre
     python main.py --play        # saute le menu et lance directement le niveau
     python main.py --level 0     # choisit le niveau de depart (index dans LEVEL_SEQUENCE)
+    python main.py --fullscreen  # demarre en plein ecran
 
 Si Arcade manque dans l'interpreteur utilise, ce fichier prepare
 l'environnement et se relance tout seul (voir `tools/bootstrap.py`) : aucune
@@ -43,18 +44,30 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default=0,
         help="index du niveau de depart dans settings.LEVEL_SEQUENCE",
     )
+    parser.add_argument(
+        "--fullscreen",
+        action="store_true",
+        help="demarre en plein ecran (F11 pour basculer ensuite)",
+    )
     return parser.parse_args(argv)
 
 
-def create_window() -> arcade.Window:
-    """Cree la fenetre de jeu."""
-    return arcade.Window(
+def create_window(*, fullscreen: bool = False) -> arcade.Window:
+    """Cree la fenetre de jeu, redimensionnable, cadencee a 60 FPS avec vsync."""
+    window = arcade.Window(
         width=settings.SCREEN_WIDTH,
         height=settings.SCREEN_HEIGHT,
         title=settings.SCREEN_TITLE,
+        fullscreen=fullscreen,
+        resizable=True,
         update_rate=settings.FRAME_TIME,
-        center_window=True,
+        draw_rate=settings.FRAME_TIME,
+        vsync=True,
+        center_window=not fullscreen,
     )
+    window.set_minimum_size(settings.SCREEN_MIN_WIDTH, settings.SCREEN_MIN_HEIGHT)
+    arcade.enable_timings()
+    return window
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -66,7 +79,7 @@ def main(argv: list[str] | None = None) -> None:
         )
 
     session = GameSession(level_index=args.level)
-    window = create_window()
+    window = create_window(fullscreen=args.fullscreen)
     window.show_view(PlayView(session) if args.play else TitleView(session))
     arcade.run()
 

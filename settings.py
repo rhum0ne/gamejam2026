@@ -29,6 +29,8 @@ LEVEL_SEQUENCE: tuple[str, ...] = ("level_1_tuto.json",)
 
 SCREEN_WIDTH = 1280
 SCREEN_HEIGHT = 720
+SCREEN_MIN_WIDTH = 640
+SCREEN_MIN_HEIGHT = 360
 SCREEN_TITLE = "Project Astral Platformer"
 FPS = 60
 FRAME_TIME = 1 / FPS
@@ -74,11 +76,17 @@ PLAYER_RESPAWN_DELAY = 0.4  # secondes avant de reprendre le controle du corps
 GHOST_WIDTH = 22
 GHOST_HEIGHT = 30
 GHOST_SPEED = 6.0
-GHOST_ACCELERATION = 0.45  # facteur de lissage du deplacement (0 = inerte)
+GHOST_ACCEL_TIME = 0.20  # secondes pour atteindre la vitesse visee (plus grand = plus mou)
+GHOST_COAST_TIME = 0.48  # secondes pour glisser a l'arret une fois les touches lachees
 GHOST_DURATION = 12.0  # duree de base du mode fantome, en secondes
 GHOST_MAX_RANGE = 480.0  # distance max autour du cadavre d'ancrage, en pixels
 GHOST_VISION_RADIUS = 160.0  # rayon de revelation des elements caches
 GHOST_CARRY_CAPACITY = 1  # nombre d'objets transportables simultanement
+# Fleche de rappel vers le corps : cachee tant que le fantome est assez proche.
+GHOST_HOME_ARROW_MIN_DISTANCE = 96.0
+GHOST_HOME_ARROW_OFFSET = 42.0  # distance du centre du fantome a la pointe
+GHOST_HOME_ARROW_LENGTH = 12.0
+GHOST_HOME_ARROW_WIDTH = 9.0
 
 # --------------------------------------------------------------------------- #
 # Cadavre
@@ -133,15 +141,23 @@ COLOR_HUD_BAR_FILL = (128, 200, 255)
 COLOR_MENU_TITLE = (200, 220, 255)
 COLOR_MENU_HINT = (150, 155, 175)
 
-# Opacite du voile d'obscurite hors du champ de vision du fantome (0-255).
-FOG_ALPHA = 170
+# Opacite du voile hors du champ de vision du fantome (0-255).
+FOG_ALPHA = 200
+# Part du rayon entierement transparente au centre (0 = degrade des le centre).
+GHOST_VISION_CLEAR_RATIO = 0.25
 
 # --------------------------------------------------------------------------- #
 # Camera
 # --------------------------------------------------------------------------- #
 
-CAMERA_LERP = 0.12  # 0 = camera figee, 1 = camera collee a la cible
-CAMERA_LOOK_AHEAD = 48.0  # avance de la camera dans le sens du deplacement
+# Constante de temps du suivi (secondes) : plus grand = plus fluide, plus de retard.
+CAMERA_SMOOTH_TIME = 0.22
+# Lissage du look-ahead, independant du suivi de position.
+CAMERA_LOOK_SMOOTH_TIME = 0.30
+CAMERA_LOOK_AHEAD = 56.0  # pixels d'avance a pleine vitesse
+# Seuils en pixels/frame : ignore les micro-secousses de la physique au sol.
+CAMERA_FALL_LOOK_THRESHOLD = 4.0
+CAMERA_RISE_LOOK_THRESHOLD = 10.0
 
 # --------------------------------------------------------------------------- #
 # Debug

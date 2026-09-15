@@ -1,25 +1,30 @@
 """Cameras du jeu.
 
 `CameraRig` regroupe les deux cameras dont une scene a besoin :
-    - `world` : suit une cible (joueur OU fantome) avec un lissage, et reste
-      confinee dans les limites du niveau ;
+    - `world` : suit une cible (joueur OU fantome) avec un lissage exponentiel,
+      independant du FPS, et reste confinee dans les limites du niveau ;
     - `ui`    : camera fixe, en coordonnees ecran, pour le HUD.
 
-Utilisation typique dans une vue :
-
-    self.camera.follow(self.player, delta_time)   # dans on_update
-    self.camera.use_world()                       # dans on_draw
-    ...dessin du monde...
-    self.camera.use_ui()
-    ...dessin du HUD...
+Le look-ahead n'est pas un cran binaire : il est proportionnel a la vitesse et
+lui-meme lisse, pour eviter les a-coups quand `change_x` / `change_y` basculent
+(physique au sol, sommet de saut, arret).
 """
 
 from __future__ import annotations
+
+import math
 
 import arcade
 from arcade.camera import Camera2D
 
 import settings
+
+
+def _exp_alpha(delta_time: float, smooth_time: float) -> float:
+    """Facteur de lerp equivalent a une constante de temps, stable quel que soit le FPS."""
+    if smooth_time <= 0.0:
+        return 1.0
+    return 1.0 - math.exp(-max(delta_time, 0.0) / smooth_time)
 
 
 class CameraRig:
@@ -30,6 +35,8 @@ class CameraRig:
         self.ui = Camera2D()
         self.world_width = world_width
         self.world_height = world_height
+        self._look_x = 0.0
+        self._look_y = 0.0
 
     def set_bounds(self, world_width: float, world_height: float) -> None:
         """Definit les dimensions du niveau utilisees pour le clamp."""
@@ -38,19 +45,22 @@ class CameraRig:
 
     def snap_to(self, target: arcade.Sprite) -> None:
         """Place instantanement la camera sur la cible (changement de niveau)."""
+        self._look_x = 0.0
+        self._look_y = 0.0
         self.world.position = self._clamp(target.center_x, target.center_y)
 
     def follow(self, target: arcade.Sprite, delta_time: float) -> None:
-        """Rapproche la camera de la cible, avec une avance dans le sens du mouvement."""
-        look_ahead = 0.0
-        if target.change_x:
-            look_ahead = settings.CAMERA_LOOK_AHEAD * (1 if target.change_x > 0 else -1)
-        desired_x, desired_y = self._clamp(target.center_x + look_ahead, target.center_y)
+        """Rapproche la camera de la cible, avec un look-ahead lisse."""
+        self._ease_look_ahead(target, delta_time)
+        desired_x, desired_y = self._clamp(
+            target.center_x + self._look_x,
+            target.center_y + self._look_y,
+        )
         current_x, current_y = self.world.position
-        factor = min(1.0, settings.CAMERA_LERP * delta_time * settings.FPS)
+        alpha = _exp_alpha(delta_time, settings.CAMERA_SMOOTH_TIME)
         self.world.position = (
-            current_x + (desired_x - current_x) * factor,
-            current_y + (desired_y - current_y) * factor,
+            current_x + (desired_x - current_x) * alpha,
+            current_y + (desired_y - current_y) * alpha,
         )
 
     def use_world(self) -> None:
@@ -62,8 +72,20 @@ class CameraRig:
     def on_resize(self, width: int, height: int) -> None:
         """Reajuste les viewports apres un redimensionnement de la fenetre."""
         self.world.match_window()
-        self.ui.match_window()
+        self.ui.match_window(position=True)
         self.world.position = self._clamp(*self.world.position)
+
+    def _ease_look_ahead(self, target: arcade.Sprite, delta_time: float) -> None:
+        max_speed = max(abs(settings.PLAYER_SPEED), abs(settings.GHOST_SPEED), 1.0)
+        desired_x = max(-1.0, min(1.0, target.change_x / max_speed)) * settings.CAMERA_LOOK_AHEAD
+        desired_y = 0.0
+        if target.change_y < -settings.CAMERA_FALL_LOOK_THRESHOLD:
+            desired_y = -settings.CAMERA_LOOK_AHEAD
+        elif target.change_y > settings.CAMERA_RISE_LOOK_THRESHOLD:
+            desired_y = settings.CAMERA_LOOK_AHEAD * 0.35
+        alpha = _exp_alpha(delta_time, settings.CAMERA_LOOK_SMOOTH_TIME)
+        self._look_x += (desired_x - self._look_x) * alpha
+        self._look_y += (desired_y - self._look_y) * alpha
 
     def _clamp(self, x: float, y: float) -> tuple[float, float]:
         """Garde le cadre de la camera a l'interieur du niveau."""
