@@ -189,7 +189,8 @@ SOUL_ORB_MAGNET_RANGE = 96.0  # px : l'orbe derive vers le joueur dans ce rayon
 SOUL_ORB_MAGNET_SPEED = 42.0  # px / seconde
 
 SOUL_ESSENCE_PER_ORB = 1
-# Essence cumulee necessaire pour atteindre le niveau n+1 (index = niveau - 1).
+# Ames cumulees pour atteindre le niveau n+1 (index = niveau - 1).
+# Niveau 1 : 0, 2 : 3, 3 : 8, 4 : 15, 5 : 25, 6 : 40. Bonus : `PALIERS`.
 SOUL_LEVEL_THRESHOLDS: tuple[int, ...] = (0, 3, 8, 15, 25, 40)
 
 # --------------------------------------------------------------------------- #

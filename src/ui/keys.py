@@ -315,7 +315,6 @@ PLAYING_PROMPTS: tuple[tuple[tuple[str, ...], str], ...] = (
     (("z", "q", "s", "d"), "bouger"),
     (("space",), "sauter"),
     (("shift",), "dash"),
-    (("tab",), "arbre"),
 )
 
 ESPRIT_PROMPT: tuple[tuple[str, ...], str] = (("f",), "esprit")
@@ -330,5 +329,4 @@ def playing_prompts(*, show_esprit: bool) -> tuple[tuple[tuple[str, ...], str], 
     """Commandes du corps : F n'apparait qu'apres la premiere projection."""
     if not show_esprit:
         return PLAYING_PROMPTS
-    movement, jump, dash, tree = PLAYING_PROMPTS
-    return (movement, jump, dash, ESPRIT_PROMPT, tree)
+    return PLAYING_PROMPTS + (ESPRIT_PROMPT,)

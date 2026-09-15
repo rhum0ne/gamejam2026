@@ -27,7 +27,7 @@ from src.systems.events import PLAYER_DEATH, PLAYER_GHOST_END, PLAYER_WIN  # noq
 from src.systems.game_state import GameSession, GameState, PlayView  # noqa: E402
 from src.systems.upgrades import SoulProgression  # noqa: E402
 from src.ui import keys  # noqa: E402
-from src.ui.menus import TitleView, UpgradeTreeView, VictoryView  # noqa: E402
+from src.ui.menus import TitleView, VictoryView  # noqa: E402
 from src.world.level import Level  # noqa: E402
 
 FRAME = settings.FRAME_TIME
@@ -45,17 +45,16 @@ def check_levels() -> None:
 
 
 def check_progression() -> None:
-    """La progression d'ames et l'arbre de competences se comportent comme prevu."""
+    """Les paliers d'ames se debloquent tout seuls, sans shop."""
     progression = SoulProgression()
     assert progression.level == 1
-    assert not progression.can_unlock("range_1")
+    assert progression.ghost_stats.max_range == settings.GHOST_MAX_RANGE
+    assert progression.ghost_stats.duration == settings.GHOST_DURATION
     for _ in range(3):
         progression.absorb_orb()
-    assert progression.can_unlock("range_1")
-    assert progression.unlock("range_1")
-    assert progression.essence == 0
+    assert progression.level == 2
     assert progression.ghost_stats.max_range > settings.GHOST_MAX_RANGE
-    assert not progression.unlock("range_1"), "une amelioration ne doit pas etre achetee deux fois"
+    assert progression.ghost_stats.duration > settings.GHOST_DURATION
     print(f"  progression -> niveau {progression.level}, "
           f"portee fantome {progression.ghost_stats.max_range:.0f} px")
 
@@ -307,7 +306,7 @@ def check_menus(window: arcade.Window) -> None:
     assert not keys.is_pressed("enter", {arcade.key.ESCAPE})
     assert keys.key_size("space")[0] == keys.key_size("q")[0] * 2
     session = GameSession()
-    for view in (TitleView(session), VictoryView(session), UpgradeTreeView(session)):
+    for view in (TitleView(session), VictoryView(session)):
         window.show_view(view)
         if isinstance(view, TitleView):
             view.held_keys.update({arcade.key.T, arcade.key.SPACE, arcade.key.LSHIFT})
@@ -339,7 +338,7 @@ def check_menus(window: arcade.Window) -> None:
     play.on_key_press(arcade.key.F3, 0)
     assert play._debug_enabled is settings.DEBUG_OVERLAY
     play.on_resize(settings.SCREEN_WIDTH, settings.SCREEN_HEIGHT)
-    print("  menus -> titre, victoire, arbre et resize OK")
+    print("  menus -> titre, victoire et resize OK")
 
 
 def main() -> int:
