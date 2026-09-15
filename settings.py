@@ -17,6 +17,7 @@ from pathlib import Path
 ROOT_DIR = Path(__file__).resolve().parent
 ASSETS_DIR = ROOT_DIR / "assets"
 SPRITES_DIR = ASSETS_DIR / "sprites"
+UI_DIR = ASSETS_DIR / "ui"
 SOUNDS_DIR = ASSETS_DIR / "sons"
 MAPS_DIR = ASSETS_DIR / "maps"
 
@@ -190,6 +191,16 @@ CAMERA_RISE_LOOK_THRESHOLD = 10.0
 # Secousse du dash : amplitude en pixels, duree en secondes.
 CAMERA_DASH_SHAKE = 5.5
 CAMERA_DASH_SHAKE_TIME = 0.18
+
+# --------------------------------------------------------------------------- #
+# Icones clavier (Kenney Input Prompts, dans assets/ui/)
+# --------------------------------------------------------------------------- #
+
+UI_KEYBOARD_LETTERS = "Keyboard Letters and Symbols.png"
+UI_KEYBOARD_EXTRAS = "Keyboard Extras.png"
+UI_KEY_CELL = 16  # taille native d'une touche-lettre
+UI_KEY_ICON_HEIGHT = 40  # hauteur a l'ecran (nearest-neighbor)
+UI_KEY_CAPTION_SIZE = 16  # libelles a cote des icones
 
 # --------------------------------------------------------------------------- #
 # Debug

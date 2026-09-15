@@ -118,6 +118,7 @@ class GameSession:
     progression: SoulProgression = field(default_factory=SoulProgression)
     level_index: int = 0
     deaths: int = 0
+    knows_esprit: bool = False
 
     @property
     def level_file(self) -> str:
@@ -139,6 +140,7 @@ class GameSession:
         self.progression = SoulProgression()
         self.level_index = 0
         self.deaths = 0
+        self.knows_esprit = False
 
 
 # --------------------------------------------------------------------------- #
@@ -306,6 +308,9 @@ class PlayView(arcade.View):
             dash_ratio=self.player.dash_ratio if state is GameState.PLAYING else None,
             dash_ready=self.player.dash_ready,
             dash_flash=self.player.dash_flash,
+            controls="ghost" if state is GameState.GHOST else ("playing" if state is GameState.PLAYING else ""),
+            pressed_keys=frozenset(self.held_keys),
+            show_esprit=self.session.knows_esprit,
         )
 
     def _hint_for(self, state: GameState) -> str:

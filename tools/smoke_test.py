@@ -25,6 +25,7 @@ from src.systems.event_manager import EventManager  # noqa: E402
 from src.systems.events import PLAYER_DEATH, PLAYER_GHOST_END, PLAYER_WIN  # noqa: E402
 from src.systems.game_state import GameSession, GameState, PlayView  # noqa: E402
 from src.systems.upgrades import SoulProgression  # noqa: E402
+from src.ui import keys  # noqa: E402
 from src.ui.menus import TitleView, UpgradeTreeView, VictoryView  # noqa: E402
 from src.world.level import Level  # noqa: E402
 
@@ -196,16 +197,20 @@ def check_tutorial_is_solvable(window: arcade.Window) -> None:
     """
     view = PlayView(GameSession())
     window.show_view(view)
+    assert not view.session.knows_esprit
+    assert not view._hud_data().show_esprit, "F / esprit ne doit pas apparaitre avant d'avoir ete fantome"
 
     view.held_keys.add(arcade.key.RIGHT)
     advance(view, 66)
     view.held_keys.clear()
     advance(view, 5)
     assert view.player.alive, "le corps doit s'arreter au bord du puits, pas tomber"
+    assert not view._hud_data().show_esprit, "F / esprit ne doit pas spoiler le puits"
 
     view.on_key_press(arcade.key.F, 0)
     view.on_key_release(arcade.key.F, 0)
     assert view.machine.state is GameState.GHOST
+    assert view.session.knows_esprit
     corpse = view.level.corpses[0]
     key_item = next(item for item in view.level.items if item.kind is ItemKind.KEY)
 
@@ -251,6 +256,8 @@ def check_tutorial_is_solvable(window: arcade.Window) -> None:
     view.held_keys.clear()
     advance(view, int(settings.PLAYER_RESPAWN_DELAY / FRAME) + 10)
     assert view.player.has_item(ItemKind.KEY), "le corps doit reapparaitre avec la cle livree"
+    assert view.machine.state is GameState.PLAYING
+    assert view._hud_data().show_esprit, "F / esprit doit apparaitre apres la premiere projection"
 
     # Le cadavre reste solide au bord du puits et bloque la course d'elan :
     # on attend sa dissipation, comme le ferait un joueur.
@@ -289,9 +296,16 @@ def check_tutorial_is_solvable(window: arcade.Window) -> None:
 
 def check_menus(window: arcade.Window) -> None:
     """Les vues hors-jeu se dessinent sans erreur, y compris apres un resize."""
+    assert keys.is_pressed("q", {arcade.key.LEFT, arcade.key.Q})
+    assert keys.is_pressed("z", {arcade.key.UP})
+    assert keys.is_pressed("shift", {arcade.key.LSHIFT})
+    assert not keys.is_pressed("enter", {arcade.key.ESCAPE})
+    assert keys.key_size("space")[0] == keys.key_size("q")[0] * 2
     session = GameSession()
     for view in (TitleView(session), VictoryView(session), UpgradeTreeView(session)):
         window.show_view(view)
+        if isinstance(view, TitleView):
+            view.held_keys.update({arcade.key.T, arcade.key.SPACE, arcade.key.LSHIFT})
         advance(view, 2)
         view.on_resize(1920, 1080)
         advance(view, 1)

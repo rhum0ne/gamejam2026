@@ -1,8 +1,11 @@
-"""HUD en jeu : compteur d'ames, timer du fantome, niveau courant.
+"""HUD en jeu : compteur d'ames, timer du fantome, icones clavier.
 
 Le HUD est "sans etat" : la vue de jeu construit un `HudData` a chaque frame et
 le passe a `Hud.draw()`. Les objets `arcade.Text` sont crees une seule fois
 (leur creation est couteuse) puis mis a jour via leur attribut `.text`.
+
+Les invites de commandes sont des icones PNG (`src.ui.keys`) qui passent en
+etat enfonce (glyphes bleus) d'apres `HudData.pressed_keys`.
 
 Le HUD se dessine en coordonnees ecran : il faut donc activer la camera UI
 (`CameraRig.use_ui()`) avant de l'appeler.
@@ -15,6 +18,7 @@ from dataclasses import dataclass
 import arcade
 
 import settings
+from src.ui import keys
 
 
 @dataclass(frozen=True, slots=True)
@@ -35,6 +39,9 @@ class HudData:
     dash_ratio: float | None = None
     dash_ready: bool = False
     dash_flash: float = 0.0
+    controls: str = ""
+    pressed_keys: frozenset[int] = frozenset()
+    show_esprit: bool = False
 
 
 class Hud:
@@ -99,11 +106,26 @@ class Hud:
         self._state_text.draw()
         self._essence_text.draw()
         self._key_text.draw()
-        if data.hint:
-            self._hint_text.draw()
         if data.fps is not None:
             self._fps_text.text = f"{data.fps:.0f} FPS"
             self._fps_text.draw()
+        if data.controls == "playing":
+            keys.draw_prompt_row(
+                self.screen_width / 2,
+                self._MARGIN + settings.UI_KEY_ICON_HEIGHT / 2 + 4,
+                keys.playing_prompts(show_esprit=data.show_esprit),
+                data.pressed_keys,
+            )
+        elif data.controls == "ghost":
+            keys.draw_prompt_row(
+                self.screen_width / 2,
+                self._MARGIN + settings.UI_KEY_ICON_HEIGHT / 2 + 4,
+                keys.GHOST_PROMPTS,
+                data.pressed_keys,
+            )
+        elif data.hint:
+            self._hint_text.text = data.hint
+            self._hint_text.draw()
         if data.dash_ratio is not None:
             self._draw_dash_gauge(data)
         if data.ghost_time_left is not None:
@@ -114,7 +136,7 @@ class Hud:
         width, height = 88, 8
         right = self.screen_width - self._MARGIN
         left = right - width
-        bottom = self._MARGIN + 8
+        bottom = self._MARGIN + settings.UI_KEY_ICON_HEIGHT + 12
         top = bottom + height
         ratio = max(0.0, min(1.0, data.dash_ratio or 0.0))
         arcade.draw_lrbt_rectangle_filled(
