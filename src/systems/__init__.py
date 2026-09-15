@@ -1,1 +1,1 @@
-"""Systemes : regles et logique globale du jeu."""
+"""Systemes : regles, evenements et logique globale du jeu."""

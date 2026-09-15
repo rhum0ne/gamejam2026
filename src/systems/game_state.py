@@ -29,6 +29,12 @@ from src.entities.ghost import Ghost
 from src.entities.item import ItemKind
 from src.entities.player import Player
 from src.systems import collisions
+from src.systems.event_manager import (
+    PLAYER_DEATH,
+    PLAYER_GHOST_END,
+    PLAYER_WIN,
+    event_manager,
+)
 from src.systems.upgrades import SoulProgression
 from src.ui.hud import Hud, HudData
 from src.world.camera import CameraRig
@@ -166,6 +172,7 @@ class PlayView(arcade.View):
         self.held_keys: set[int] = set()
         self._respawn_timer = 0.0
         self._delivered_items: list[ItemKind] = []
+        self._bind_events()
         self.setup()
 
     # ------------------------------------------------------------------ #
@@ -288,7 +295,7 @@ class PlayView(arcade.View):
         self._resolve_ghost_collisions(ghost)
         self.camera.follow(ghost, delta_time)
         if ghost.expired:
-            self._start_respawn()
+            self._emit_ghost_end("timer")
 
     def _update_respawning(self, delta_time: float) -> None:
         self._respawn_timer -= delta_time
@@ -324,16 +331,15 @@ class PlayView(arcade.View):
         door = collisions.door_touched_by_player(self.player, self.level)
         if door is not None and self.player.has_item(ItemKind.KEY):
             door.unlock()
-            self._complete_level()
+            self._emit_player_win()
             return
 
-        lethal = (
-            collisions.player_hits_hazard(self.player, self.level)
-            or collisions.player_out_of_bounds(self.player, self.level)
-            or collisions.enemy_touching_player(self.player, self.level.enemies) is not None
-        )
-        if lethal:
-            self._enter_ghost_mode()
+        if collisions.player_hits_hazard(self.player, self.level):
+            self._emit_player_death("spikes")
+        elif collisions.player_out_of_bounds(self.player, self.level):
+            self._emit_player_death("out_of_bounds")
+        elif collisions.enemy_touching_player(self.player, self.level.enemies) is not None:
+            self._emit_player_death("enemy")
 
     def _resolve_ghost_collisions(self, ghost: Ghost) -> None:
         for item in collisions.items_reachable_by_ghost(ghost, self.level):
@@ -363,25 +369,73 @@ class PlayView(arcade.View):
             self.player.give_item(kind)
 
     # ------------------------------------------------------------------ #
-    # Transitions
+    # Evenements
     # ------------------------------------------------------------------ #
 
-    def _enter_ghost_mode(self) -> None:
-        """Mort du corps : depot d'un cadavre et projection de l'esprit."""
+    def _bind_events(self) -> None:
+        """Abonne cette vue aux evenements de gameplay.
+
+        `clear()` evite de conserver les handlers d'une PlayView precedente
+        (changement de vue, smoke test) sur le singleton `event_manager`.
+        """
+        event_manager.clear()
+        event_manager.subscribe(PLAYER_DEATH, self._on_player_death_immobilize)
+        event_manager.subscribe(PLAYER_DEATH, self._on_player_death_spawn_corpse)
+        event_manager.subscribe(PLAYER_DEATH, self._on_player_death_enter_ghost)
+        event_manager.subscribe(PLAYER_GHOST_END, self._on_player_ghost_end)
+        event_manager.subscribe(PLAYER_WIN, self._on_player_win)
+
+    def _emit_player_death(self, cause: str) -> None:
         if not self.machine.can(GameState.GHOST):
             return
+        event_manager.dispatch(
+            PLAYER_DEATH,
+            {"position": (self.player.center_x, self.player.center_y), "cause": cause},
+        )
+
+    def _emit_ghost_end(self, reason: str) -> None:
+        if not self.machine.can(GameState.RESPAWNING):
+            return
+        position = None if self.ghost is None else (self.ghost.center_x, self.ghost.center_y)
+        event_manager.dispatch(PLAYER_GHOST_END, {"reason": reason, "position": position})
+
+    def _emit_player_win(self) -> None:
+        if not self.machine.can(GameState.VICTORY):
+            return
+        event_manager.dispatch(
+            PLAYER_WIN,
+            {
+                "level_index": self.session.level_index,
+                "level_name": self.level.name,
+                "is_last_level": self.session.is_last_level,
+            },
+        )
+
+    def _on_player_death_immobilize(self, data: dict) -> None:
+        """Compte la mort et fige le corps physique."""
         self.session.deaths += 1
         self.player.die()
-        corpse = Corpse(self.player.center_x, self.player.center_y)
+
+    def _on_player_death_spawn_corpse(self, data: dict) -> None:
+        """Laisse un cadavre solide a l'endroit de la mort."""
+        center_x, center_y = data["position"]
+        corpse = Corpse(center_x, center_y)
         corpse.bind_world(self._static_platforms())
         self.level.spawn_corpse(corpse)
         self.anchor_corpse = corpse
+
+    def _on_player_death_enter_ghost(self, data: dict) -> None:
+        """Projette l'esprit et passe en mode fantome."""
+        corpse = self.anchor_corpse
+        spawn_x, spawn_y = data["position"]
+        if corpse is not None:
+            spawn_x, spawn_y = corpse.center_x, corpse.center_y
         stats = self.session.progression.ghost_stats
-        self.ghost = Ghost(corpse.center_x, corpse.center_y, stats, anchor=corpse.position)
+        self.ghost = Ghost(spawn_x, spawn_y, stats, anchor=(spawn_x, spawn_y))
         self.ghost.bind_world(self.level.walls)
         self.machine.to(GameState.GHOST)
 
-    def _start_respawn(self) -> None:
+    def _on_player_ghost_end(self, data: dict) -> None:
         """Fin du mode fantome : le corps revient au dernier checkpoint."""
         if self.ghost is not None:
             for item in self.ghost.release_all():
@@ -392,7 +446,7 @@ class PlayView(arcade.View):
         self._respawn_timer = settings.PLAYER_RESPAWN_DELAY
         self.machine.try_to(GameState.RESPAWNING)
 
-    def _complete_level(self) -> None:
+    def _on_player_win(self, data: dict) -> None:
         """Niveau reussi : niveau suivant, ou ecran de victoire finale."""
         from src.ui.menus import VictoryView
 
@@ -437,9 +491,9 @@ class PlayView(arcade.View):
             if symbol in _JUMP_KEYS:
                 self.player.jump()
             elif symbol == _PROJECT_KEY:
-                self._enter_ghost_mode()
+                self._emit_player_death("sacrifice")
         elif state is GameState.GHOST and symbol == _RETURN_KEY:
-            self._start_respawn()
+            self._emit_ghost_end("manual")
 
     def on_key_release(self, symbol: int, modifiers: int) -> None:
         self.held_keys.discard(symbol)
