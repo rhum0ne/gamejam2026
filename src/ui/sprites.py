@@ -26,11 +26,15 @@ _TEXTURE_CACHE: dict[str, arcade.Texture] = {}
 _STRIP_CACHE: dict[str, tuple[arcade.Texture, ...]] = {}
 
 
-def sprite_path(name: str) -> Path:
-    """Retourne le chemin d'un sprite dans `settings.SPRITES_DIR`.
+def sprite_path(name: str | Path) -> Path:
+    """Retourne le chemin d'un sprite.
 
-    `name` accepte `spike` ou `spike.png`.
+    `name` accepte `spike` ou `spike.png` (resolu dans `settings.SPRITES_DIR`),
+    ou directement un `Path` complet (planches d'`assets/animations/`, par
+    exemple `settings.ENEMY_SPRITE_WALK`).
     """
+    if isinstance(name, Path):
+        return name
     if not name:
         raise ValueError("name ne doit pas etre vide")
     filename = name if name.endswith(".png") else f"{name}.png"
@@ -124,7 +128,7 @@ def tile_texture(
 
 
 def load_strip(
-    name: str,
+    name: str | Path,
     frame_width: int,
     frame_height: int | None = None,
 ) -> tuple[arcade.Texture, ...]:
@@ -188,18 +192,21 @@ class Animator:
         self.speed = speed
         self.elapsed = 0.0
         self.finished = False
+        self.frame_index = 0
 
     @property
     def animation(self) -> StripAnimation:
         return self._animation
 
-    def play(self, animation: StripAnimation) -> None:
-        """Change d'animation. No-op si c'est deja celle en cours."""
-        if animation is self._animation:
+    def play(self, animation: StripAnimation, *, restart: bool = False) -> None:
+        """Change d'animation. No-op si c'est deja celle en cours, sauf `restart`
+        (rejouer une animation `loop=False` deja terminee, ex. un nouveau coup)."""
+        if animation is self._animation and not restart:
             return
         self._animation = animation
         self.elapsed = 0.0
         self.finished = False
+        self.frame_index = 0
 
     def update(self, delta_time: float) -> arcade.Texture:
         """Avance l'horloge et retourne la texture courante."""
@@ -218,6 +225,7 @@ class Animator:
                 index = last_index
         else:
             index = last_index
+        self.frame_index = index
         return frames[index]
 
 
@@ -265,7 +273,7 @@ def apply_rect_hit_box(
     sprite.hit_box = HitBox(points, position=sprite.position)
 
 
-def _open_image(name: str) -> Image.Image:
+def _open_image(name: str | Path) -> Image.Image:
     cached = _IMAGE_CACHE.get(name)
     if cached is not None:
         return cached

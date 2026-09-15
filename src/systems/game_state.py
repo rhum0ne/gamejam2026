@@ -489,7 +489,7 @@ class PlayView(arcade.View):
             emit_player_death(self, "spikes")
         elif collisions.player_out_of_bounds(self.player, self.level):
             emit_player_death(self, "out_of_bounds")
-        elif collisions.enemy_touching_player(self.player, self.level.enemies) is not None:
+        elif collisions.enemy_striking_player(self.player, self.level.enemies) is not None:
             emit_player_death(self, "enemy")
 
     def _resolve_ghost_collisions(self, ghost: Ghost) -> None:
