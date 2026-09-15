@@ -177,6 +177,9 @@ class PlayView(arcade.View):
         self.level = Level.from_file(self.session.level_file)
         self.player = Player(*self.level.player_spawn)
         self.player.respawn_point = self.level.checkpoint_spawn
+        for checkpoint in self.level.checkpoints:
+            if (checkpoint.center_x, checkpoint.center_y) == self.level.checkpoint_spawn:
+                checkpoint.activate()
         self.player.bind_world(self.level.solid_platforms)
         for enemy in self.level.enemies:
             enemy.bind_world(self._static_platforms())
@@ -320,6 +323,11 @@ class PlayView(arcade.View):
         for item in collisions.items_reachable_by_body(self.player, self.level):
             self._collect(item.kind)
             item.remove_from_sprite_lists()
+
+        checkpoint = collisions.checkpoint_touched_by_player(self.player, self.level)
+        if checkpoint is not None:
+            self.player.respawn_point = (checkpoint.center_x, checkpoint.center_y)
+            checkpoint.activate()
 
         door = collisions.door_touched_by_player(self.player, self.level)
         if door is not None and self.player.has_item(ItemKind.KEY):

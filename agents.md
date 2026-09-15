@@ -274,6 +274,7 @@ dans `_FACTORIES`, puis le symbole dans la legende de la carte.
 transition de niveau est automatique (`GameSession.advance_level`).
 
 **Contraintes de level design a respecter** (valeurs actuelles) :
+* largeur actuelle du tutoriel : **160 tuiles** (4 ecrans de 40) ;
 * portee de saut du corps : environ **185 px**, soit 5 tuiles au maximum et
   4 tuiles confortablement ;
 * longe du fantome : **480 px** au depart (la cle du tutoriel est a 430 px du
@@ -281,6 +282,8 @@ transition de niveau est automatique (`GameSession.advance_level`).
 * un ennemi sent un cadavre a **320 px** : ne place pas d'ennemi a moins de
   cette distance d'un endroit ou le joueur doit mourir, sinon son cadavre est
   devore avant de servir.
+* le premier `C` de la carte est le spawn initial ; les suivants ne deviennent
+  le point de reapparition que lorsque le corps les touche.
 
 ---
 

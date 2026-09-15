@@ -182,7 +182,8 @@ def _add_door(level: Level, x: float, y: float) -> None:
 
 def _add_checkpoint(level: Level, x: float, y: float) -> None:
     level.checkpoints.append(Checkpoint(x, y, size=level.tile_size))
-    level.checkpoint_spawn = (x, y)
+    if level.checkpoint_spawn == (0.0, 0.0):
+        level.checkpoint_spawn = (x, y)
 
 
 def _add_player_spawn(level: Level, x: float, y: float) -> None:

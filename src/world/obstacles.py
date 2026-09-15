@@ -111,6 +111,7 @@ class Checkpoint(arcade.SpriteSolidColor):
 
     def activate(self) -> None:
         self.active = True
+        self.color = settings.COLOR_HUD_BAR_FILL
 
 
 def is_solid_for_ghost(wall: arcade.Sprite) -> bool:

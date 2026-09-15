@@ -172,15 +172,20 @@ def check_tutorial_is_solvable(window: arcade.Window) -> None:
 
     view.held_keys.add(arcade.key.RIGHT)
     previous_x = view.player.center_x
-    for _ in range(900):
+    for _ in range(3500):
         blocked = abs(view.player.center_x - previous_x) < 0.2
-        at_pit_edge = 515 < view.player.center_x < 540
         previous_x = view.player.center_x
-        # Sauter au bord du puits, et par-dessus ce qui bloque la course.
-        if view.player.on_ground and (at_pit_edge or blocked):
+        probe = (view.player.center_x + view.player.width / 2 + 10, view.player.bottom - 4)
+        hole_ahead = not (
+            arcade.get_sprites_at_point(probe, view.level.walls)
+            or arcade.get_sprites_at_point(probe, view.level.spectral_walls)
+        )
+        if view.player.on_ground and (blocked or hole_ahead):
             view.player.jump()
         view.on_update(FRAME)
         if view.machine.state is GameState.VICTORY:
+            break
+        if view.machine.state is GameState.GHOST:
             break
     assert view.machine.state is GameState.VICTORY, (
         f"le niveau doit pouvoir etre termine (etat : {view.machine.state.name}, "

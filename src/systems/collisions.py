@@ -22,7 +22,7 @@ from src.entities.ghost import Ghost
 from src.entities.item import Item
 from src.entities.player import Player
 from src.world.level import Level
-from src.world.obstacles import Door
+from src.world.obstacles import Checkpoint, Door
 
 
 def player_hits_hazard(player: Player, level: Level) -> bool:
@@ -58,6 +58,14 @@ def items_reachable_by_ghost(ghost: Ghost, level: Level) -> list[Item]:
         for item in arcade.check_for_collision_with_list(ghost, level.items)
         if item.profile.ghost_can_carry and not item.is_carried
     ]
+
+
+def checkpoint_touched_by_player(player: Player, level: Level) -> Checkpoint | None:
+    """Checkpoint en contact avec le corps physique, s'il y en a un."""
+    if not player.alive:
+        return None
+    touched = arcade.check_for_collision_with_list(player, level.checkpoints)
+    return touched[0] if touched else None
 
 
 def door_touched_by_player(player: Player, level: Level) -> Door | None:
