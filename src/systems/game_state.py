@@ -253,7 +253,7 @@ class PlayView(arcade.View):
             state_label=STATE_LABELS[state],
             essence=self.session.progression.essence,
             ghost_level=self.session.progression.level,
-            hint=self.level.hint if state is GameState.PLAYING else "",
+            hint=self._hint_for(state),
             has_key=self.player.has_item(ItemKind.KEY),
             corpse_count=len(self.level.corpses),
             ghost_time_left=self.ghost.time_left if self.ghost is not None else None,
@@ -261,6 +261,13 @@ class PlayView(arcade.View):
             leash_ratio=self.ghost.leash_ratio if self.ghost is not None else 0.0,
             fps=self._fps if settings.DEBUG_SHOW_FPS else None,
         )
+
+    def _hint_for(self, state: GameState) -> str:
+        if state is GameState.PLAYING:
+            return self.level.hint
+        if state is GameState.GHOST:
+            return "R : ecourter le mode fantome et revenir au checkpoint"
+        return ""
 
     def _sample_fps(self) -> None:
         """Moyenne glissante du FPS de dessin, independante de update_rate."""
@@ -405,13 +412,20 @@ class PlayView(arcade.View):
         self.machine.to(GameState.GHOST)
 
     def _start_respawn(self) -> None:
-        """Fin du mode fantome : le corps revient au dernier checkpoint."""
+        """Fin du mode fantome (timer ecoule ou sortie volontaire via `R`).
+
+        Dans les deux cas, le corps revient au dernier checkpoint : rester
+        pres du cadavre n'apporte rien, `R` sert juste a ne pas attendre la
+        fin du timer pour de vrai (sinon on resterait pratiquement toujours
+        en mode fantome pres du cadavre au lieu de rejouer le corps).
+        """
         if self.ghost is not None:
             for item in self.ghost.release_all():
                 item.drop_at(item.center_x, item.center_y)
         self.ghost = None
         for wall in self.level.spectral_walls:
             wall.set_revealed(False)
+        self.anchor_corpse = None
         self._respawn_timer = settings.PLAYER_RESPAWN_DELAY
         self.machine.try_to(GameState.RESPAWNING)
 

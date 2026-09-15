@@ -79,7 +79,7 @@ que les menus se dessinent. A lancer avant chaque commit.
 | `Espace`, `Z` ou fleche haut | Sauter (hauteur variable : relache pour ecourter) |
 | `ZQSD` / fleches | Diriger le fantome (vol libre, 8 directions) |
 | `F` | Projeter son esprit (le corps meurt sur place et laisse un cadavre) |
-| `R` | En mode fantome : retourner immediatement au corps |
+| `R` | En mode fantome : ecourter la projection et reapparaitre tout de suite au dernier checkpoint (au lieu d'attendre la fin du timer) |
 | `Tab` | Arbre de competences |
 | `Echap` | Retour au menu titre |
 
@@ -93,10 +93,11 @@ que les menus se dessinent. A lancer avant chaque commit.
 3. Descends dans la fosse avec le fantome (il ne craint ni la chute ni les
    piques) et touche la cle pour la saisir.
 4. Remonte et touche le cadavre pour **livrer** la cle a ton corps.
-5. Le timer expire (ou `R`) : tu reapparais au checkpoint avec la cle. Franchis
-   le puits d'un saut, puis traverse le parcours (fosses, piques, caisses) jusqu'a
-   la porte au bout du niveau. Apres le puits, un **escalier de plateformes**
-   monte hors ecran : la camera te suit aussi a la verticale.
+5. Le timer expire (ou `R` pour ecourter) : tu reapparais au checkpoint avec
+   la cle. Franchis le puits d'un saut, puis traverse le parcours (fosses,
+   piques, caisses) jusqu'a la porte au bout du niveau. Apres le puits, un
+   **escalier de plateformes** monte hors ecran : la camera te suit aussi a
+   la verticale.
 
 Des **checkpoints** jalonnent la course : les toucher met a jour le point de
 reapparition. Plusieurs **ames** sont cachees derriere des murs qui ressemblent
