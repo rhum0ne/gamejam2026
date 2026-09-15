@@ -259,8 +259,10 @@ class Player(arcade.Sprite):
             self.change_x = self._dash_dir * settings.PLAYER_DASH_SPEED
         else:
             self._apply_horizontal(delta_time)
+        self._cap_fall_speed()
         fall_speed = max(0.0, -self.change_y)
         self._physics.update()
+        self._cap_fall_speed()
         grounded = self._physics.can_jump()
         if grounded and not self._was_on_ground:
             self._landing_timer = settings.PLAYER_LANDING_SLOW_TIME
@@ -287,6 +289,12 @@ class Player(arcade.Sprite):
             active=self.is_dashing,
         )
         self._dust.update(delta_time)
+
+    def _cap_fall_speed(self) -> None:
+        """Plafonne la vitesse de chute (change_y negatif)."""
+        max_fall = settings.PLAYER_MAX_FALL_SPEED
+        if self.change_y < -max_fall:
+            self.change_y = -max_fall
 
     def _tick_run_dust(self, delta_time: float) -> None:
         if self.is_dashing:

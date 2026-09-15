@@ -120,6 +120,7 @@ PLAYER_HEIGHT = SPRITE_FRAME_SIZE
 PLAYER_GRAVITY = 1  # un peu plus leger : saut legerement plus haut et plus lent
 PLAYER_SPEED = 5.5
 PLAYER_JUMP_SPEED = 18.0
+PLAYER_MAX_FALL_SPEED = 14.0  # px/frame, vitesse verticale max en chute
 PLAYER_COYOTE_TIME = 0.10  # secondes de tolerance pour sauter apres une chute
 PLAYER_RESPAWN_DELAY = 0.4  # secondes avant de reprendre le controle du corps
 # Temps pour atteindre PLAYER_SPEED en maintenant une direction au sol.
