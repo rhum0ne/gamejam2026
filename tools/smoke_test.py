@@ -70,6 +70,11 @@ def check_gameplay_loop(window: arcade.Window) -> None:
 
     view.on_key_press(arcade.key.RIGHT, 0)
     advance(view, 30)
+    view.on_key_press(arcade.key.LSHIFT, 0)
+    view.on_key_release(arcade.key.LSHIFT, 0)
+    assert view.player.is_dashing or view.player.dash_ratio < 1.0, "Maj doit declencher le dash"
+    advance(view, 12)
+    assert not view.player.dash_ready, "le dash doit passer en cooldown"
     view.on_key_release(arcade.key.RIGHT, 0)
     assert view.player.alive, "le joueur ne doit pas mourir en marchant sur le sol"
 

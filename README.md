@@ -75,7 +75,9 @@ que les menus se dessinent. A lancer avant chaque commit.
 
 | Touche | Action |
 | --- | --- |
-| `Q` / `D`, ou fleches gauche / droite | Se deplacer |
+| `Q` / `D`, ou fleches gauche / droite | Se deplacer (acceleration ~1 s, glissade tres courte) |
+| `Espace`, `Z` ou fleche haut | Sauter (hauteur variable : relache pour ecourter) |
+| `Maj` | Dash dans la direction actuelle (jauge en bas a droite) |
 | `Espace`, `Z` ou fleche haut | Sauter (hauteur variable : relache pour ecourter) |
 | `ZQSD` / fleches | Diriger le fantome (vol libre, 8 directions) |
 | `F` | Projeter son esprit (le corps meurt sur place et laisse un cadavre) |

@@ -32,6 +32,9 @@ class HudData:
     ghost_duration: float = settings.GHOST_DURATION
     leash_ratio: float = 0.0
     fps: float | None = None
+    dash_ratio: float | None = None
+    dash_ready: bool = False
+    dash_flash: float = 0.0
 
 
 class Hud:
@@ -107,8 +110,41 @@ class Hud:
         if data.fps is not None:
             self._fps_text.text = f"{data.fps:.0f} FPS"
             self._fps_text.draw()
+        if data.dash_ratio is not None:
+            self._draw_dash_gauge(data)
         if data.ghost_time_left is not None:
             self._draw_ghost_gauges(data)
+
+    def _draw_dash_gauge(self, data: HudData) -> None:
+        """Petite jauge de recharge du dash, en bas a droite."""
+        width, height = 88, 8
+        right = self.screen_width - self._MARGIN
+        left = right - width
+        bottom = self._MARGIN + 8
+        top = bottom + height
+        ratio = max(0.0, min(1.0, data.dash_ratio or 0.0))
+        arcade.draw_lrbt_rectangle_filled(
+            left, right, bottom, top, settings.COLOR_HUD_BAR_BACKGROUND
+        )
+        fill_color = settings.COLOR_DASH if data.dash_ready else settings.COLOR_DASH_GAUGE
+        if ratio > 0.0:
+            arcade.draw_lrbt_rectangle_filled(
+                left, left + width * ratio, bottom, top, fill_color
+            )
+        if data.dash_flash > 0.0:
+            pad = 2 + 6 * data.dash_flash
+            arcade.draw_lrbt_rectangle_outline(
+                left - pad,
+                right + pad,
+                bottom - pad,
+                top + pad,
+                (*settings.COLOR_DASH, int(230 * data.dash_flash)),
+                2,
+            )
+        elif data.dash_ready:
+            arcade.draw_lrbt_rectangle_outline(
+                left - 1, right + 1, bottom - 1, top + 1, settings.COLOR_DASH, 1
+            )
 
     def _draw_ghost_gauges(self, data: HudData) -> None:
         """Jauge de temps restant du fantome et tension de la longe."""

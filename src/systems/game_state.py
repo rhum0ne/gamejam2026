@@ -151,6 +151,7 @@ _JUMP_KEYS = frozenset({arcade.key.SPACE}) | _UP_KEYS
 _PROJECT_KEY = arcade.key.F
 _RETURN_KEY = arcade.key.R
 _UPGRADE_KEY = arcade.key.TAB
+_DASH_KEYS = frozenset({arcade.key.LSHIFT, arcade.key.RSHIFT})
 
 
 class PlayView(arcade.View):
@@ -219,6 +220,7 @@ class PlayView(arcade.View):
         self.camera.use_world()
         self.level.draw()
         if self.player.alive:
+            self.player.draw_fx()
             arcade.draw_sprite(self.player)
         if self.machine.state is GameState.GHOST and self.ghost is not None:
             self._draw_ghost_layer(self.ghost)
@@ -281,6 +283,9 @@ class PlayView(arcade.View):
             ghost_duration=self.ghost.stats.duration if self.ghost is not None else settings.GHOST_DURATION,
             leash_ratio=self.ghost.leash_ratio if self.ghost is not None else 0.0,
             fps=self._fps if settings.DEBUG_SHOW_FPS else None,
+            dash_ratio=self.player.dash_ratio if state is GameState.PLAYING else None,
+            dash_ready=self.player.dash_ready,
+            dash_flash=self.player.dash_flash,
         )
 
     def _sample_fps(self) -> None:
@@ -490,6 +495,11 @@ class PlayView(arcade.View):
         if state is GameState.PLAYING:
             if symbol in _JUMP_KEYS:
                 self.player.jump()
+            elif symbol in _DASH_KEYS:
+                if self.player.dash():
+                    self.camera.shake(
+                        settings.CAMERA_DASH_SHAKE, settings.CAMERA_DASH_SHAKE_TIME
+                    )
             elif symbol == _PROJECT_KEY:
                 self._enter_ghost_mode()
         elif state is GameState.GHOST and symbol == _RETURN_KEY:
