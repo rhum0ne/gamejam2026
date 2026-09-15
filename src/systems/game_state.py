@@ -28,6 +28,7 @@ import arcade
 import settings
 from src.entities.corpse import Corpse
 from src.entities.ghost import Ghost
+from src.entities.glow import additive_blend
 from src.entities.item import ItemKind
 from src.entities.player import Player
 from src.systems import collisions
@@ -72,6 +73,16 @@ STATE_LABELS: dict[GameState, str] = {
     GameState.VICTORY: "Niveau termine",
     GameState.GAME_OVER: "Game Over",
 }
+
+
+def _in_view(sprite: arcade.Sprite, view, pad: float) -> bool:
+    """True si le sprite, plus une marge de halo, chevauche le viewport."""
+    return not (
+        sprite.center_x < view.left - pad
+        or sprite.center_x > view.right + pad
+        or sprite.center_y < view.bottom - pad
+        or sprite.center_y > view.top + pad
+    )
 
 
 class StateTransitionError(RuntimeError):
@@ -259,33 +270,54 @@ class PlayView(arcade.View):
             self.ghost.draw_hit_box(color)
 
     def _draw_ghost_layer(self, ghost: Ghost) -> None:
-        """Voile radial, fleche vers le corps, et fantome."""
+        """Voile radial, auras toujours visibles, secrets dans le champ, fantome."""
         for wall in self.level.spectral_walls:
             wall.set_revealed(ghost.reveals(wall))
+        self.fog.draw(ghost, self.camera.world)
+        for wall in self.level.spectral_walls:
             if wall.revealed:
                 arcade.draw_sprite(wall)
         for item in self.level.items:
             if ghost.reveals(item):
                 item.draw_fx()
                 arcade.draw_sprite(item)
-        self.fog.draw(ghost, self.camera.world)
-        for enemy in self.level.enemies:
-            enemy.draw_ghost_glow()
-            if ghost.reveals(enemy):
-                arcade.draw_sprite(enemy)
-        self.fog.draw(ghost, self.camera.world)
-        self._draw_mechanism_hints(ghost)
+        self._draw_ghost_danger_auras(ghost)
+        self._draw_mechanism_hints()
         ghost.draw_fx()
         arcade.draw_sprite(ghost)
         self._draw_body_arrow(ghost)
 
-    def _draw_mechanism_hints(self, ghost: Ghost) -> None:
-        """Auras silhouette et vrilles d'ame, visibles seulement en projection."""
+    def _draw_ghost_danger_auras(self, ghost: Ghost) -> None:
+        """Surbrillances d'ennemis et de pieges, au-dessus du voile."""
+        view = self.camera.visible_rect()
+        pad = max(
+            settings.ENEMY_WIDTH * settings.ENEMY_GHOST_GLOW_SCALE,
+            settings.TILE_SIZE * settings.SPIKE_GHOST_GLOW_SCALE,
+        )
+        with additive_blend():
+            for enemy in self.level.enemies:
+                if _in_view(enemy, view, pad):
+                    enemy.draw_ghost_glow(bind_blend=False)
+            for spike in self.level.hazards:
+                if _in_view(spike, view, pad):
+                    spike.draw_ghost_glow(bind_blend=False)
+            for spike in self.level.falling_spikes:
+                if _in_view(spike, view, pad):
+                    spike.draw_ghost_glow(bind_blend=False)
+        for enemy in self.level.enemies:
+            if ghost.reveals(enemy):
+                arcade.draw_sprite(enemy)
+        for spike in self.level.hazards:
+            if ghost.reveals(spike):
+                arcade.draw_sprite(spike)
+        for spike in self.level.falling_spikes:
+            if ghost.reveals(spike):
+                arcade.draw_sprite(spike)
+
+    def _draw_mechanism_hints(self) -> None:
+        """Auras silhouette et vrilles d'ame, visibles partout en projection."""
         now = time.perf_counter()
         for mechanism in self.level.mechanisms:
-            sprites = [mechanism.plate, *[tile.sprite for tile in mechanism.targets]]
-            if not any(ghost.reveals(sprite) for sprite in sprites):
-                continue
             mechanism.draw_soul(now)
 
     def _draw_body_arrow(self, ghost: Ghost) -> None:

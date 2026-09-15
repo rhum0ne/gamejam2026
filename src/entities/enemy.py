@@ -200,7 +200,7 @@ class Enemy(arcade.Sprite):
     # Dessin
     # ------------------------------------------------------------------ #
 
-    def draw_ghost_glow(self) -> None:
+    def draw_ghost_glow(self, *, bind_blend: bool = True) -> None:
         """Halo rouge intense, dessine aussi hors du champ de vision."""
         pulse = 1.0 + settings.ENEMY_GHOST_GLOW_PULSE * math.sin(
             self._glow_time * settings.ENEMY_GHOST_GLOW_PULSE_SPEED
@@ -212,6 +212,7 @@ class Enemy(arcade.Sprite):
             settings.ENEMY_HEIGHT * settings.ENEMY_GHOST_GLOW_SCALE,
             settings.COLOR_ENEMY_GLOW,
             int(settings.ENEMY_GHOST_GLOW_ALPHA * pulse),
+            bind_blend=bind_blend,
         )
         draw_glow(
             self.center_x,
@@ -220,6 +221,7 @@ class Enemy(arcade.Sprite):
             settings.ENEMY_HEIGHT * settings.ENEMY_GHOST_GLOW_INNER_SCALE,
             settings.COLOR_ENEMY_GLOW_CORE,
             int(settings.ENEMY_GHOST_GLOW_INNER_ALPHA * pulse),
+            bind_blend=bind_blend,
         )
 
     # ------------------------------------------------------------------ #
