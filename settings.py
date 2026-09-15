@@ -177,6 +177,24 @@ FOG_ALPHA = 200
 GHOST_VISION_CLEAR_RATIO = 0.25
 
 # --------------------------------------------------------------------------- #
+# Atmosphere de premier plan (brouillard + nuages, parallaxe > 1)
+# --------------------------------------------------------------------------- #
+
+ATMOSPHERE_SEED = 2026
+ATMOSPHERE_FOG_COLOR = (168, 176, 204)
+ATMOSPHERE_CLOUD_COLOR = (220, 226, 240)
+# (count, parallax, size_min, size_max, alpha_min, alpha_max, drift_px_s, y_bias)
+# y_bias 0 = repartition uniforme, 1 = concentre vers le bas de l'ecran.
+ATMOSPHERE_FOG_LAYERS: tuple[tuple[int, float, float, float, int, int, float, float], ...] = (
+    (10, 1.28, 160.0, 280.0, 14, 28, 7.0, 0.72),
+    (8, 1.52, 70.0, 140.0, 18, 36, 14.0, 0.40),
+)
+ATMOSPHERE_CLOUD_LAYERS: tuple[tuple[int, float, float, float, int, int, float, float], ...] = (
+    (28, 1.92, 7.0, 18.0, 50, 105, 22.0, 0.18),
+    (16, 2.65, 4.0, 10.0, 70, 140, 40.0, 0.12),
+)
+
+# --------------------------------------------------------------------------- #
 # Camera
 # --------------------------------------------------------------------------- #
 

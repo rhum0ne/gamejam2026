@@ -36,6 +36,7 @@ from src.systems.upgrades import SoulProgression
 from src.ui.debug import DebugOverlay, DebugSnapshot
 from src.ui.display import handle_display_key
 from src.ui.hud import Hud, HudData
+from src.world.atmosphere import ForegroundAtmosphere
 from src.world.camera import CameraRig
 from src.world.fog import GhostFog
 from src.world.level import Level
@@ -168,6 +169,7 @@ class PlayView(arcade.View):
         self.machine = GameStateMachine(GameState.MENU)
         self.camera = CameraRig()
         self.fog = GhostFog()
+        self.atmosphere = ForegroundAtmosphere()
         self.hud = Hud(settings.WORLD_VIEW_WIDTH, settings.WORLD_VIEW_HEIGHT)
         self.debug = DebugOverlay()
         self._debug_enabled = settings.DEBUG_OVERLAY
@@ -230,6 +232,8 @@ class PlayView(arcade.View):
             arcade.draw_sprite(self.player)
         if self.machine.state is GameState.GHOST and self.ghost is not None:
             self._draw_ghost_layer(self.ghost)
+        # Premier plan : passe devant le monde, reste sous le HUD.
+        self.atmosphere.draw(self.camera.world)
         if settings.DEBUG_SHOW_HITBOXES:
             self._draw_hitboxes()
         self.camera.use_ui()
@@ -385,6 +389,7 @@ class PlayView(arcade.View):
             self._update_ghost(delta_time)
         elif state is GameState.RESPAWNING:
             self._update_respawning(delta_time)
+        self.atmosphere.update(delta_time)
 
     def _update_playing(self, delta_time: float) -> None:
         self.player.walk(self._horizontal_input())
