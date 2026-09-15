@@ -91,13 +91,22 @@ class Hud:
             font_name=PIXEL_FONT,
         )
 
-    def draw(self, data: HudData) -> None:
+    def draw(self, data: HudData, fade: float = 1.0) -> None:
         """Dessine le HUD a partir de l'instantane fourni."""
+        fade = max(0.0, min(1.0, fade))
+        if fade <= 0.02:
+            return
+        alpha = int(255 * fade)
         self._level_text.text = data.level_name
         self._state_text.text = data.state_label
         self._essence_text.text = f"Ames : {data.essence}  |  Fantome niv. {data.ghost_level}"
         self._key_text.text = "Cle : oui" if data.has_key else "Cle : non"
         self._hint_text.text = data.hint
+        self._level_text.color = (*settings.COLOR_HUD_TEXT, alpha)
+        self._state_text.color = (*settings.COLOR_HUD_TEXT, alpha)
+        self._essence_text.color = (*settings.COLOR_HUD_TEXT, alpha)
+        self._key_text.color = (*settings.COLOR_HUD_TEXT, alpha)
+        self._hint_text.color = (*settings.COLOR_HUD_TEXT, alpha)
 
         self._level_text.draw()
         self._state_text.draw()
@@ -105,35 +114,37 @@ class Hud:
         self._key_text.draw()
         if data.fps is not None:
             self._fps_text.text = f"{data.fps:.0f} FPS"
+            self._fps_text.color = (*settings.COLOR_MENU_HINT, alpha)
             self._fps_text.draw()
-        if data.controls == "playing":
-            keys.draw_prompt_row(
-                self.screen_width / 2,
-                self._MARGIN + settings.UI_KEY_ICON_HEIGHT / 2 + 4,
-                keys.playing_prompts(show_esprit=data.show_esprit),
-                data.pressed_keys,
-            )
-        elif data.controls == "ghost":
-            keys.draw_prompt_row(
-                self.screen_width / 2,
-                self._MARGIN + settings.UI_KEY_ICON_HEIGHT / 2 + 4,
-                keys.GHOST_PROMPTS,
-                data.pressed_keys,
-            )
-        elif data.hint:
-            self._hint_text.text = data.hint
-            self._hint_text.draw()
-        if data.dash_ratio is not None:
-            flash = data.dash_flash
-            fill = settings.COLOR_DASH if data.dash_ready else settings.COLOR_DASH_GAUGE
-            self._draw_action_gauge(data.dash_ratio, fill, "dash", flash)
-        if data.ghost_time_left is not None:
-            duration = max(data.ghost_duration, 0.001)
-            ratio = max(0.0, min(1.0, data.ghost_time_left / duration))
-            flash = 0.0
-            if ratio <= settings.HUD_GAUGE_LOW:
-                flash = 0.45 + 0.55 * abs((data.ghost_time_left * 6.0) % 1.0 - 0.5) * 2.0
-            self._draw_action_gauge(ratio, settings.COLOR_HUD_GHOST_GAUGE, "ghost", flash)
+        if fade > 0.45:
+            if data.controls == "playing":
+                keys.draw_prompt_row(
+                    self.screen_width / 2,
+                    self._MARGIN + settings.UI_KEY_ICON_HEIGHT / 2 + 4,
+                    keys.playing_prompts(show_esprit=data.show_esprit),
+                    data.pressed_keys,
+                )
+            elif data.controls == "ghost":
+                keys.draw_prompt_row(
+                    self.screen_width / 2,
+                    self._MARGIN + settings.UI_KEY_ICON_HEIGHT / 2 + 4,
+                    keys.GHOST_PROMPTS,
+                    data.pressed_keys,
+                )
+            elif data.hint:
+                self._hint_text.text = data.hint
+                self._hint_text.draw()
+            if data.dash_ratio is not None:
+                flash = data.dash_flash
+                fill = settings.COLOR_DASH if data.dash_ready else settings.COLOR_DASH_GAUGE
+                self._draw_action_gauge(data.dash_ratio, fill, "dash", flash)
+            if data.ghost_time_left is not None:
+                duration = max(data.ghost_duration, 0.001)
+                ratio = max(0.0, min(1.0, data.ghost_time_left / duration))
+                flash = 0.0
+                if ratio <= settings.HUD_GAUGE_LOW:
+                    flash = 0.45 + 0.55 * abs((data.ghost_time_left * 6.0) % 1.0 - 0.5) * 2.0
+                self._draw_action_gauge(ratio, settings.COLOR_HUD_GHOST_GAUGE, "ghost", flash)
 
     def _gauge_geometry(self) -> tuple[float, float, float, float, float, float]:
         """Retourne (icon_x, bar_left, bar_right, bottom, top, icon_half)."""
