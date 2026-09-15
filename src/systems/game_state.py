@@ -264,6 +264,7 @@ class PlayView(arcade.View):
                 if ghost.reveals(sprite):
                     arcade.draw_sprite(sprite)
         self.fog.draw(ghost, self.camera.world)
+        ghost.draw_fx()
         arcade.draw_sprite(ghost)
         self._draw_body_arrow(ghost)
 

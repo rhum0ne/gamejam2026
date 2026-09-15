@@ -15,6 +15,7 @@ from collections.abc import Sequence
 import arcade
 
 import settings
+from src.entities.glow import draw_glow
 from src.entities.item import ItemKind
 
 
@@ -185,12 +186,20 @@ class Player(arcade.SpriteSolidColor):
             self.change_y *= 0.4
 
     def draw_fx(self) -> None:
-        """Trainee de dash (afterimages) et anneau quand la jauge est pleine."""
+        """Trainee de dash (afterimages + halo) et anneau quand la jauge est pleine."""
         life_max = max(settings.PLAYER_DASH_TRAIL_LIFE, 0.001)
         for pos_x, pos_y, life in self._trail:
             fade = max(0.0, min(1.0, life / life_max))
             width = settings.PLAYER_WIDTH * (0.42 + 0.38 * fade)
             height = settings.PLAYER_HEIGHT * (0.5 + 0.35 * fade)
+            draw_glow(
+                pos_x,
+                pos_y,
+                width * settings.PLAYER_DASH_TRAIL_GLOW_SCALE,
+                height * settings.PLAYER_DASH_TRAIL_GLOW_SCALE,
+                settings.COLOR_DASH_GLOW,
+                int(settings.PLAYER_DASH_TRAIL_GLOW_ALPHA * fade),
+            )
             arcade.draw_lrbt_rectangle_filled(
                 pos_x - width / 2,
                 pos_x + width / 2,
@@ -199,6 +208,20 @@ class Player(arcade.SpriteSolidColor):
                 (*settings.COLOR_DASH, int(100 * fade)),
             )
         if self.is_dashing:
+            glow_w = (
+                settings.PLAYER_WIDTH
+                * settings.PLAYER_DASH_GLOW_SCALE
+                * settings.PLAYER_DASH_GLOW_STRETCH
+            )
+            glow_h = settings.PLAYER_HEIGHT * settings.PLAYER_DASH_GLOW_SCALE
+            draw_glow(
+                self.center_x - self._dash_dir * settings.PLAYER_WIDTH * settings.PLAYER_DASH_GLOW_OFFSET,
+                self.center_y,
+                glow_w,
+                glow_h,
+                settings.COLOR_DASH_GLOW,
+                settings.PLAYER_DASH_GLOW_ALPHA,
+            )
             streak = 22.0
             if self._dash_dir >= 0:
                 left, right = self.left - streak, self.left

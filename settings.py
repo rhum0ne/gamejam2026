@@ -96,6 +96,13 @@ PLAYER_DASH_DURATION = 0.12
 PLAYER_DASH_COOLDOWN = 3.0
 PLAYER_DASH_READY_FLASH = 0.38
 PLAYER_DASH_TRAIL_LIFE = 0.22  # duree de vie d'une afterimage, en secondes
+PLAYER_DASH_GLOW_SCALE = 3.4
+PLAYER_DASH_GLOW_ALPHA = 34
+PLAYER_DASH_TRAIL_GLOW_SCALE = 3.2
+PLAYER_DASH_TRAIL_GLOW_ALPHA = 28
+PLAYER_DASH_GLOW_STRETCH = 1.55  # etirement du halo dans l'axe du dash
+PLAYER_DASH_GLOW_OFFSET = 0.32  # recul du halo, en fractions de PLAYER_WIDTH
+
 
 # --------------------------------------------------------------------------- #
 # Forme fantome
@@ -115,6 +122,11 @@ GHOST_HOME_ARROW_MIN_DISTANCE = 96.0
 GHOST_HOME_ARROW_OFFSET = 42.0  # distance du centre du fantome a la pointe
 GHOST_HOME_ARROW_LENGTH = 12.0
 GHOST_HOME_ARROW_WIDTH = 9.0
+GHOST_GLOW_SCALE = 3.8
+GHOST_GLOW_ALPHA = 32
+GHOST_GLOW_PULSE_SPEED = 2.2
+GHOST_GLOW_PULSE = 0.12  # variation d'opacite (0 = halo fixe)
+
 
 # --------------------------------------------------------------------------- #
 # Cadavre
@@ -159,6 +171,7 @@ COLOR_DOOR_OPEN = (96, 170, 110)
 COLOR_CHECKPOINT = (86, 148, 196)
 COLOR_PLAYER = (232, 232, 240)
 COLOR_GHOST = (128, 200, 255)
+COLOR_GHOST_GLOW = (110, 190, 255)
 COLOR_CORPSE = (140, 120, 120)
 COLOR_ENEMY = (188, 92, 160)
 COLOR_KEY = (232, 204, 96)
@@ -167,6 +180,7 @@ COLOR_HUD_TEXT = (228, 228, 236)
 COLOR_HUD_BAR_BACKGROUND = (48, 48, 62)
 COLOR_HUD_BAR_FILL = (128, 200, 255)
 COLOR_DASH = (255, 214, 120)
+COLOR_DASH_GLOW = (255, 224, 150)
 COLOR_DASH_GAUGE = (255, 186, 72)
 COLOR_MENU_TITLE = (200, 220, 255)
 COLOR_MENU_HINT = (150, 155, 175)
