@@ -21,6 +21,7 @@ puis une entree dans `_FACTORIES` (et si besoin une classe dans `obstacles.py`).
 from __future__ import annotations
 
 import json
+import math
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -111,6 +112,27 @@ class Level:
                     raise LevelFormatError(f"type de tuile inconnu : '{kind}'")
                 center = self.tile_center(column_index, row_index, len(grid))
                 factory(self, *center)
+        self._bind_initial_checkpoint()
+
+    def _bind_initial_checkpoint(self) -> None:
+        """Le spawn initial est le checkpoint le plus proche du joueur, pas le premier 'C' du fichier.
+
+        Sans ca, un checkpoint sur une plateforme haute (parse en premier, car en haut
+        de la carte) volerait le point de reapparition du tutoriel.
+        """
+        if self.player_spawn == (0.0, 0.0):
+            return
+        nearest = None
+        nearest_distance = None
+        for checkpoint in self.checkpoints:
+            distance = math.dist(checkpoint.position, self.player_spawn)
+            if nearest_distance is None or distance < nearest_distance:
+                nearest = checkpoint
+                nearest_distance = distance
+        if nearest is not None and nearest_distance <= 3 * self.tile_size:
+            self.checkpoint_spawn = (nearest.center_x, nearest.center_y)
+            return
+        self.checkpoint_spawn = self.player_spawn
 
     def tile_center(self, column: int, row: int, total_rows: int) -> tuple[float, float]:
         """Convertit des coordonnees de grille en coordonnees monde (pixels)."""
@@ -182,8 +204,6 @@ def _add_door(level: Level, x: float, y: float) -> None:
 
 def _add_checkpoint(level: Level, x: float, y: float) -> None:
     level.checkpoints.append(Checkpoint(x, y, size=level.tile_size))
-    if level.checkpoint_spawn == (0.0, 0.0):
-        level.checkpoint_spawn = (x, y)
 
 
 def _add_player_spawn(level: Level, x: float, y: float) -> None:

@@ -275,6 +275,8 @@ transition de niveau est automatique (`GameSession.advance_level`).
 
 **Contraintes de level design a respecter** (valeurs actuelles) :
 * largeur actuelle du tutoriel : **160 tuiles** (4 ecrans de 40) ;
+* hauteur actuelle du tutoriel : **48 tuiles** (1536 px, plus haut que l'ecran
+  de 720 px) pour exercer le defilement vertical ;
 * portee de saut du corps : environ **185 px**, soit 5 tuiles au maximum et
   4 tuiles confortablement ;
 * longe du fantome : **480 px** au depart (la cle du tutoriel est a 430 px du

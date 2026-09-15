@@ -42,10 +42,16 @@ class CameraRig:
 
     def follow(self, target: arcade.Sprite, delta_time: float) -> None:
         """Rapproche la camera de la cible, avec une avance dans le sens du mouvement."""
-        look_ahead = 0.0
+        look_ahead_x = 0.0
+        look_ahead_y = 0.0
         if target.change_x:
-            look_ahead = settings.CAMERA_LOOK_AHEAD * (1 if target.change_x > 0 else -1)
-        desired_x, desired_y = self._clamp(target.center_x + look_ahead, target.center_y)
+            look_ahead_x = settings.CAMERA_LOOK_AHEAD * (1 if target.change_x > 0 else -1)
+        if target.change_y:
+            look_ahead_y = settings.CAMERA_LOOK_AHEAD * (1 if target.change_y > 0 else -1)
+        desired_x, desired_y = self._clamp(
+            target.center_x + look_ahead_x,
+            target.center_y + look_ahead_y,
+        )
         current_x, current_y = self.world.position
         factor = min(1.0, settings.CAMERA_LERP * delta_time * settings.FPS)
         self.world.position = (
