@@ -35,6 +35,14 @@ SCREEN_TITLE = "Project Astral Platformer"
 FPS = 60
 FRAME_TIME = 1 / FPS
 
+# Etendue de monde (en unites monde, = pixels a zoom 1) que la camera montre
+# a l'ecran, quelle que soit la taille reelle de la fenetre/du moniteur. Sans
+# ca, passer en plein ecran revelerait plus de niveau (donc plus de chunks a
+# soumettre au rendu) et ferait chuter le FPS rien qu'a cause du changement
+# de dimensions : voir `CameraRig` dans `src/world/camera.py`.
+WORLD_VIEW_WIDTH = SCREEN_WIDTH
+WORLD_VIEW_HEIGHT = SCREEN_HEIGHT
+
 # --------------------------------------------------------------------------- #
 # Monde / tuiles
 # --------------------------------------------------------------------------- #

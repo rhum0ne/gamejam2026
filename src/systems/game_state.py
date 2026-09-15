@@ -164,7 +164,7 @@ class PlayView(arcade.View):
         self.machine = GameStateMachine(GameState.MENU)
         self.camera = CameraRig()
         self.fog = GhostFog()
-        self.hud = Hud(self.window.width, self.window.height)
+        self.hud = Hud(settings.WORLD_VIEW_WIDTH, settings.WORLD_VIEW_HEIGHT)
         self.debug = DebugOverlay()
         self._debug_enabled = settings.DEBUG_OVERLAY
         self.level: Level
@@ -180,7 +180,6 @@ class PlayView(arcade.View):
 
     def on_show_view(self) -> None:
         self.camera.on_resize(self.window.width, self.window.height)
-        self.hud.resize(self.window.width, self.window.height)
 
     # ------------------------------------------------------------------ #
     # Mise en place
@@ -217,7 +216,7 @@ class PlayView(arcade.View):
 
     def on_draw(self) -> None:
         self._sample_fps()
-        self.clear()
+        self.camera.begin_frame()
         self.camera.use_world()
         self.level.draw(self.camera.visible_rect())
         if self.player.alive:
@@ -230,6 +229,7 @@ class PlayView(arcade.View):
         self.hud.draw(self._hud_data())
         if self._debug_enabled:
             self.debug.draw(self._debug_snapshot())
+        self.camera.present()
 
     def _draw_hitboxes(self) -> None:
         color = settings.COLOR_DEBUG_HITBOX
@@ -557,4 +557,3 @@ class PlayView(arcade.View):
     def on_resize(self, width: int, height: int) -> None:
         super().on_resize(width, height)
         self.camera.on_resize(width, height)
-        self.hud.resize(width, height)
