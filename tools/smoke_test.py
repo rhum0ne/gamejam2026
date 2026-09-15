@@ -21,6 +21,8 @@ import arcade  # noqa: E402
 
 import settings  # noqa: E402
 from src.entities.item import ItemKind  # noqa: E402
+from src.systems.event_manager import EventManager  # noqa: E402
+from src.systems.events import PLAYER_DEATH, PLAYER_GHOST_END, PLAYER_WIN  # noqa: E402
 from src.systems.game_state import GameSession, GameState, PlayView  # noqa: E402
 from src.systems.upgrades import SoulProgression  # noqa: E402
 from src.ui.menus import TitleView, UpgradeTreeView, VictoryView  # noqa: E402
@@ -54,6 +56,42 @@ def check_progression() -> None:
     assert not progression.unlock("range_1"), "une amelioration ne doit pas etre achetee deux fois"
     print(f"  progression -> niveau {progression.level}, "
           f"portee fantome {progression.ghost_stats.max_range:.0f} px")
+
+
+def check_event_manager() -> None:
+    """Subscribe / dispatch / unsubscribe fonctionnent dans l'ordre d'abonnement."""
+    manager = EventManager()
+    received: list[tuple[str, object]] = []
+
+    def first(data: object) -> None:
+        received.append(("first", data))
+
+    def second(data: object) -> None:
+        received.append(("second", data))
+
+    manager.subscribe(PLAYER_DEATH, first)
+    manager.subscribe(PLAYER_DEATH, first)
+    manager.subscribe(PLAYER_DEATH, second)
+    payload = {"cause": "spikes", "position": (1.0, 2.0)}
+    manager.dispatch(PLAYER_DEATH, payload)
+    assert received == [("first", payload), ("second", payload)], received
+
+    received.clear()
+    manager.unsubscribe(PLAYER_DEATH, first)
+    manager.dispatch(PLAYER_DEATH, payload)
+    assert received == [("second", payload)], received
+
+    received.clear()
+    manager.dispatch(PLAYER_GHOST_END, {"reason": "timer"})
+    manager.dispatch(PLAYER_WIN, {"is_last_level": True})
+    assert received == [], "un evenement sans abonne ne doit rien declencher"
+
+    manager.clear()
+    manager.subscribe(PLAYER_WIN, first)
+    manager.clear(PLAYER_WIN)
+    manager.dispatch(PLAYER_WIN, {})
+    assert received == []
+    print("  event_manager -> subscribe, dispatch, unsubscribe, clear OK")
 
 
 def advance(view: arcade.View, frames: int) -> None:
@@ -266,6 +304,8 @@ def main() -> int:
     check_levels()
     print("[2/6] progression et ameliorations")
     check_progression()
+    print("[3/6] event manager")
+    check_event_manager()
 
     window = arcade.Window(
         width=settings.SCREEN_WIDTH,
