@@ -62,12 +62,28 @@ SPRITE_SPIKE_HANGING = "spike_up"
 # --------------------------------------------------------------------------- #
 
 GRAVITY = 1.0
+PLAYER_GRAVITY = 1  # un peu plus leger : saut legerement plus haut et plus lent
 PLAYER_WIDTH = 24
 PLAYER_HEIGHT = 44
 PLAYER_SPEED = 5.5
-PLAYER_JUMP_SPEED = 17.0
+PLAYER_JUMP_SPEED = 18.0
 PLAYER_COYOTE_TIME = 0.10  # secondes de tolerance pour sauter apres une chute
 PLAYER_RESPAWN_DELAY = 0.4  # secondes avant de reprendre le controle du corps
+# Temps pour atteindre PLAYER_SPEED en maintenant une direction au sol.
+PLAYER_ACCEL_TIME = 0.25
+# Glissade a l'arret (sol) : 2-3 frames, quelques pixels tout au plus.
+PLAYER_SLIDE_TIME = 0.01
+# Fraction de l'acceleration au sol quand le joueur est en l'air.
+PLAYER_AIR_CONTROL = 5.0
+# Ralentissement juste apres l'atterrissage.
+PLAYER_LANDING_SLOW_TIME = 0.12
+PLAYER_LANDING_SPEED_SCALE = 0.86
+# Dash horizontal (Shift), vitesse en px/frame, duree et recharge en secondes.
+PLAYER_DASH_SPEED = 30.0
+PLAYER_DASH_DURATION = 0.12
+PLAYER_DASH_COOLDOWN = 3.0
+PLAYER_DASH_READY_FLASH = 0.38
+PLAYER_DASH_TRAIL_LIFE = 0.22  # duree de vie d'une afterimage, en secondes
 
 # --------------------------------------------------------------------------- #
 # Forme fantome
@@ -138,6 +154,8 @@ COLOR_SOUL_ORB = (110, 190, 255)
 COLOR_HUD_TEXT = (228, 228, 236)
 COLOR_HUD_BAR_BACKGROUND = (48, 48, 62)
 COLOR_HUD_BAR_FILL = (128, 200, 255)
+COLOR_DASH = (255, 214, 120)
+COLOR_DASH_GAUGE = (255, 186, 72)
 COLOR_MENU_TITLE = (200, 220, 255)
 COLOR_MENU_HINT = (150, 155, 175)
 
@@ -158,6 +176,9 @@ CAMERA_LOOK_AHEAD = 56.0  # pixels d'avance a pleine vitesse
 # Seuils en pixels/frame : ignore les micro-secousses de la physique au sol.
 CAMERA_FALL_LOOK_THRESHOLD = 4.0
 CAMERA_RISE_LOOK_THRESHOLD = 10.0
+# Secousse du dash : amplitude en pixels, duree en secondes.
+CAMERA_DASH_SHAKE = 5.5
+CAMERA_DASH_SHAKE_TIME = 0.18
 
 # --------------------------------------------------------------------------- #
 # Debug
