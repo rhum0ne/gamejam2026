@@ -1,4 +1,4 @@
-"""Plein ecran et detection des raccourcis d'affichage.
+"""Plein ecran, placement de la fenetre et raccourcis d'affichage.
 
 Raccourcis :
     F11
@@ -9,6 +9,22 @@ Raccourcis :
 from __future__ import annotations
 
 import arcade
+
+
+def center_on_primary_screen(window: arcade.Window) -> None:
+    """Place la fenetre au milieu de l'ecran principal.
+
+    `arcade.Window.center_window` compare la taille de l'ecran (points) a
+    `get_framebuffer_size()` (pixels physiques). Sur un ecran Retina le
+    rapport 2x donne des coordonnees negatives : la fenetre nait hors cadre,
+    a gauche, et il faut la glisser a la main.
+    """
+    if window.fullscreen:
+        return
+    screen_width, screen_height = arcade.get_display_size()
+    x = max(0, (screen_width - int(window.width)) // 2)
+    y = max(0, (screen_height - int(window.height)) // 2)
+    window.set_location(x, y)
 
 
 def wants_fullscreen_toggle(symbol: int, modifiers: int) -> bool:
@@ -23,7 +39,10 @@ def wants_fullscreen_toggle(symbol: int, modifiers: int) -> bool:
 
 def toggle_fullscreen(window: arcade.Window) -> None:
     """Passe de fenetre a plein ecran, et inversement."""
+    leaving_fullscreen = window.fullscreen
     window.set_fullscreen(not window.fullscreen)
+    if leaving_fullscreen:
+        center_on_primary_screen(window)
 
 
 def handle_display_key(window: arcade.Window, symbol: int, modifiers: int) -> bool:
