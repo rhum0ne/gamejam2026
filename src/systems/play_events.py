@@ -111,6 +111,9 @@ def on_player_ghost_end(view: PlayView, data: dict) -> None:
         wall.set_revealed(False)
     view.anchor_corpse = None
     view._respawn_timer = settings.PLAYER_RESPAWN_DELAY
+    checkpoint = view.level.checkpoint_at(view.player.respawn_point)
+    if checkpoint is not None:
+        checkpoint.play_respawn()
     view.machine.try_to(GameState.RESPAWNING)
 
 

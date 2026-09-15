@@ -17,6 +17,7 @@ from pathlib import Path
 ROOT_DIR = Path(__file__).resolve().parent
 ASSETS_DIR = ROOT_DIR / "assets"
 SPRITES_DIR = ASSETS_DIR / "sprites"
+ANIMATIONS_DIR = ASSETS_DIR / "animations"
 UI_DIR = ASSETS_DIR / "ui"
 SOUNDS_DIR = ASSETS_DIR / "sons"
 MAPS_DIR = ASSETS_DIR / "maps"
@@ -86,8 +87,13 @@ SPRITE_PLAYER_IDLE = "player_idle"
 SPRITE_GHOST_WALK = "gost_walk"
 SPRITE_GHOST_DISAPPEAR = "gost_disappears"
 SPRITE_KEY = "key"
+SPRITE_CHECKPOINT = "Check_Point"
+SPRITE_CHECKPOINT_ACTIVE = "Check_Point_actif"
+# PNG natif 32 px, agrandi x2 en nearest-neighbor (pas de flou).
+CHECKPOINT_SIZE = TILE_SIZE * 2
 SPRITE_FRAME_SIZE = 32
 # Taille a l'ecran des sprites joueur / fantome (1.0 = 32 px).
+# L'agrandissement est fait en nearest-neighbor dans `load_strip`.
 ENTITY_SCALE = 1.5
 ANIM_WALK_FRAME_TIME = 0.07
 ANIM_IDLE_FRAME_TIME = 0.12
@@ -114,7 +120,15 @@ TORCH_FLICKER_SPEED_FAST = 19.0
 # --------------------------------------------------------------------------- #
 
 GRAVITY = 1.0
-# Hitbox locale (taille du sprite). ENTITY_SCALE l'agrandit ensuite.
+SPIKE_FALL_GRAVITY = GRAVITY
+SPIKE_FALL_MAX_SPEED = 14.0
+# Halo des piques en mode fantome (visible a travers le voile).
+SPIKE_GHOST_GLOW_SCALE = 3.4
+SPIKE_GHOST_GLOW_ALPHA = 110
+SPIKE_GHOST_GLOW_INNER_SCALE = 1.7
+SPIKE_GHOST_GLOW_INNER_ALPHA = 180
+SPIKE_GHOST_GLOW_PULSE = 0.14
+SPIKE_GHOST_GLOW_PULSE_SPEED = 3.2
 PLAYER_WIDTH = SPRITE_FRAME_SIZE
 PLAYER_HEIGHT = SPRITE_FRAME_SIZE
 PLAYER_GRAVITY = 1  # un peu plus leger : saut legerement plus haut et plus lent
@@ -123,6 +137,19 @@ PLAYER_JUMP_SPEED = 18.0
 PLAYER_MAX_FALL_SPEED = 14.0  # px/frame, vitesse verticale max en chute
 PLAYER_COYOTE_TIME = 0.10  # secondes de tolerance pour sauter apres une chute
 PLAYER_RESPAWN_DELAY = 0.4  # secondes avant de reprendre le controle du corps
+# Eclat d'ames bleues sur le totem au moment du respawn.
+CHECKPOINT_BURST_COUNT = 22
+CHECKPOINT_BURST_LIFE = 0.9
+CHECKPOINT_BURST_SPEED_X = 70.0
+CHECKPOINT_BURST_SPEED_Y = 110.0
+CHECKPOINT_BURST_GRAVITY = 80.0  # ralentit la montee (fontaine d'ames)
+CHECKPOINT_BURST_SIZE_MIN = 10.0
+CHECKPOINT_BURST_SIZE_MAX = 22.0
+CHECKPOINT_BURST_CORE_SIZE = 3.2
+CHECKPOINT_BURST_GLOW_ALPHA = 150
+CHECKPOINT_BURST_CORE_ALPHA = 220
+CHECKPOINT_BURST_SPREAD = 10.0
+CHECKPOINT_BURST_MAX = 48
 # Temps pour atteindre PLAYER_SPEED en maintenant une direction au sol.
 PLAYER_ACCEL_TIME = 0.25
 # Glissade a l'arret (sol) : 2-3 frames, quelques pixels tout au plus.
@@ -191,9 +218,12 @@ GHOST_SPEED = 6.0
 GHOST_ACCEL_TIME = 0.20  # secondes pour atteindre la vitesse visee (plus grand = plus mou)
 GHOST_COAST_TIME = 0.48  # secondes pour glisser a l'arret une fois les touches lachees
 GHOST_DURATION = 12.0  # duree de base du mode fantome, en secondes
+GHOST_DURATION_INCREASE_VALUE = 0.5
 GHOST_MAX_RANGE = 480.0  # conserve pour les paliers ; plus de limite de distance en jeu
+GHOST_MAX_RANGE_INCREASE_VALUE = 20
 GHOST_VISION_RADIUS = 200.0  # rayon de revelation au debut du mode fantome
 GHOST_VISION_RADIUS_MIN = 12.0  # rayon en fin de timer (presque rien)
+GHOST_VISION_RADIUS_INCREASE_VALUE = 10
 # Exposant de fermeture : 1 = lineaire, plus grand = reste large puis se referme d'un coup.
 GHOST_VISION_SHRINK_POWER = 5.0
 GHOST_CARRY_CAPACITY = 1  # nombre d'objets transportables simultanement
@@ -222,14 +252,93 @@ CORPSE_FADE_TIME = 3.0  # secondes de fondu en fin de vie
 CORPSE_EAT_TIME = 4.0  # secondes pour qu'un ennemi devore un cadavre
 
 # --------------------------------------------------------------------------- #
+# Plaques d'activation
+# --------------------------------------------------------------------------- #
+
+# Epaisseur visuelle de la plaque, posee au sol de la tuile.
+PLATE_HEIGHT = 8
+# Retrait horizontal de chaque cote, en pixels (la hitbox suit la plaque).
+PLATE_INSET = 4
+# Halo spectral : epouse la silhouette (pas un blob rond).
+MECHANISM_AURA_EDGE = 20.0  # epaisseur max du voile, en px (blocs carres)
+MECHANISM_AURA_MIN_PAD = 3.0  # pad mini, meme sur une plaque tres plate
+MECHANISM_AURA_AXIS_RATIO = 0.35  # le pad d'un axe ne depasse pas ratio * taille
+MECHANISM_AURA_FILL_ALPHA = 16
+MECHANISM_AURA_EDGE_ALPHA = 34
+MECHANISM_AURA_OUTER_SCALE = 1.8  # deuxieme passe, plus large et plus faible
+MECHANISM_AURA_PULSE = 0.22
+MECHANISM_AURA_MOTE_SPACING = 26.0  # px de perimetre entre deux motes
+MECHANISM_AURA_MOTE_SIZE = 11.0
+MECHANISM_AURA_MOTE_ALPHA = 40
+MECHANISM_AURA_MOTE_DRIFT = 7.0  # px vers l'exterieur de la forme
+MECHANISM_AURA_MOTE_SPEED = 0.12  # tours de perimetre par seconde
+# Vrilles plaque -> cibles : trainee d'ame, pas un trait.
+MECHANISM_LINK_CURVE = 0.26  # amplitude du S, fraction de la longueur
+MECHANISM_LINK_FAN = 10.0  # px : ecarte les brins d'une meme plaque
+MECHANISM_LINK_WIGGLE = 5.0  # px d'ondulation orthogonale
+MECHANISM_LINK_WIGGLE_WAVES = 1.7
+MECHANISM_LINK_PULSE_SPEED = 1.15
+MECHANISM_LINK_SPACING = 10.0  # px entre deux samples de la courbe
+MECHANISM_LINK_MIN_SEGMENTS = 24
+MECHANISM_LINK_STAMP_SIZE = 5.0
+MECHANISM_LINK_STAMP_ALPHA = 32
+MECHANISM_LINK_STAMP_SPACING = 4.0
+MECHANISM_LINK_BLUR_SCALE = 2.2
+MECHANISM_LINK_BLUR_ALPHA = 10
+MECHANISM_LINK_MOTE_COUNT = 4
+MECHANISM_LINK_MOTE_SIZE = 3.5
+MECHANISM_LINK_MOTE_ALPHA = 42
+MECHANISM_LINK_MOTE_SPEED = 0.18
+
+# --------------------------------------------------------------------------- #
 # Ennemis
 # --------------------------------------------------------------------------- #
 
-ENEMY_WIDTH = 28
-ENEMY_HEIGHT = 36
+# Planches "Skeleton_Sword" (squelette blanc, sans VFX) : assets/animations/.
+ENEMY_SKELETON_DIR = (
+    ANIMATIONS_DIR / "Enemies" / "Skeletons" / "Skeleton_Sword" / "Skeleton_White" / "Skeleton_Without_VFX"
+)
+ENEMY_SPRITE_IDLE = ENEMY_SKELETON_DIR / "Skeleton_01_White_Idle.png"
+ENEMY_SPRITE_WALK = ENEMY_SKELETON_DIR / "Skeleton_01_White_Walk.png"
+ENEMY_SPRITE_ATTACK = ENEMY_SKELETON_DIR / "Skeleton_01_White_Attack1.png"
+ENEMY_SPRITE_DIE = ENEMY_SKELETON_DIR / "Skeleton_01_White_Die.png"
+# Planches natives en 96x64 : le squelette (dessine vers la droite) n'occupe
+# qu'une partie de la frame (l'epee balaie le reste pendant les attaques).
+ENEMY_FRAME_WIDTH = 96
+ENEMY_FRAME_HEIGHT = 64
+ENEMY_SCALE = 1.0
+# Hitbox rectangulaire = corps visible du squelette, pas la frame entiere.
+# Offsets mesures sur les planches idle/walk (voir sprites.apply_rect_hit_box).
+ENEMY_WIDTH = 34
+ENEMY_HEIGHT = 46
+ENEMY_HITBOX_OFFSET_X = 3.0
+ENEMY_HITBOX_OFFSET_Y = -9.0
 ENEMY_SPEED = 1.6
-ENEMY_AGGRO_RANGE = 220.0  # distance de detection du joueur
+ENEMY_AGGRO_RANGE = 150.0  # distance de detection du joueur
+# Au-dela, on considere que le joueur n'est pas sur le meme "etage" (une
+# plateforme au-dessus/en-dessous) : l'ennemi ne peut pas l'atteindre en
+# marchant, donc ne doit pas le suivre juste parce qu'il est proche a vol
+# d'oiseau. Reste volontairement serre : un saut vers une plateforme passe
+# une bonne partie de sa montee hors de cette plage, l'aggro ne se declenche
+# donc qu'une fois (presque) arrive a la meme hauteur, pas des le decollage.
+ENEMY_AGGRO_VERTICAL_RANGE = 48.0
+# Le contact avec le corps ne tue pas : seule la lame tue, pendant les frames
+# ou elle est tendue (ENEMY_ATTACK_HIT_FRAMES). L'ennemi declenche son coup a
+# ENEMY_ATTACK_RANGE du joueur ; la lame touche jusqu'a ENEMY_ATTACK_REACH
+# devant lui (pointe a ~44 px du centre du sprite + demi-largeur du joueur).
+# RANGE < REACH : un joueur immobile est touche, un joueur qui recule pendant
+# l'armement (frames avant l'impact) esquive.
+ENEMY_ATTACK_RANGE = 48.0
+ENEMY_ATTACK_REACH = 60.0
+ENEMY_ATTACK_VERTICAL_RANGE = 40.0  # tolerance verticale (doit etre a peu pres au meme sol)
+# Frames d'Attack1 (0-9) : 1-4 = armement (epee en arriere), 5-7 = lame tendue.
+ENEMY_ATTACK_HIT_FRAMES: tuple[int, int] = (5, 7)
+ENEMY_ATTACK_COOLDOWN = 0.4  # secondes de pause entre deux coups
 ENEMY_CORPSE_SMELL_RANGE = 320.0  # distance d'attraction vers un cadavre
+ANIM_ENEMY_IDLE_FRAME_TIME = 0.12
+ANIM_ENEMY_WALK_FRAME_TIME = 0.07
+ANIM_ENEMY_ATTACK_FRAME_TIME = 0.05
+ANIM_ENEMY_DIE_FRAME_TIME = 0.06
 ENEMY_GHOST_GLOW_SCALE = 5.6
 ENEMY_GHOST_GLOW_ALPHA = 96
 ENEMY_GHOST_GLOW_INNER_SCALE = 2.4
@@ -265,9 +374,17 @@ COLOR_BACKGROUND = (18, 18, 28)
 COLOR_WALL = (72, 76, 96)
 COLOR_SPECTRAL_WALL = (96, 84, 140)
 COLOR_SPIKE = (196, 84, 84)
+COLOR_SPIKE_GLOW = (255, 36, 28)
+COLOR_SPIKE_GLOW_CORE = (255, 110, 72)
 COLOR_DOOR_LOCKED = (150, 110, 46)
 COLOR_DOOR_OPEN = (96, 170, 110)
 COLOR_CHECKPOINT = (86, 148, 196)
+COLOR_CHECKPOINT_PARTICLE = (90, 186, 255)
+COLOR_CHECKPOINT_PARTICLE_CORE = (210, 240, 255)
+COLOR_PRESSURE_PLATE = (92, 108, 132)
+COLOR_PRESSURE_PLATE_PRESSED = (64, 168, 214)
+COLOR_MECHANISM_LINK = (80, 190, 255)
+COLOR_MECHANISM_GLOW = (90, 186, 255)
 COLOR_PLAYER = (232, 232, 240)
 COLOR_GHOST = (128, 200, 255)
 COLOR_GHOST_GLOW = (110, 190, 255)
@@ -336,6 +453,12 @@ CAMERA_RISE_LOOK_THRESHOLD = 10.0
 # Secousse du dash : amplitude en pixels, duree en secondes.
 CAMERA_DASH_SHAKE = 5.5
 CAMERA_DASH_SHAKE_TIME = 0.18
+# Zoom : > 1.0 rapproche (corps), < 1.0 eloigne (fantome). La transition entre
+# les deux, lissee par CAMERA_ZOOM_SMOOTH_TIME, donne l'effet de projection
+# hors du corps (la camera recule) quand on passe humain -> fantome.
+CAMERA_ZOOM_PLAYER = 1.18
+CAMERA_ZOOM_GHOST = 0.82
+CAMERA_ZOOM_SMOOTH_TIME = 0.55
 
 # --------------------------------------------------------------------------- #
 # Icones clavier (Kenney Input Prompts, dans assets/ui/)

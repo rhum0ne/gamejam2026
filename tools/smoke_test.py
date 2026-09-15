@@ -20,7 +20,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import arcade  # noqa: E402
 
 import settings  # noqa: E402
+from src.entities.enemy import Enemy, EnemyState  # noqa: E402
 from src.entities.item import ItemKind  # noqa: E402
+from src.entities.player import Player  # noqa: E402
+from src.systems import collisions  # noqa: E402
 from src.systems.event_manager import EventManager  # noqa: E402
 from src.systems.events import PLAYER_DEATH, PLAYER_GHOST_END, PLAYER_WIN  # noqa: E402
 from src.systems.game_state import GameSession, GameState, PlayView  # noqa: E402
@@ -39,8 +42,14 @@ def check_levels() -> None:
         assert level.player_spawn != (0.0, 0.0), f"{name} : pas de spawn joueur ('P')"
         assert len(level.walls) > 0, f"{name} : aucun mur"
         assert level.width > 0 and level.height > 0
+        extra = ""
+        if name == "level_1_tuto.json":
+            assert len(level.mechanisms) >= 1, f"{name} : plaque d'activation manquante"
+            hanging = sum(1 for hazard in level.hazards if getattr(hazard, "hanging", False))
+            assert hanging >= 1, f"{name} : pique de plafond manquante"
+            extra = f", {len(level.mechanisms)} plaque(s), {hanging} pique(s) plafond"
         print(f"  carte '{name}' -> {level.name}: {level.columns}x{level.rows} tuiles, "
-              f"{len(level.walls)} murs, {len(level.items)} objets, {len(level.enemies)} ennemis")
+              f"{len(level.walls)} murs, {len(level.items)} objets, {len(level.enemies)} ennemis{extra}")
 
 
 def check_progression() -> None:
@@ -92,6 +101,83 @@ def check_event_manager() -> None:
     manager.dispatch(PLAYER_WIN, {})
     assert received == []
     print("  event_manager -> subscribe, dispatch, unsubscribe, clear OK")
+
+
+def check_enemy_ai() -> None:
+    """Portee d'aggro verticale, coup d'epee (seul mortel), esquive, mort animee.
+
+    Construit `Enemy`/`Player` isoles (sans niveau ni fenetre : creer un
+    sprite ne demande pas de contexte OpenGL, seul le dessin en a besoin, cf.
+    agents.md section 9).
+    """
+    enemy = Enemy(200.0, 200.0)
+
+    # Joueur tres au-dessus (hors ENEMY_AGGRO_VERTICAL_RANGE) mais proche
+    # horizontalement : l'ennemi ne doit pas le suivre, il est inatteignable.
+    player = Player(200.0, 200.0 + settings.ENEMY_AGGRO_VERTICAL_RANGE + 40.0)
+    enemy.update(FRAME, player=player, corpses=None)
+    assert enemy.state is EnemyState.PATROL, "trop haut : l'ennemi ne doit pas suivre"
+
+    # Meme niveau, a portee d'aggro mais hors de portee de melee : poursuite.
+    player.center_y = enemy.center_y
+    player.center_x = enemy.center_x + settings.ENEMY_AGGRO_RANGE - 10.0
+    enemy.update(FRAME, player=player, corpses=None)
+    assert enemy.state is EnemyState.CHASE, "a portee et au meme niveau : doit poursuivre"
+    assert enemy.change_x != 0.0
+
+    # Approche a portee de melee : l'ennemi s'arrete et arme son coup.
+    player.center_x = enemy.center_x + settings.ENEMY_ATTACK_RANGE - 5.0
+    enemy.update(FRAME, player=player, corpses=None)
+    assert enemy.state is EnemyState.ATTACK, "assez proche : doit s'arreter pour frapper"
+    assert enemy.change_x == 0.0, "l'ennemi ne doit pas glisser pendant l'attaque"
+
+    # Toucher le corps ne tue pas : joueur colle contre l'ennemi pendant l'armement.
+    player.center_x = enemy.center_x + 10.0
+    assert arcade.check_for_collision(enemy, player), "le joueur doit chevaucher le corps"
+    assert collisions.enemy_striking_player(player, [enemy]) is None, (
+        "le simple contact avec le corps ne doit pas tuer"
+    )
+
+    # Joueur immobile a portee : la lame finit par le toucher, apres l'armement.
+    frames_to_hit = None
+    for frame in range(120):
+        enemy.update(FRAME, player=player, corpses=None)
+        if collisions.enemy_striking_player(player, [enemy]) is enemy:
+            frames_to_hit = frame + 1
+            break
+    assert frames_to_hit is not None, "un joueur immobile a portee doit etre touche par le coup"
+    assert frames_to_hit > 5, "le coup doit etre annonce (armement) avant de toucher"
+
+    # Esquive : le joueur recule hors de portee de la lame pendant l'armement.
+    dodger = Enemy(200.0, 200.0)
+    player.center_x = dodger.center_x + settings.ENEMY_ATTACK_RANGE - 5.0
+    player.center_y = dodger.center_y
+    dodger.update(FRAME, player=player, corpses=None)
+    assert dodger.state is EnemyState.ATTACK
+    player.center_x = dodger.center_x + settings.ENEMY_ATTACK_REACH + 10.0
+    for _ in range(120):
+        dodger.update(FRAME, player=player, corpses=None)
+        assert collisions.enemy_striking_player(player, [dodger]) is None, (
+            "hors de portee de la lame : le coup doit rater"
+        )
+        if dodger.state is not EnemyState.ATTACK:
+            break
+    assert dodger.state is EnemyState.CHASE, "coup fini, joueur recule : doit reprendre la poursuite"
+
+    # Mort : bille bleue, etat DYING, un 2e coup pendant DYING est ignore.
+    orb = enemy.take_damage()
+    assert orb is not None, "take_damage doit renvoyer une bille bleue a la mort"
+    assert enemy.state is EnemyState.DYING
+    assert enemy.take_damage() is None, "un ennemi DYING ignore les coups suivants"
+    assert collisions.enemy_striking_player(player, [enemy]) is None, (
+        "un ennemi qui meurt en plein coup ne doit plus tuer"
+    )
+    for _ in range(120):
+        enemy.update(FRAME, player=player, corpses=None)
+    assert enemy._animator.finished, "l'animation de mort doit se terminer"
+
+    print(f"  IA ennemie -> aggro vertical, contact inoffensif, coup a {frames_to_hit} frames, "
+          "esquive, mort animee OK")
 
 
 def advance(view: arcade.View, frames: int) -> None:
@@ -213,6 +299,16 @@ def check_tutorial_is_solvable(window: arcade.Window) -> None:
     assert view.session.knows_esprit
     corpse = view.level.corpses[0]
     key_item = next(item for item in view.level.items if item.kind is ItemKind.KEY)
+    view.on_update(FRAME)
+    view.on_draw()
+    assert view.level.mechanisms, "le tutoriel doit contenir une plaque d'activation"
+    assert view.level.mechanisms[0].pressed, (
+        "le cadavre au bord du puits doit enfoncer la plaque "
+        f"(corpse x={corpse.center_x:.0f}, plate x={view.level.mechanisms[0].plate.center_x:.0f})"
+    )
+    assert all(tile.hidden for tile in view.level.mechanisms[0].targets), (
+        "la plaque doit ouvrir le passage du puits tant que le cadavre appuie"
+    )
 
     def fly_to(target_x: float, target_y: float, is_done, limit: int = 600) -> bool:
         """Pilote le fantome vers un point, avec une zone neutre comme un joueur."""
@@ -422,14 +518,16 @@ def check_editor_views(window: arcade.Window) -> None:
 
 def main() -> int:
     print("Project Astral Platformer - smoke test")
-    print("[1/7] chargement des cartes")
+    print("[1/10] chargement des cartes")
     check_levels()
-    print("[2/7] progression et ameliorations")
+    print("[2/10] progression et ameliorations")
     check_progression()
-    print("[3/7] event manager")
+    print("[3/10] event manager")
     check_event_manager()
-    print("[4/7] modele de l'editeur")
+    print("[4/10] modele de l'editeur")
     check_editor_document()
+    print("[5/10] IA ennemie")
+    check_enemy_ai()
 
     window = arcade.Window(
         width=settings.SCREEN_WIDTH,
@@ -442,15 +540,15 @@ def main() -> int:
     )
     assert window.vsync
     try:
-        print("[5/7] boucle de jeu")
+        print("[6/10] boucle de jeu")
         check_gameplay_loop(window)
-        print("[6/7] defilement vertical de la camera")
+        print("[7/10] defilement vertical de la camera")
         check_vertical_scroll(window)
-        print("[7/7] solution du niveau tutoriel")
+        print("[8/10] solution du niveau tutoriel")
         check_tutorial_is_solvable(window)
-        print("[8/8] menus")
+        print("[9/10] menus")
         check_menus(window)
-        print("[9/9] vues de l'editeur")
+        print("[10/10] vues de l'editeur")
         check_editor_views(window)
     finally:
         window.close()

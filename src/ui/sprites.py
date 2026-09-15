@@ -26,11 +26,15 @@ _TEXTURE_CACHE: dict[str, arcade.Texture] = {}
 _STRIP_CACHE: dict[str, tuple[arcade.Texture, ...]] = {}
 
 
-def sprite_path(name: str) -> Path:
-    """Retourne le chemin d'un sprite dans `settings.SPRITES_DIR`.
+def sprite_path(name: str | Path) -> Path:
+    """Retourne le chemin d'un sprite.
 
-    `name` accepte `spike` ou `spike.png`.
+    `name` accepte `spike` ou `spike.png` (resolu dans `settings.SPRITES_DIR`),
+    ou directement un `Path` complet (planches d'`assets/animations/`, par
+    exemple `settings.ENEMY_SPRITE_WALK`).
     """
+    if isinstance(name, Path):
+        return name
     if not name:
         raise ValueError("name ne doit pas etre vide")
     filename = name if name.endswith(".png") else f"{name}.png"
@@ -124,20 +128,26 @@ def tile_texture(
 
 
 def load_strip(
-    name: str,
+    name: str | Path,
     frame_width: int,
     frame_height: int | None = None,
+    *,
+    scale: float = 1.0,
 ) -> tuple[arcade.Texture, ...]:
     """Decoupe un bandeau horizontal en frames, avec cache.
 
     `frame_height` defaut a la hauteur de l'image. Les pixels restants a
     droite (largeur non multiple) sont ignores.
+
+    `scale` agrandit chaque frame en nearest-neighbor (pixel art, pas de flou).
     """
     if frame_width <= 0:
         raise ValueError("frame_width doit etre strictement positif")
     if frame_height is not None and frame_height <= 0:
         raise ValueError("frame_height doit etre strictement positif")
-    cache_key = f"strip:{name}|{frame_width}|{frame_height or 0}"
+    if scale <= 0:
+        raise ValueError("scale doit etre strictement positif")
+    cache_key = f"strip:{name}|{frame_width}|{frame_height or 0}|{scale:.4f}"
     cached = _STRIP_CACHE.get(cache_key)
     if cached is not None:
         return cached
@@ -148,10 +158,14 @@ def load_strip(
     if columns <= 0 or height > image.height:
         raise ValueError(f"bandeau '{name}' trop petit pour des frames {frame_width}x{height}")
 
+    scaled_width = max(1, round(frame_width * scale))
+    scaled_height = max(1, round(height * scale))
     frames: list[arcade.Texture] = []
     for index in range(columns):
         left = index * frame_width
         crop = image.crop((left, 0, left + frame_width, height))
+        if crop.size != (scaled_width, scaled_height):
+            crop = crop.resize((scaled_width, scaled_height), Image.Resampling.NEAREST)
         texture_key = f"{cache_key}|{index}"
         frames.append(arcade.Texture(crop, hash=texture_key))
     strip = tuple(frames)
@@ -188,18 +202,21 @@ class Animator:
         self.speed = speed
         self.elapsed = 0.0
         self.finished = False
+        self.frame_index = 0
 
     @property
     def animation(self) -> StripAnimation:
         return self._animation
 
-    def play(self, animation: StripAnimation) -> None:
-        """Change d'animation. No-op si c'est deja celle en cours."""
-        if animation is self._animation:
+    def play(self, animation: StripAnimation, *, restart: bool = False) -> None:
+        """Change d'animation. No-op si c'est deja celle en cours, sauf `restart`
+        (rejouer une animation `loop=False` deja terminee, ex. un nouveau coup)."""
+        if animation is self._animation and not restart:
             return
         self._animation = animation
         self.elapsed = 0.0
         self.finished = False
+        self.frame_index = 0
 
     def update(self, delta_time: float) -> arcade.Texture:
         """Avance l'horloge et retourne la texture courante."""
@@ -218,6 +235,7 @@ class Animator:
                 index = last_index
         else:
             index = last_index
+        self.frame_index = index
         return frames[index]
 
 
@@ -265,7 +283,12 @@ def apply_rect_hit_box(
     sprite.hit_box = HitBox(points, position=sprite.position)
 
 
-def _open_image(name: str) -> Image.Image:
+def draw_pixel_sprite(sprite: arcade.Sprite) -> None:
+    """Dessine un sprite en nearest-neighbor (pas de flou GPU)."""
+    arcade.draw_sprite(sprite, pixelated=True)
+
+
+def _open_image(name: str | Path) -> Image.Image:
     cached = _IMAGE_CACHE.get(name)
     if cached is not None:
         return cached

@@ -12,13 +12,16 @@ rectangle plein : changer un PNG ne doit pas modifier la physique.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 import math
+import time
 from dataclasses import dataclass
 
 import arcade
 
 import settings
 from src.entities.glow import draw_glow
+from src.entities.particles import SoulBurst
 from src.ui import sprites
 
 
@@ -169,11 +172,67 @@ class Spike(arcade.Sprite):
         )
         self.lethal_for_body = True
         self.lethal_for_ghost = False
+        self.hanging = spec.hanging
+        self.falling = False
+        self._tile_size = size
         hit_height = size // 2
         offset_y = (size - hit_height) / 2
         if not spec.hanging:
             offset_y = -offset_y
         sprites.apply_rect_hit_box(self, size, hit_height, offset_y=offset_y)
+
+    def draw_ghost_glow(self, *, bind_blend: bool = True) -> None:
+        """Halo rouge, visible a travers le voile du fantome."""
+        pulse = 1.0 + settings.SPIKE_GHOST_GLOW_PULSE * math.sin(
+            time.perf_counter() * settings.SPIKE_GHOST_GLOW_PULSE_SPEED
+            + self.center_x * 0.11
+            + self.center_y * 0.07
+        )
+        size = self._tile_size
+        draw_glow(
+            self.center_x,
+            self.center_y,
+            size * settings.SPIKE_GHOST_GLOW_SCALE,
+            size * settings.SPIKE_GHOST_GLOW_SCALE,
+            settings.COLOR_SPIKE_GLOW,
+            int(settings.SPIKE_GHOST_GLOW_ALPHA * pulse),
+            bind_blend=bind_blend,
+        )
+        draw_glow(
+            self.center_x,
+            self.center_y,
+            size * settings.SPIKE_GHOST_GLOW_INNER_SCALE,
+            size * settings.SPIKE_GHOST_GLOW_INNER_SCALE,
+            settings.COLOR_SPIKE_GLOW_CORE,
+            int(settings.SPIKE_GHOST_GLOW_INNER_ALPHA * pulse),
+            bind_blend=bind_blend,
+        )
+
+    def start_fall(self) -> None:
+        """Detache la pique du plafond : elle devient un projectile mortel."""
+        if self.falling:
+            return
+        self.hanging = False
+        self.falling = True
+        self.change_y = 0.0
+        sprites.apply_rect_hit_box(self, self._tile_size, self._tile_size)
+
+    def fall(self, walls: Sequence[arcade.SpriteList]) -> bool:
+        """Fait tomber la pique. Retourne True si elle a touche le sol (a casser)."""
+        if not self.falling:
+            return False
+        self.change_y -= settings.SPIKE_FALL_GRAVITY
+        if self.change_y < -settings.SPIKE_FALL_MAX_SPEED:
+            self.change_y = -settings.SPIKE_FALL_MAX_SPEED
+        previous_y = self.center_y
+        self.center_y += self.change_y
+        for wall_list in walls:
+            if arcade.check_for_collision_with_list(self, wall_list):
+                self.center_y = previous_y
+                return True
+        if self.top < -settings.TILE_SIZE:
+            return True
+        return False
 
 
 class Torch(arcade.SpriteSolidColor):
@@ -255,22 +314,48 @@ class Door(arcade.SpriteSolidColor):
         self.color = settings.COLOR_DOOR_OPEN
 
 
-class Checkpoint(arcade.SpriteSolidColor):
+class Checkpoint(arcade.Sprite):
     """Point de reapparition du corps physique apres la fin du mode fantome."""
 
     def __init__(self, center_x: float, center_y: float, size: int = settings.TILE_SIZE) -> None:
-        super().__init__(
-            size // 2,
-            size,
-            center_x=center_x,
-            center_y=center_y,
-            color=settings.COLOR_CHECKPOINT,
-        )
+        display = settings.CHECKPOINT_SIZE
+        self._idle = sprites.load_texture(settings.SPRITE_CHECKPOINT, size=display)
+        self._lit = sprites.load_texture(settings.SPRITE_CHECKPOINT_ACTIVE, size=display)
+        lift = (display - size) / 2
+        self._spawn = (center_x, center_y)
+        super().__init__(self._idle, center_x=center_x, center_y=center_y + lift)
+        sprites.apply_rect_hit_box(self, size, size, offset_y=-lift)
         self.active = False
+        self._burst = SoulBurst()
+
+    @property
+    def spawn_point(self) -> tuple[float, float]:
+        """Centre de la tuile, pas du sprite (le totem est plus haut que la case)."""
+        return self._spawn
 
     def activate(self) -> None:
+        """Passe a la texture allumee. No-op si deja le checkpoint courant."""
+        if self.active:
+            return
         self.active = True
-        self.color = settings.COLOR_HUD_BAR_FILL
+        self.texture = self._lit
+
+    def deactivate(self) -> None:
+        """Revient a la texture eteinte."""
+        if not self.active:
+            return
+        self.active = False
+        self.texture = self._idle
+
+    def play_respawn(self) -> None:
+        """Eclat de motes bleues : le corps revient ici."""
+        self._burst.emit(self.center_x, self.center_y + self.height * 0.15)
+
+    def update(self, delta_time: float = settings.FRAME_TIME, *args, **kwargs) -> None:
+        self._burst.update(delta_time)
+
+    def draw_fx(self) -> None:
+        self._burst.draw()
 
 
 def is_solid_for_ghost(wall: arcade.Sprite) -> bool:

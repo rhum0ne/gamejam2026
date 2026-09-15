@@ -23,12 +23,20 @@ from src.ui import sprites
 
 
 def _idle_animation() -> sprites.StripAnimation:
-    frames = sprites.load_strip(settings.SPRITE_PLAYER_IDLE, settings.SPRITE_FRAME_SIZE)
+    frames = sprites.load_strip(
+        settings.SPRITE_PLAYER_IDLE,
+        settings.SPRITE_FRAME_SIZE,
+        scale=settings.ENTITY_SCALE,
+    )
     return sprites.StripAnimation(frames, settings.ANIM_IDLE_FRAME_TIME, loop=True)
 
 
 def _walk_animation() -> sprites.StripAnimation:
-    frames = sprites.load_strip(settings.SPRITE_PLAYER_WALK, settings.SPRITE_FRAME_SIZE)
+    frames = sprites.load_strip(
+        settings.SPRITE_PLAYER_WALK,
+        settings.SPRITE_FRAME_SIZE,
+        scale=settings.ENTITY_SCALE,
+    )
     return sprites.StripAnimation(frames, settings.ANIM_WALK_FRAME_TIME, loop=True)
 
 
@@ -51,8 +59,11 @@ class Player(arcade.Sprite):
         self._idle = _idle_animation()
         self._walk = _walk_animation()
         super().__init__(self._idle.textures[0], center_x=center_x, center_y=center_y)
-        sprites.apply_rect_hit_box(self, settings.PLAYER_WIDTH, settings.PLAYER_HEIGHT)
-        self.scale = settings.ENTITY_SCALE
+        sprites.apply_rect_hit_box(
+            self,
+            settings.PLAYER_WIDTH * settings.ENTITY_SCALE,
+            settings.PLAYER_HEIGHT * settings.ENTITY_SCALE,
+        )
         self._animator = sprites.Animator(self._idle)
         self.alive = True
         self.facing = 1

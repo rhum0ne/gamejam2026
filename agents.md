@@ -94,7 +94,8 @@ gamejam2026/
 ├── README.md               Presentation, installation, controles
 │
 ├── assets/                 Ressources, AUCUN code
-│   ├── sprites/            Images (joueur, fantome, cadavre, ennemis, cle) - vide pour l'instant
+│   ├── sprites/            Tuiles, joueur, fantome, cle (planches chargees via `ui/sprites.py`)
+│   ├── animations/         Planches d'ennemis (squelette : Enemies/Skeletons/...)
 │   ├── sons/               Bruitages et musiques - vide pour l'instant
 │   └── maps/               Niveaux au format JSON
 │       └── level_1_tuto.json
@@ -218,7 +219,7 @@ separation : elle permet de tester les regles sans contexte OpenGL.
 * Dash `Maj` : `PLAYER_DASH_SPEED` pendant `PLAYER_DASH_DURATION`, recharge
   `PLAYER_DASH_COOLDOWN` (jauge HUD + flash quand elle est pleine). Trainee
   d'afterimages + secousse camera (`CAMERA_DASH_SHAKE`).
-* Meurt au contact des piques, d'un ennemi, ou en sortant du niveau.
+* Meurt au contact des piques, sous le coup d'epee d'un ennemi, ou en sortant du niveau.
 * `inventory` : ensemble de `ItemKind` (la cle ouvre la porte).
 
 ### Fantome — `entities/ghost.py`
@@ -242,10 +243,38 @@ separation : elle permet de tester les regles sans contexte OpenGL.
   pas un bug.
 
 ### Ennemis — `entities/enemy.py`
-* Priorite : cadavre a portee d'odorat (`FEAST`) > joueur a portee (`CHASE`) >
-  patrouille (`PATROL`, demi-tour sur mur ou bord de plateforme).
+* Priorite : cadavre a portee d'odorat (`FEAST`) > joueur a portee (`CHASE`,
+  qui passe en `ATTACK` des que le joueur est a portee de melee) > patrouille
+  (`PATROL`, demi-tour sur mur ou bord de plateforme).
+* `_player_in_range` ignore un joueur trop eloigne verticalement
+  (`ENEMY_AGGRO_VERTICAL_RANGE`) : un ennemi au sol ne "suit" pas un joueur
+  juste au-dessus de lui sur une autre plateforme, inatteignable.
+* En `ATTACK` (declenche a `ENEMY_ATTACK_RANGE` du joueur), l'ennemi s'arrete
+  et donne un coup d'epee engage (il ne bouge ni ne se retourne avant la fin
+  de l'animation), puis attend `ENEMY_ATTACK_COOLDOWN` avant le suivant.
+  **Seul ce coup tue** : `collisions.enemy_striking_player` ne compte que les
+  frames ou la lame est tendue (`ENEMY_ATTACK_HIT_FRAMES`,
+  `Enemy.strike_active`) et une cible a moins de `ENEMY_ATTACK_REACH` devant
+  lui. Toucher le corps d'un ennemi ne tue pas (le joueur peut le traverser) ;
+  reculer pendant l'armement permet d'esquiver.
+* `_walk_towards` (utilise par `CHASE` et `FEAST`) respecte le meme
+  garde-fou anti-vide que `_patrol` (`_blocked_ahead`/`_floor_ahead`) : sans
+  ca, un ennemi poste sur une petite plateforme tomberait au sol en
+  poursuivant une cible situee au-dela du bord.
 * Meurent en un coup quand le joueur retombe sur leur tete
   (`collisions.enemy_stomped_by_player`) et laissent une bille bleue.
+* Sprite anime (squelette, `assets/animations/Enemies/Skeletons/...`, planches
+  96x64 px) : idle/walk/attack/die geres par un `Animator`, comme le joueur.
+  A la mort, l'etat passe a `DYING` : l'ennemi ne bouge plus, ne tue plus au
+  contact et ne peut plus etre re-stomp (`collisions.py` ignore les ennemis
+  `DYING`), le temps que `Die` se joue une fois ; il n'est retire de la
+  `SpriteList` qu'a la fin de l'animation.
+* Dans `level_1_tuto.json`, l'unique ennemi est sur une petite corniche
+  flottante pres du spawn (`rows[27]` col 11, sol `rows[28]` cols 9-13) : a
+  un saut du chemin principal, mais hors du couloir au sol que parcourent les
+  scripts de `smoke_test.py` (`check_gameplay_loop`,
+  `check_tutorial_is_solvable`) — ne pas le reposer sur le sol principal sans
+  rejouer ces tests.
 
 ### Ames et paliers — `systems/upgrades.py`
 * Une bille bleue ramassee = `SOUL_ESSENCE_PER_ORB` essence.
@@ -373,13 +402,15 @@ transition de niveau est automatique (`GameSession.advance_level`).
 * Corps physique : marche acceleree, glissade, dash, saut, coyote time, mort, checkpoint, inventaire.
 * Fantome : vol, murs spectraux, longe, timer, revelation, transport/livraison.
 * Cadavre : solide, gravite, dissipation, devorable.
-* Ennemi : patrouille, poursuite, festin, bille bleue.
+* Ennemi : patrouille, poursuite, festin, bille bleue, sprite anime (squelette)
+  avec mort animee (etat `DYING`).
 * Niveau 1 "Le Puits Mortel" charge depuis JSON et **terminable**.
 * Camera lissee (constante de temps, look-ahead proportionnel a la vitesse), HUD, ecran titre, victoire, game over.
 
 ### A faire (par ordre de priorite pour la jam)
-1. **Assets** : remplacer les `SpriteSolidColor` par des sprites et des
-   animations (`assets/sprites/`), ajouter sons et musique (`assets/sons/`).
+1. **Assets** : joueur, fantome et ennemi (squelette) ont deja des sprites
+   animes ; il reste le cadavre (`entities/corpse.py`, encore
+   `SpriteSolidColor`), et sons/musique (`assets/sons/`, vide).
 2. **Feel** : jump buffer, particules, tremblement de camera, transitions de niveau.
 3. **Niveaux** : 3 a 5 cartes apres le tutoriel, introduisant le cadavre comme
    plateforme puis comme bouclier anti-piques.

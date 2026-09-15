@@ -22,12 +22,20 @@ from src.ui import sprites
 
 
 def _walk_animation() -> sprites.StripAnimation:
-    frames = sprites.load_strip(settings.SPRITE_GHOST_WALK, settings.SPRITE_FRAME_SIZE)
+    frames = sprites.load_strip(
+        settings.SPRITE_GHOST_WALK,
+        settings.SPRITE_FRAME_SIZE,
+        scale=settings.ENTITY_SCALE,
+    )
     return sprites.StripAnimation(frames, settings.ANIM_WALK_FRAME_TIME, loop=True)
 
 
 def _disappear_animation() -> sprites.StripAnimation:
-    frames = sprites.load_strip(settings.SPRITE_GHOST_DISAPPEAR, settings.SPRITE_FRAME_SIZE)
+    frames = sprites.load_strip(
+        settings.SPRITE_GHOST_DISAPPEAR,
+        settings.SPRITE_FRAME_SIZE,
+        scale=settings.ENTITY_SCALE,
+    )
     return sprites.StripAnimation(frames, settings.ANIM_GHOST_DISAPPEAR_FRAME_TIME, loop=False)
 
 
@@ -44,8 +52,11 @@ class Ghost(arcade.Sprite):
         self._walk = _walk_animation()
         self._disappear = _disappear_animation()
         super().__init__(self._walk.textures[0], center_x=center_x, center_y=center_y)
-        sprites.apply_rect_hit_box(self, settings.GHOST_WIDTH, settings.GHOST_HEIGHT)
-        self.scale = settings.ENTITY_SCALE
+        sprites.apply_rect_hit_box(
+            self,
+            settings.GHOST_WIDTH * settings.ENTITY_SCALE,
+            settings.GHOST_HEIGHT * settings.ENTITY_SCALE,
+        )
         self._animator = sprites.Animator(self._walk)
         self.stats = stats
         self.anchor = anchor if anchor is not None else (center_x, center_y)

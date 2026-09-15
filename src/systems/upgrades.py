@@ -29,7 +29,7 @@ Pour ajouter un palier : une entree dans `PALIERS` (et un seuil dans
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field, replace
 
 import settings
 
@@ -42,6 +42,23 @@ class GhostStats:
     duration: float = settings.GHOST_DURATION
     vision_radius: float = settings.GHOST_VISION_RADIUS
     carry_capacity: int = settings.GHOST_CARRY_CAPACITY
+
+    def level_increased(self) -> "GhostStats":
+        """Retourne une nouvelle instance avec les bonus d'un niveau supplementaire."""
+        return replace(
+            self,
+            max_range=self.max_range + settings.GHOST_MAX_RANGE_INCREASE_VALUE,
+            duration=self.duration + settings.GHOST_DURATION_INCREASE_VALUE,
+            vision_radius=self.vision_radius + settings.GHOST_VISION_RADIUS_INCREASE_VALUE,
+        )
+
+    @staticmethod
+    def for_level(level: int) -> "GhostStats":
+        """Construit les stats de base pour un niveau donne (0 = aucun bonus)."""
+        base = GhostStats()
+        for _ in range(level):
+            base = base.level_increased()
+        return base
 
 
 @dataclass(frozen=True, slots=True)
@@ -112,6 +129,11 @@ class SoulProgression:
             if self.collected_total >= threshold:
                 level = index + 1
         return level
+
+    @property
+    def ghost_stats(self) -> GhostStats:
+        """Statistiques du fantome correspondant au niveau actuel."""
+        return GhostStats.for_level(self.level - 1)
 
     @property
     def essence_to_next_level(self) -> int | None:
