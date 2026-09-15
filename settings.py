@@ -405,6 +405,7 @@ COLOR_SOUL_ORB = (110, 190, 255)
 COLOR_HUD_TEXT = (228, 228, 236)
 COLOR_HUD_BAR_BACKGROUND = (48, 48, 62)
 COLOR_HUD_BAR_FILL = (128, 200, 255)
+COLOR_HUD_GHOST_GAUGE = (110, 196, 255)
 COLOR_DASH = (255, 214, 120)
 COLOR_DASH_GLOW = (255, 224, 150)
 COLOR_TRAIL_DASH = (255, 214, 96)
@@ -504,6 +505,14 @@ UI_KEYBOARD_EXTRAS = "Keyboard Extras.png"
 UI_KEY_CELL = 16  # taille native d'une touche-lettre
 UI_KEY_ICON_HEIGHT = 40  # hauteur a l'ecran (nearest-neighbor)
 UI_KEY_CAPTION_SIZE = 16  # libelles a cote des icones
+
+# Jauge unique bas-centre : dash (corps) ou timer (fantome).
+HUD_GAUGE_WIDTH = 168
+HUD_GAUGE_HEIGHT = 10
+HUD_GAUGE_ICON = 22
+HUD_GAUGE_GAP = 8
+HUD_GAUGE_LIFT = 10  # au-dessus des icones clavier
+HUD_GAUGE_LOW = 0.22  # le timer fantome pulse sous ce ratio
 
 # --------------------------------------------------------------------------- #
 # Debug
