@@ -15,6 +15,7 @@ import math
 import arcade
 
 import settings
+from src.entities.glow import draw_glow
 from src.entities.item import Item
 from src.systems.upgrades import GhostStats
 from src.ui import sprites
@@ -54,6 +55,7 @@ class Ghost(arcade.Sprite):
         self._vanishing = False
         self._input = (0.0, 0.0)
         self._solid_walls: arcade.SpriteList | None = None
+        self._glow_time = 0.0
 
     # ------------------------------------------------------------------ #
     # Initialisation
@@ -154,6 +156,24 @@ class Ghost(arcade.Sprite):
         return released
 
     # ------------------------------------------------------------------ #
+    # Dessin
+    # ------------------------------------------------------------------ #
+
+    def draw_fx(self) -> None:
+        """Halo cyan leger, pulse doucement pour rester lisible dans le noir."""
+        pulse = 1.0 + settings.GHOST_GLOW_PULSE * math.sin(
+            self._glow_time * settings.GHOST_GLOW_PULSE_SPEED
+        )
+        draw_glow(
+            self.center_x,
+            self.center_y,
+            settings.GHOST_WIDTH * settings.GHOST_GLOW_SCALE,
+            settings.GHOST_HEIGHT * settings.GHOST_GLOW_SCALE,
+            settings.COLOR_GHOST_GLOW,
+            int(settings.GHOST_GLOW_ALPHA * pulse),
+        )
+
+    # ------------------------------------------------------------------ #
     # Boucle de jeu
     # ------------------------------------------------------------------ #
 
@@ -164,6 +184,7 @@ class Ghost(arcade.Sprite):
         if self._vanishing:
             self._advance_animation(delta_time)
             return
+        self._glow_time += max(0.0, delta_time)
         self._apply_steering(delta_time)
         self._move_axis("x")
         self._move_axis("y")

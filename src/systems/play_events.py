@@ -95,6 +95,7 @@ def on_player_death_enter_ghost(view: PlayView, data: dict) -> None:
     stats = view.session.progression.ghost_stats
     view.ghost = Ghost(spawn_x, spawn_y, stats, anchor=(spawn_x, spawn_y))
     view.ghost.bind_world(view.level.walls)
+    view.session.knows_esprit = True
     view.machine.to(GameState.GHOST)
 
 
@@ -108,6 +109,7 @@ def on_player_ghost_end(view: PlayView, data: dict) -> None:
         view.ghost.start_vanish()
     for wall in view.level.spectral_walls:
         wall.set_revealed(False)
+    view.anchor_corpse = None
     view._respawn_timer = settings.PLAYER_RESPAWN_DELAY
     view.machine.try_to(GameState.RESPAWNING)
 

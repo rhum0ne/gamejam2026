@@ -45,8 +45,8 @@ class GhostFog:
     ) -> None:
         """Remplit de noir tout le viewport sauf le carre du degrade."""
         cam_x, cam_y = camera.position
-        half_w = camera.viewport_width / 2
-        half_h = camera.viewport_height / 2
+        half_w = camera.width / 2
+        half_h = camera.height / 2
         view_left = cam_x - half_w
         view_right = cam_x + half_w
         view_bottom = cam_y - half_h

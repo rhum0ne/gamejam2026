@@ -33,8 +33,10 @@ from src.entities.player import Player
 from src.systems import collisions
 from src.systems.play_events import bind_play_view, emit_ghost_end, emit_player_death, emit_player_win
 from src.systems.upgrades import SoulProgression
+from src.ui.debug import DebugOverlay, DebugSnapshot
 from src.ui.display import handle_display_key
 from src.ui.hud import Hud, HudData
+from src.world.atmosphere import ForegroundAtmosphere
 from src.world.camera import CameraRig
 from src.world.fog import GhostFog
 from src.world.level import Level
@@ -117,6 +119,7 @@ class GameSession:
     progression: SoulProgression = field(default_factory=SoulProgression)
     level_index: int = 0
     deaths: int = 0
+    knows_esprit: bool = False
 
     @property
     def level_file(self) -> str:
@@ -138,6 +141,7 @@ class GameSession:
         self.progression = SoulProgression()
         self.level_index = 0
         self.deaths = 0
+        self.knows_esprit = False
 
 
 # --------------------------------------------------------------------------- #
@@ -152,6 +156,7 @@ _JUMP_KEYS = frozenset({arcade.key.SPACE}) | _UP_KEYS
 _PROJECT_KEY = arcade.key.F
 _RETURN_KEY = arcade.key.R
 _UPGRADE_KEY = arcade.key.TAB
+_DASH_KEYS = frozenset({arcade.key.LSHIFT, arcade.key.RSHIFT})
 
 
 class PlayView(arcade.View):
@@ -164,7 +169,10 @@ class PlayView(arcade.View):
         self.machine = GameStateMachine(GameState.MENU)
         self.camera = CameraRig()
         self.fog = GhostFog()
-        self.hud = Hud(self.window.width, self.window.height)
+        self.atmosphere = ForegroundAtmosphere()
+        self.hud = Hud(settings.WORLD_VIEW_WIDTH, settings.WORLD_VIEW_HEIGHT)
+        self.debug = DebugOverlay()
+        self._debug_enabled = settings.DEBUG_OVERLAY
         self.level: Level
         self.player: Player
         self.ghost: Ghost | None = None
@@ -179,7 +187,6 @@ class PlayView(arcade.View):
 
     def on_show_view(self) -> None:
         self.camera.on_resize(self.window.width, self.window.height)
-        self.hud.resize(self.window.width, self.window.height)
 
     # ------------------------------------------------------------------ #
     # Mise en place
@@ -217,18 +224,35 @@ class PlayView(arcade.View):
 
     def on_draw(self) -> None:
         self._sample_fps()
-        self.clear()
+        self.camera.begin_frame()
         self.camera.use_world()
-        self.level.draw()
+        self.level.draw(self.camera.visible_rect())
         if self.player.alive:
+            self.player.draw_fx()
             arcade.draw_sprite(self.player)
         if self.ghost is not None:
             if self.machine.state is GameState.GHOST:
                 self._draw_ghost_layer(self.ghost)
             elif self.ghost.vanishing:
                 arcade.draw_sprite(self.ghost)
+        if settings.DEBUG_SHOW_HITBOXES:
+            self._draw_hitboxes()
         self.camera.use_ui()
         self.hud.draw(self._hud_data())
+        if self._debug_enabled:
+            self.debug.draw(self._debug_snapshot())
+        self.camera.present()
+
+    def _draw_hitboxes(self) -> None:
+        color = settings.COLOR_DEBUG_HITBOX
+        view_rect = self.camera.visible_rect()
+        self.level.draw_static_hit_boxes(color, view_rect)
+        self.level.enemies.draw_hit_boxes(color)
+        self.level.corpses.draw_hit_boxes(color)
+        if self.player.alive:
+            self.player.draw_hit_box(color)
+        if self.ghost is not None:
+            self.ghost.draw_hit_box(color)
 
     def _draw_ghost_layer(self, ghost: Ghost) -> None:
         """Voile radial, fleche vers le corps, et fantome."""
@@ -241,6 +265,7 @@ class PlayView(arcade.View):
                 if ghost.reveals(sprite):
                     arcade.draw_sprite(sprite)
         self.fog.draw(ghost, self.camera.world)
+        ghost.draw_fx()
         arcade.draw_sprite(ghost)
         self._draw_body_arrow(ghost)
 
@@ -279,14 +304,27 @@ class PlayView(arcade.View):
             state_label=STATE_LABELS[state],
             essence=self.session.progression.essence,
             ghost_level=self.session.progression.level,
-            hint=self.level.hint if state is GameState.PLAYING else "",
+            hint=self._hint_for(state),
             has_key=self.player.has_item(ItemKind.KEY),
             corpse_count=len(self.level.corpses),
             ghost_time_left=self.ghost.time_left if state is GameState.GHOST and self.ghost is not None else None,
             ghost_duration=self.ghost.stats.duration if self.ghost is not None else settings.GHOST_DURATION,
-            leash_ratio=self.ghost.leash_ratio if state is GameState.GHOST and self.ghost is not None else 0.0,
-            fps=self._fps if settings.DEBUG_SHOW_FPS else None,
+            leash_ratio=self.ghost.leash_ratio if self.ghost is not None else 0.0,
+            fps=self._fps if settings.DEBUG_SHOW_FPS and not self._debug_enabled else None,
+            dash_ratio=self.player.dash_ratio if state is GameState.PLAYING else None,
+            dash_ready=self.player.dash_ready,
+            dash_flash=self.player.dash_flash,
+            controls="ghost" if state is GameState.GHOST else ("playing" if state is GameState.PLAYING else ""),
+            pressed_keys=frozenset(self.held_keys),
+            show_esprit=self.session.knows_esprit,
         )
+
+    def _hint_for(self, state: GameState) -> str:
+        if state is GameState.PLAYING:
+            return self.level.hint
+        if state is GameState.GHOST:
+            return "R : ecourter le mode fantome et revenir au checkpoint"
+        return ""
 
     def _sample_fps(self) -> None:
         """Moyenne glissante du FPS de dessin, independante de update_rate."""
@@ -297,6 +335,48 @@ class PlayView(arcade.View):
                 instant = 1.0 / elapsed
                 self._fps = instant if self._fps == 0.0 else self._fps * 0.9 + instant * 0.1
         self._last_draw_time = now
+
+    def _debug_snapshot(self) -> DebugSnapshot:
+        """Collecte FPS, etat, tuiles a l'ecran et positions pour l'overlay."""
+        tiles_total = len(self.level.walls) + len(self.level.spectral_walls) + len(self.level.hazards)
+        ghost = self.ghost
+        seen: dict[str, int] = {}
+        for enemy in self.level.enemies:
+            seen[enemy.state.name] = seen.get(enemy.state.name, 0) + 1
+        enemy_states = " ".join(f"{name}={count}" for name, count in seen.items())
+        cam_x, cam_y = self.camera.world.position
+        return DebugSnapshot(
+            fps=self._fps,
+            state=self.machine.state.name,
+            player_x=self.player.center_x,
+            player_y=self.player.center_y,
+            player_vx=self.player.change_x,
+            player_vy=self.player.change_y,
+            on_ground=self.player.on_ground,
+            alive=self.player.alive,
+            ghost_x=ghost.center_x if ghost is not None else None,
+            ghost_y=ghost.center_y if ghost is not None else None,
+            ghost_time=ghost.time_left if ghost is not None else None,
+            leash_ratio=ghost.leash_ratio if ghost is not None else 0.0,
+            camera_x=cam_x,
+            camera_y=cam_y,
+            view_w=self.camera.world.viewport_width,
+            view_h=self.camera.world.viewport_height,
+            window_w=self.window.width,
+            window_h=self.window.height,
+            fullscreen=bool(self.window.fullscreen),
+            tiles_visible=self.level.tiles_drawn,
+            tiles_total=tiles_total,
+            walls_visible=self.level.walls_drawn,
+            walls_total=len(self.level.walls),
+            enemies=len(self.level.enemies),
+            items=len(self.level.items),
+            corpses=len(self.level.corpses),
+            enemy_states=enemy_states,
+            deaths=self.session.deaths,
+            essence=self.session.progression.essence,
+            extra=(f"chunks {self.level.chunks_drawn}/{self.level.chunks_total}",),
+        )
 
     # ------------------------------------------------------------------ #
     # Boucle de jeu
@@ -311,6 +391,7 @@ class PlayView(arcade.View):
             self._update_ghost(delta_time)
         elif state is GameState.RESPAWNING:
             self._update_respawning(delta_time)
+        self.atmosphere.update(delta_time)
 
     def _update_playing(self, delta_time: float) -> None:
         self.player.walk(self._horizontal_input())
@@ -451,6 +532,9 @@ class PlayView(arcade.View):
 
         if handle_display_key(self.window, symbol, modifiers):
             return
+        if symbol == arcade.key.F3:
+            self._debug_enabled = not self._debug_enabled
+            return
         self.held_keys.add(symbol)
         state = self.machine.state
         if symbol == arcade.key.ESCAPE:
@@ -462,6 +546,11 @@ class PlayView(arcade.View):
         if state is GameState.PLAYING:
             if symbol in _JUMP_KEYS:
                 self.player.jump()
+            elif symbol in _DASH_KEYS:
+                if self.player.dash():
+                    self.camera.shake(
+                        settings.CAMERA_DASH_SHAKE, settings.CAMERA_DASH_SHAKE_TIME
+                    )
             elif symbol == _PROJECT_KEY:
                 emit_player_death(self, "sacrifice")
         elif state is GameState.GHOST and symbol == _RETURN_KEY:
@@ -476,4 +565,3 @@ class PlayView(arcade.View):
     def on_resize(self, width: int, height: int) -> None:
         super().on_resize(width, height)
         self.camera.on_resize(width, height)
-        self.hud.resize(width, height)

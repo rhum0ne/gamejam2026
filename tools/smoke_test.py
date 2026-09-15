@@ -26,6 +26,7 @@ from src.systems.event_manager import EventManager  # noqa: E402
 from src.systems.events import PLAYER_DEATH, PLAYER_GHOST_END, PLAYER_WIN  # noqa: E402
 from src.systems.game_state import GameSession, GameState, PlayView  # noqa: E402
 from src.systems.upgrades import SoulProgression  # noqa: E402
+from src.ui import keys  # noqa: E402
 from src.ui.menus import TitleView, UpgradeTreeView, VictoryView  # noqa: E402
 from src.world.level import Level  # noqa: E402
 
@@ -109,6 +110,11 @@ def check_gameplay_loop(window: arcade.Window) -> None:
 
     view.on_key_press(arcade.key.RIGHT, 0)
     advance(view, 30)
+    view.on_key_press(arcade.key.LSHIFT, 0)
+    view.on_key_release(arcade.key.LSHIFT, 0)
+    assert view.player.is_dashing or view.player.dash_ratio < 1.0, "Maj doit declencher le dash"
+    advance(view, 12)
+    assert not view.player.dash_ready, "le dash doit passer en cooldown"
     view.on_key_release(arcade.key.RIGHT, 0)
     assert view.player.alive, "le joueur ne doit pas mourir en marchant sur le sol"
 
@@ -196,16 +202,20 @@ def check_tutorial_is_solvable(window: arcade.Window) -> None:
     """
     view = PlayView(GameSession())
     window.show_view(view)
+    assert not view.session.knows_esprit
+    assert not view._hud_data().show_esprit, "F / esprit ne doit pas apparaitre avant d'avoir ete fantome"
 
     view.held_keys.add(arcade.key.RIGHT)
     advance(view, 66)
     view.held_keys.clear()
     advance(view, 5)
     assert view.player.alive, "le corps doit s'arreter au bord du puits, pas tomber"
+    assert not view._hud_data().show_esprit, "F / esprit ne doit pas spoiler le puits"
 
     view.on_key_press(arcade.key.F, 0)
     view.on_key_release(arcade.key.F, 0)
     assert view.machine.state is GameState.GHOST
+    assert view.session.knows_esprit
     corpse = view.level.corpses[0]
     key_item = next(item for item in view.level.items if item.kind is ItemKind.KEY)
 
@@ -251,6 +261,8 @@ def check_tutorial_is_solvable(window: arcade.Window) -> None:
     view.held_keys.clear()
     advance(view, int(settings.PLAYER_RESPAWN_DELAY / FRAME) + 10)
     assert view.player.has_item(ItemKind.KEY), "le corps doit reapparaitre avec la cle livree"
+    assert view.machine.state is GameState.PLAYING
+    assert view._hud_data().show_esprit, "F / esprit doit apparaitre apres la premiere projection"
 
     # Le cadavre reste solide au bord du puits et bloque la course d'elan :
     # on attend sa dissipation, comme le ferait un joueur.
@@ -265,12 +277,14 @@ def check_tutorial_is_solvable(window: arcade.Window) -> None:
     for _ in range(3500):
         blocked = abs(view.player.center_x - previous_x) < 0.2
         previous_x = view.player.center_x
-        probe = (view.player.center_x + view.player.width / 2 + 10, view.player.bottom - 4)
+        wall_probe = (view.player.center_x + 48, view.player.center_y)
+        floor_probe = (view.player.center_x + view.player.width / 2 + 28, view.player.bottom - 4)
+        wall_ahead = bool(arcade.get_sprites_at_point(wall_probe, view.level.walls))
         hole_ahead = not (
-            arcade.get_sprites_at_point(probe, view.level.walls)
-            or arcade.get_sprites_at_point(probe, view.level.spectral_walls)
+            arcade.get_sprites_at_point(floor_probe, view.level.walls)
+            or arcade.get_sprites_at_point(floor_probe, view.level.spectral_walls)
         )
-        if view.player.on_ground and (blocked or hole_ahead):
+        if view.player.on_ground and (blocked or wall_ahead or hole_ahead):
             view.player.jump()
         view.on_update(FRAME)
         if view.machine.state is GameState.VICTORY:
@@ -287,9 +301,16 @@ def check_tutorial_is_solvable(window: arcade.Window) -> None:
 
 def check_menus(window: arcade.Window) -> None:
     """Les vues hors-jeu se dessinent sans erreur, y compris apres un resize."""
+    assert keys.is_pressed("q", {arcade.key.LEFT, arcade.key.Q})
+    assert keys.is_pressed("z", {arcade.key.UP})
+    assert keys.is_pressed("shift", {arcade.key.LSHIFT})
+    assert not keys.is_pressed("enter", {arcade.key.ESCAPE})
+    assert keys.key_size("space")[0] == keys.key_size("q")[0] * 2
     session = GameSession()
     for view in (TitleView(session), VictoryView(session), UpgradeTreeView(session)):
         window.show_view(view)
+        if isinstance(view, TitleView):
+            view.held_keys.update({arcade.key.T, arcade.key.SPACE, arcade.key.LSHIFT})
         advance(view, 2)
         view.on_resize(1920, 1080)
         advance(view, 1)
@@ -297,8 +318,26 @@ def check_menus(window: arcade.Window) -> None:
         advance(view, 1)
     play = PlayView(session)
     window.show_view(play)
+    assert play.atmosphere.puff_count > 0, "l'atmosphere de premier plan doit etre peuplee"
     play.on_resize(1600, 900)
     play.on_draw()
+    visible, total, walls_visible, walls_total = play.level.count_visible_tiles(
+        play.camera.visible_rect()
+    )
+    expected_total = (
+        len(play.level.walls) + len(play.level.spectral_walls) + len(play.level.hazards)
+    )
+    assert total == expected_total
+    assert 0 <= visible <= total
+    assert 0 <= walls_visible <= walls_total == len(play.level.walls)
+    assert 0 < play.level.tiles_drawn < expected_total, (
+        f"culling rendu inactif : {play.level.tiles_drawn}/{expected_total} tuiles"
+    )
+    assert 0 < play.level.chunks_drawn < play.level.chunks_total
+    play.on_key_press(arcade.key.F3, 0)
+    assert play._debug_enabled is not settings.DEBUG_OVERLAY
+    play.on_key_press(arcade.key.F3, 0)
+    assert play._debug_enabled is settings.DEBUG_OVERLAY
     play.on_resize(settings.SCREEN_WIDTH, settings.SCREEN_HEIGHT)
     print("  menus -> titre, victoire, arbre et resize OK")
 
