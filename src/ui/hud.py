@@ -87,12 +87,6 @@ class Hud:
             anchor_x=anchor_x,
         )
 
-    def resize(self, screen_width: int, screen_height: int) -> None:
-        """Repositionne les textes apres un redimensionnement de la fenetre."""
-        self.screen_width = screen_width
-        self.screen_height = screen_height
-        self._build_texts()
-
     def draw(self, data: HudData) -> None:
         """Dessine le HUD a partir de l'instantane fourni."""
         self._level_text.text = data.level_name

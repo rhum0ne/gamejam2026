@@ -1,1 +1,1 @@
-"""Interface utilisateur : HUD, menus, et chargement des textures."""
+"""Interface utilisateur : HUD, overlay de debug, menus et chargement des textures."""
