@@ -18,6 +18,8 @@ l'ecran. Chaque caractere est traduit via `legend` :
 Pour ajouter un sprite de terrain : deposer le PNG dans `assets/sprites/`,
 l'enregistrer dans `TILE_SPECS` (`src/world/obstacles.py`), puis l'utiliser
 dans la legende de la carte.
+
+`torch` (symbole `i`) est un decor sans collision : placeholder + halo.
 """
 
 from __future__ import annotations
@@ -40,6 +42,7 @@ from src.world.obstacles import (
     SpectralWall,
     Spike,
     TileSpec,
+    Torch,
     Wall,
     tile_spec,
 )
@@ -88,6 +91,7 @@ class Level:
     items: arcade.SpriteList = field(default_factory=_dynamic_sprite_list)
     enemies: arcade.SpriteList = field(default_factory=_dynamic_sprite_list)
     corpses: arcade.SpriteList = field(default_factory=_dynamic_sprite_list)
+    torches: arcade.SpriteList = field(default_factory=_dynamic_sprite_list)
     player_spawn: tuple[float, float] = (0.0, 0.0)
     checkpoint_spawn: tuple[float, float] = (0.0, 0.0)
     tiles_drawn: int = 0
@@ -237,6 +241,7 @@ class Level:
             self.walls_drawn, self.tiles_drawn = self._draw_visible_terrain(view_rect)
         self.checkpoints.draw()
         self.doors.draw()
+        self._draw_torches(view_rect)
         self.corpses.draw()
         self.items.draw()
         self.enemies.draw()
@@ -341,10 +346,26 @@ class Level:
                 tiles_drawn += len(walls) + len(spectral) + len(hazards)
         return walls_drawn, tiles_drawn
 
+    def _draw_torches(self, view_rect) -> None:
+        """Halo puis placeholder, seulement si la torche (plus son halo) touche la vue."""
+        margin = settings.TORCH_GLOW_OUTER
+        for torch in self.torches:
+            if view_rect is not None:
+                if (
+                    torch.center_x < view_rect.left - margin
+                    or torch.center_x > view_rect.right + margin
+                    or torch.center_y < view_rect.bottom - margin
+                    or torch.center_y > view_rect.top + margin
+                ):
+                    continue
+            torch.draw_fx()
+            arcade.draw_sprite(torch)
+
     def update(self, delta_time: float) -> None:
         """Met a jour les elements dont la logique ne depend pas de l'etat de jeu."""
         self.corpses.update(delta_time)
         self.items.update(delta_time)
+        self.torches.update(delta_time)
 
 
 # --------------------------------------------------------------------------- #
@@ -390,6 +411,10 @@ def _add_enemy(level: Level, x: float, y: float) -> None:
     level.enemies.append(Enemy(x, y))
 
 
+def _add_torch(level: Level, x: float, y: float) -> None:
+    level.torches.append(Torch(x, y))
+
+
 _FACTORIES: dict[str, Callable[[Level, float, float], None]] = {
     "spectral_wall": _add_spectral_wall,
     "door": _add_door,
@@ -398,4 +423,5 @@ _FACTORIES: dict[str, Callable[[Level, float, float], None]] = {
     "key": _add_key,
     "soul_orb": _add_soul_orb,
     "enemy": _add_enemy,
+    "torch": _add_torch,
 }

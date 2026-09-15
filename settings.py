@@ -69,6 +69,20 @@ SPRITE_DIRT_FLOATING = "dirt_floating_block"
 SPRITE_SPIKE = "spike"
 SPRITE_SPIKE_HANGING = "spike_up"
 
+# Torche (placeholder, pas de collision)
+TORCH_WIDTH = 8
+TORCH_HEIGHT = 12
+TORCH_STEM_WIDTH = 3
+TORCH_STEM_HEIGHT = 10
+TORCH_GLOW_OUTER = 104.0
+TORCH_GLOW_INNER = 38.0
+TORCH_GLOW_ALPHA = 62
+TORCH_GLOW_INNER_ALPHA = 110
+TORCH_FLICKER = 0.22
+TORCH_FLICKER_SPEED = 8.4
+TORCH_FLICKER_SPEED_FAST = 19.0
+
+
 # --------------------------------------------------------------------------- #
 # Physique du corps physique (joueur vivant)
 # --------------------------------------------------------------------------- #
@@ -221,6 +235,10 @@ COLOR_DASH_GLOW = (255, 224, 150)
 COLOR_TRAIL_DASH = (255, 214, 96)
 COLOR_TRAIL_DASH_CORE = (255, 250, 210)
 COLOR_DASH_GAUGE = (255, 186, 72)
+COLOR_TORCH_STEM = (94, 58, 34)
+COLOR_TORCH_FLAME = (255, 158, 52)
+COLOR_TORCH_GLOW = (255, 132, 36)
+COLOR_TORCH_GLOW_CORE = (255, 220, 130)
 COLOR_DUST = (236, 228, 208)
 COLOR_DUST_DARK = (186, 174, 150)
 COLOR_MENU_TITLE = (200, 220, 255)
