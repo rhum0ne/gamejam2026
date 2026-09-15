@@ -17,6 +17,7 @@ from pathlib import Path
 ROOT_DIR = Path(__file__).resolve().parent
 ASSETS_DIR = ROOT_DIR / "assets"
 SPRITES_DIR = ASSETS_DIR / "sprites"
+ANIMATIONS_DIR = ASSETS_DIR / "animations"
 UI_DIR = ASSETS_DIR / "ui"
 SOUNDS_DIR = ASSETS_DIR / "sons"
 MAPS_DIR = ASSETS_DIR / "maps"
@@ -167,11 +168,51 @@ CORPSE_EAT_TIME = 4.0  # secondes pour qu'un ennemi devore un cadavre
 # Ennemis
 # --------------------------------------------------------------------------- #
 
-ENEMY_WIDTH = 28
-ENEMY_HEIGHT = 36
+# Planches "Skeleton_Sword" (squelette blanc, sans VFX) : assets/animations/.
+ENEMY_SKELETON_DIR = (
+    ANIMATIONS_DIR / "Enemies" / "Skeletons" / "Skeleton_Sword" / "Skeleton_White" / "Skeleton_Without_VFX"
+)
+ENEMY_SPRITE_IDLE = ENEMY_SKELETON_DIR / "Skeleton_01_White_Idle.png"
+ENEMY_SPRITE_WALK = ENEMY_SKELETON_DIR / "Skeleton_01_White_Walk.png"
+ENEMY_SPRITE_ATTACK = ENEMY_SKELETON_DIR / "Skeleton_01_White_Attack1.png"
+ENEMY_SPRITE_DIE = ENEMY_SKELETON_DIR / "Skeleton_01_White_Die.png"
+# Planches natives en 96x64 : le squelette (dessine vers la droite) n'occupe
+# qu'une partie de la frame (l'epee balaie le reste pendant les attaques).
+ENEMY_FRAME_WIDTH = 96
+ENEMY_FRAME_HEIGHT = 64
+ENEMY_SCALE = 1.0
+# Hitbox rectangulaire = corps visible du squelette, pas la frame entiere.
+# Offsets mesures sur les planches idle/walk (voir sprites.apply_rect_hit_box).
+ENEMY_WIDTH = 34
+ENEMY_HEIGHT = 46
+ENEMY_HITBOX_OFFSET_X = 3.0
+ENEMY_HITBOX_OFFSET_Y = -9.0
 ENEMY_SPEED = 1.6
-ENEMY_AGGRO_RANGE = 220.0  # distance de detection du joueur
+ENEMY_AGGRO_RANGE = 150.0  # distance de detection du joueur
+# Au-dela, on considere que le joueur n'est pas sur le meme "etage" (une
+# plateforme au-dessus/en-dessous) : l'ennemi ne peut pas l'atteindre en
+# marchant, donc ne doit pas le suivre juste parce qu'il est proche a vol
+# d'oiseau. Reste volontairement serre : un saut vers une plateforme passe
+# une bonne partie de sa montee hors de cette plage, l'aggro ne se declenche
+# donc qu'une fois (presque) arrive a la meme hauteur, pas des le decollage.
+ENEMY_AGGRO_VERTICAL_RANGE = 48.0
+# Le contact avec le corps ne tue pas : seule la lame tue, pendant les frames
+# ou elle est tendue (ENEMY_ATTACK_HIT_FRAMES). L'ennemi declenche son coup a
+# ENEMY_ATTACK_RANGE du joueur ; la lame touche jusqu'a ENEMY_ATTACK_REACH
+# devant lui (pointe a ~44 px du centre du sprite + demi-largeur du joueur).
+# RANGE < REACH : un joueur immobile est touche, un joueur qui recule pendant
+# l'armement (frames avant l'impact) esquive.
+ENEMY_ATTACK_RANGE = 48.0
+ENEMY_ATTACK_REACH = 60.0
+ENEMY_ATTACK_VERTICAL_RANGE = 40.0  # tolerance verticale (doit etre a peu pres au meme sol)
+# Frames d'Attack1 (0-9) : 1-4 = armement (epee en arriere), 5-7 = lame tendue.
+ENEMY_ATTACK_HIT_FRAMES: tuple[int, int] = (5, 7)
+ENEMY_ATTACK_COOLDOWN = 0.4  # secondes de pause entre deux coups
 ENEMY_CORPSE_SMELL_RANGE = 320.0  # distance d'attraction vers un cadavre
+ANIM_ENEMY_IDLE_FRAME_TIME = 0.12
+ANIM_ENEMY_WALK_FRAME_TIME = 0.07
+ANIM_ENEMY_ATTACK_FRAME_TIME = 0.05
+ANIM_ENEMY_DIE_FRAME_TIME = 0.06
 
 # --------------------------------------------------------------------------- #
 # Objets et progression
@@ -207,7 +248,6 @@ COLOR_PLAYER = (232, 232, 240)
 COLOR_GHOST = (128, 200, 255)
 COLOR_GHOST_GLOW = (110, 190, 255)
 COLOR_CORPSE = (140, 120, 120)
-COLOR_ENEMY = (188, 92, 160)
 COLOR_KEY = (232, 204, 96)
 COLOR_SOUL_ORB = (110, 190, 255)
 COLOR_HUD_TEXT = (228, 228, 236)
