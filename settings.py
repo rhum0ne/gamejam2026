@@ -164,8 +164,15 @@ GHOST_ACCEL_TIME = 0.20  # secondes pour atteindre la vitesse visee (plus grand 
 GHOST_COAST_TIME = 0.48  # secondes pour glisser a l'arret une fois les touches lachees
 GHOST_DURATION = 12.0  # duree de base du mode fantome, en secondes
 GHOST_MAX_RANGE = 480.0  # distance max autour du cadavre d'ancrage, en pixels
-GHOST_VISION_RADIUS = 160.0  # rayon de revelation des elements caches
+GHOST_VISION_RADIUS = 200.0  # rayon de revelation au debut du mode fantome
+GHOST_VISION_RADIUS_MIN = 12.0  # rayon en fin de timer (presque rien)
+# Exposant de fermeture : 1 = lineaire, plus grand = reste large puis se referme d'un coup.
+GHOST_VISION_SHRINK_POWER = 5.0
 GHOST_CARRY_CAPACITY = 1  # nombre d'objets transportables simultanement
+# Filtre plein ecran du mode fantome : distorsion barillet tres legere.
+GHOST_WARP_STRENGTH = 0.038  # 0 = identite ; ~2 % aux coins
+GHOST_WARP_PERSPECTIVE = 0.55  # etirement vertical relatif a warp
+GHOST_WARP_CHROMA = 0.10  # aberration chromatique relative a warp
 # Fleche de rappel vers le corps : cachee tant que le fantome est assez proche.
 GHOST_HOME_ARROW_MIN_DISTANCE = 96.0
 GHOST_HOME_ARROW_OFFSET = 42.0  # distance du centre du fantome a la pointe
@@ -245,9 +252,11 @@ COLOR_MENU_TITLE = (200, 220, 255)
 COLOR_MENU_HINT = (150, 155, 175)
 
 # Opacite du voile hors du champ de vision du fantome (0-255).
-FOG_ALPHA = 200
+FOG_ALPHA = 235
 # Part du rayon entierement transparente au centre (0 = degrade des le centre).
-GHOST_VISION_CLEAR_RATIO = 0.25
+GHOST_VISION_CLEAR_RATIO = 0.0
+# Courbe du degrade (1 = lineaire, plus grand = bord plus sec).
+GHOST_VISION_FALLOFF_POWER = 2.5
 
 # --------------------------------------------------------------------------- #
 # Atmosphere de premier plan (brouillard + nuages, parallaxe > 1)

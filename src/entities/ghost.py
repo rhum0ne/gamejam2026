@@ -64,7 +64,17 @@ class Ghost(arcade.SpriteSolidColor):
 
     @property
     def vision_radius(self) -> float:
-        return self.stats.vision_radius
+        """Rayon de vision : part de `stats.vision_radius` et se referme avec le timer.
+
+        La courbe est une puissance : le trou reste large longtemps, puis
+        s'effondre d'un coup en fin de timer, sans rester petit trop longtemps.
+        """
+        duration = max(self.stats.duration, 0.001)
+        spent = 1.0 - max(0.0, min(1.0, self.time_left / duration))
+        eased = spent ** settings.GHOST_VISION_SHRINK_POWER
+        start = self.stats.vision_radius
+        end = settings.GHOST_VISION_RADIUS_MIN
+        return start + (end - start) * eased
 
     @property
     def expired(self) -> bool:

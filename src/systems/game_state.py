@@ -231,17 +231,20 @@ class PlayView(arcade.View):
             self.player.draw_fx()
             arcade.draw_sprite(self.player)
             self.player.draw_particles()
+        # Premier plan : passe devant le monde, reste sous le voile fantome et le HUD.
+        self.atmosphere.draw(self.camera.world)
         if self.machine.state is GameState.GHOST and self.ghost is not None:
             self._draw_ghost_layer(self.ghost)
-        # Premier plan : passe devant le monde, reste sous le HUD.
-        self.atmosphere.draw(self.camera.world)
         if settings.DEBUG_SHOW_HITBOXES:
             self._draw_hitboxes()
         self.camera.use_ui()
         self.hud.draw(self._hud_data())
         if self._debug_enabled:
             self.debug.draw(self._debug_snapshot())
-        self.camera.present()
+        warp = 0.0
+        if self.machine.state is GameState.GHOST:
+            warp = settings.GHOST_WARP_STRENGTH
+        self.camera.present(warp)
 
     def _draw_hitboxes(self) -> None:
         color = settings.COLOR_DEBUG_HITBOX
