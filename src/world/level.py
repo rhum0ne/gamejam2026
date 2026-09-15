@@ -432,3 +432,12 @@ _FACTORIES: dict[str, Callable[[Level, float, float], None]] = {
     "enemy": _add_enemy,
     "torch": _add_torch,
 }
+
+
+def gameplay_kinds() -> tuple[str, ...]:
+    """Types de tuiles non-terrain acceptes dans une legende (hors `vide`).
+
+    L'editeur de niveaux s'en sert pour lister les elements placables : ajouter
+    une fabrique a `_FACTORIES` suffit pour qu'elle apparaisse dans sa palette.
+    """
+    return tuple(_FACTORIES)

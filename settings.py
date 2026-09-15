@@ -357,3 +357,54 @@ DEBUG_SHOW_FPS = True  # si l'overlay est off, affiche quand meme le FPS en bas 
 COLOR_DEBUG = (140, 230, 160)
 COLOR_DEBUG_PANEL = (8, 12, 18, 180)
 COLOR_DEBUG_HITBOX = (80, 255, 120, 200)
+
+# --------------------------------------------------------------------------- #
+# Editeur de niveaux (tools/level_editor.py)
+# --------------------------------------------------------------------------- #
+
+EDITOR_TITLE = "Project Astral - Editeur de niveaux"
+EDITOR_WINDOW_WIDTH = 1440
+EDITOR_WINDOW_HEIGHT = 860
+# Dimensions d'une carte creee depuis l'editeur, en tuiles.
+EDITOR_NEW_COLUMNS = 60
+EDITOR_NEW_ROWS = 34
+EDITOR_MIN_COLUMNS = 8
+EDITOR_MIN_ROWS = 8
+EDITOR_MAX_COLUMNS = 600
+EDITOR_MAX_ROWS = 300
+EDITOR_HISTORY_LIMIT = 250  # nombre d'actions annulables
+EDITOR_PANEL_WIDTH = 320  # largeur du panneau de droite (palette)
+EDITOR_STATUS_HEIGHT = 78  # hauteur de la barre d'etat du bas
+EDITOR_ROW_HEIGHT = 34  # hauteur d'une ligne de palette
+EDITOR_SWATCH_SIZE = 26  # cote d'une vignette de palette
+EDITOR_TEXT_SIZE = 12
+EDITOR_TITLE_SIZE = 14
+EDITOR_ZOOM_MIN = 0.25
+EDITOR_ZOOM_MAX = 6.0
+EDITOR_ZOOM_DEFAULT = 1.25  # 1.0 = une tuile = TILE_SIZE pixels a l'ecran
+EDITOR_ZOOM_STEP = 1.15  # facteur par cran de molette
+EDITOR_PAN_SPEED = 1100.0  # pixels ecran par seconde aux fleches
+EDITOR_GRID_MIN_ZOOM = 0.45  # sous ce zoom, la grille n'est plus tracee
+EDITOR_MESSAGE_TIME = 3.0  # secondes d'affichage d'un message de statut
+EDITOR_FLOOD_LIMIT = 20000  # garde-fou du remplissage par zone
+EDITOR_MAPS_GLOB = "*.json"
+
+COLOR_EDITOR_BACKGROUND = (13, 14, 20)
+COLOR_EDITOR_PANEL = (22, 24, 34)
+COLOR_EDITOR_PANEL_BORDER = (54, 58, 78)
+COLOR_EDITOR_ROW_ACTIVE = (46, 62, 88)
+COLOR_EDITOR_ROW_HOVER = (34, 38, 52)
+COLOR_EDITOR_GRID = (40, 44, 60)
+COLOR_EDITOR_BOUNDS = (120, 132, 172)
+COLOR_EDITOR_TEXT = (226, 228, 238)
+COLOR_EDITOR_TEXT_DIM = (138, 145, 168)
+COLOR_EDITOR_ACCENT = (128, 200, 255)
+COLOR_EDITOR_WARNING = (255, 186, 72)
+COLOR_EDITOR_DANGER = (240, 96, 96)
+COLOR_EDITOR_OK = (120, 210, 140)
+COLOR_EDITOR_SELECTION = (128, 200, 255, 55)
+COLOR_EDITOR_SELECTION_BORDER = (176, 224, 255)
+COLOR_EDITOR_PASTE = (255, 214, 120, 60)
+COLOR_EDITOR_HOVER = (255, 255, 255, 38)
+COLOR_EDITOR_UNKNOWN = (150, 90, 190)
+COLOR_EDITOR_OVERLAY = (8, 10, 16, 235)

@@ -35,7 +35,14 @@ def handle_display_key(window: arcade.Window, symbol: int, modifiers: int) -> bo
 
 
 def use_default_camera(window: arcade.Window) -> None:
-    """Reactive la camera par defaut (menus, apres une vue de jeu)."""
+    """Reactive la camera ecran (menus, HUD, panneau de l'editeur).
+
+    La camera monde de l'editeur active un scissor : il faut le couper ici,
+    sinon le panneau et la barre d'etat sont dessines hors de la zone carte
+    et n'apparaissent pas.
+    """
     camera = getattr(window, "default_camera", None)
     if camera is not None:
+        camera.scissor = None
         camera.use()
+    window.ctx.scissor = None
