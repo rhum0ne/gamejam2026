@@ -14,6 +14,7 @@ from arcade.types import XYWH
 from PIL import Image
 
 import settings
+from src.ui.fonts import PIXEL_FONT
 
 _CELL = settings.UI_KEY_CELL
 _LETTERS_PRESSED_ROW = 7
@@ -256,9 +257,9 @@ def _caption(text: str, size: float, color: tuple[int, int, int]) -> arcade.Text
             0,
             color,
             font_size=size,
-            bold=True,
             anchor_x="left",
             anchor_y="center",
+            font_name=PIXEL_FONT,
         )
         _LABELS[key] = cached
     return cached
@@ -314,7 +315,6 @@ PLAYING_PROMPTS: tuple[tuple[tuple[str, ...], str], ...] = (
     (("z", "q", "s", "d"), "bouger"),
     (("space",), "sauter"),
     (("shift",), "dash"),
-    (("tab",), "arbre"),
 )
 
 ESPRIT_PROMPT: tuple[tuple[str, ...], str] = (("f",), "esprit")
@@ -329,5 +329,4 @@ def playing_prompts(*, show_esprit: bool) -> tuple[tuple[tuple[str, ...], str], 
     """Commandes du corps : F n'apparait qu'apres la premiere projection."""
     if not show_esprit:
         return PLAYING_PROMPTS
-    movement, jump, dash, tree = PLAYING_PROMPTS
-    return (movement, jump, dash, ESPRIT_PROMPT, tree)
+    return PLAYING_PROMPTS + (ESPRIT_PROMPT,)

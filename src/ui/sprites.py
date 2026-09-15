@@ -4,12 +4,15 @@ Module feuille : n'importe que `arcade` et `settings`. Les tuiles, et plus
 tard les entites / objets, passent par ici pour recuperer un sprite plutot
 que de recharger un PNG a chaque construction.
 
-Les images natives font 16 px ; on les agrandit en nearest-neighbor jusqu'a
-`TILE_SIZE` pour garder le pixel art net.
+Les images de tuiles font 16 px ; on les agrandit en nearest-neighbor jusqu'a
+`TILE_SIZE`. Les bandeaux d'entites (marche, disparition) sont decoupes par
+`load_strip` / `Animator`.
 """
 
 from __future__ import annotations
 
+import math
+from dataclasses import dataclass
 from pathlib import Path
 
 import arcade
@@ -20,6 +23,7 @@ import settings
 
 _IMAGE_CACHE: dict[str, Image.Image] = {}
 _TEXTURE_CACHE: dict[str, arcade.Texture] = {}
+_STRIP_CACHE: dict[str, tuple[arcade.Texture, ...]] = {}
 
 
 def sprite_path(name: str) -> Path:
@@ -53,6 +57,42 @@ def load_texture(name: str, *, size: int | None = None) -> arcade.Texture:
     return texture
 
 
+def soul_orb_texture(size: int = 32) -> arcade.Texture:
+    """Boule translucide (degrade radial), a teinter via `sprite.color`."""
+    if size <= 0:
+        raise ValueError("size doit etre strictement positif")
+    cache_key = f"soul-orb|{size}"
+    cached = _TEXTURE_CACHE.get(cache_key)
+    if cached is not None:
+        return cached
+    radius = size / 2
+    pixels = bytearray(size * size * 4)
+    for y in range(size):
+        dy = y + 0.5 - radius
+        row = y * size * 4
+        for x in range(size):
+            dx = x + 0.5 - radius
+            t = math.hypot(dx, dy) / radius
+            if t >= 1.0:
+                continue
+            rest = 1.0 - t
+            falloff = rest * rest
+            core = falloff * falloff
+            value = int(255 * min(1.0, falloff * 0.55 + core * 0.7))
+            alpha = int(255 * min(1.0, falloff * 0.85))
+            if value == 0 and alpha == 0:
+                continue
+            index = row + x * 4
+            pixels[index] = value
+            pixels[index + 1] = value
+            pixels[index + 2] = value
+            pixels[index + 3] = alpha
+    image = Image.frombytes("RGBA", (size, size), bytes(pixels))
+    texture = arcade.Texture(image, hash=cache_key)
+    _TEXTURE_CACHE[cache_key] = texture
+    return texture
+
+
 def tile_texture(
     fill: str,
     overlay: str | None = None,
@@ -81,6 +121,113 @@ def tile_texture(
     texture = arcade.Texture(canvas, hash=key)
     _TEXTURE_CACHE[key] = texture
     return texture
+
+
+def load_strip(
+    name: str,
+    frame_width: int,
+    frame_height: int | None = None,
+) -> tuple[arcade.Texture, ...]:
+    """Decoupe un bandeau horizontal en frames, avec cache.
+
+    `frame_height` defaut a la hauteur de l'image. Les pixels restants a
+    droite (largeur non multiple) sont ignores.
+    """
+    if frame_width <= 0:
+        raise ValueError("frame_width doit etre strictement positif")
+    if frame_height is not None and frame_height <= 0:
+        raise ValueError("frame_height doit etre strictement positif")
+    cache_key = f"strip:{name}|{frame_width}|{frame_height or 0}"
+    cached = _STRIP_CACHE.get(cache_key)
+    if cached is not None:
+        return cached
+
+    image = _open_image(name)
+    height = frame_height if frame_height is not None else image.height
+    columns = image.width // frame_width
+    if columns <= 0 or height > image.height:
+        raise ValueError(f"bandeau '{name}' trop petit pour des frames {frame_width}x{height}")
+
+    frames: list[arcade.Texture] = []
+    for index in range(columns):
+        left = index * frame_width
+        crop = image.crop((left, 0, left + frame_width, height))
+        texture_key = f"{cache_key}|{index}"
+        frames.append(arcade.Texture(crop, hash=texture_key))
+    strip = tuple(frames)
+    _STRIP_CACHE[cache_key] = strip
+    return strip
+
+
+@dataclass(frozen=True, slots=True)
+class StripAnimation:
+    """Une sequence de frames a derouler a intervalle fixe."""
+
+    textures: tuple[arcade.Texture, ...]
+    frame_time: float
+    loop: bool = True
+
+    def __post_init__(self) -> None:
+        if not self.textures:
+            raise ValueError("textures ne doit pas etre vide")
+        if self.frame_time <= 0:
+            raise ValueError("frame_time doit etre strictement positif")
+
+
+class Animator:
+    """Curseur d'animation reutilisable (marche, disparition, plus tard ennemis)."""
+
+    def __init__(
+        self,
+        animation: StripAnimation,
+        speed: float = settings.ANIM_SPEED,
+    ) -> None:
+        if speed <= 0:
+            raise ValueError("speed doit etre strictement positif")
+        self._animation = animation
+        self.speed = speed
+        self.elapsed = 0.0
+        self.finished = False
+
+    @property
+    def animation(self) -> StripAnimation:
+        return self._animation
+
+    def play(self, animation: StripAnimation) -> None:
+        """Change d'animation. No-op si c'est deja celle en cours."""
+        if animation is self._animation:
+            return
+        self._animation = animation
+        self.elapsed = 0.0
+        self.finished = False
+
+    def update(self, delta_time: float) -> arcade.Texture:
+        """Avance l'horloge et retourne la texture courante."""
+        frames = self._animation.textures
+        last_index = len(frames) - 1
+        scaled = delta_time * self.speed
+        if self._animation.loop:
+            self.elapsed += scaled
+            index = int(self.elapsed / self._animation.frame_time) % len(frames)
+        elif not self.finished:
+            self.elapsed += scaled
+            index = min(int(self.elapsed / self._animation.frame_time), last_index)
+            duration = self._animation.frame_time * len(frames)
+            if self.elapsed >= duration:
+                self.finished = True
+                index = last_index
+        else:
+            index = last_index
+        return frames[index]
+
+
+def apply_facing(sprite: arcade.Sprite, facing: int) -> None:
+    """Retourne le sprite horizontalement selon `facing` (-1 gauche, +1 droite)."""
+    if facing == 0:
+        return
+    sign = 1 if facing > 0 else -1
+    magnitude = abs(sprite.scale_x) if sprite.scale_x else 1.0
+    sprite.scale_x = magnitude * sign
 
 
 def scale_for_size(texture: arcade.Texture, size: float) -> float:

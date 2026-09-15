@@ -1,7 +1,7 @@
 """Voile de vision du fantome : degrade radial noir -> transparent.
 
-Le rayon du degrade suit `Ghost.vision_radius` (ameliorations `vision_*`,
-puis reduction au fil du timer). L'opacite maximale vient de
+Le rayon du degrade suit `Ghost.vision_radius` (bonus des paliers
+`vision_*`, puis reduction au fil du timer). L'opacite maximale vient de
 `settings.FOG_ALPHA`. La texture est construite une seule fois et seulement
 mise a l'echelle a l'affichage.
 """

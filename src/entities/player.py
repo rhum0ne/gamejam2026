@@ -19,6 +19,17 @@ from src.entities.glow import draw_glow
 from src.entities.item import ItemKind
 from src.entities.particles import DustParticles
 from src.entities.trail import PointTrail
+from src.ui import sprites
+
+
+def _idle_animation() -> sprites.StripAnimation:
+    frames = sprites.load_strip(settings.SPRITE_PLAYER_IDLE, settings.SPRITE_FRAME_SIZE)
+    return sprites.StripAnimation(frames, settings.ANIM_IDLE_FRAME_TIME, loop=True)
+
+
+def _walk_animation() -> sprites.StripAnimation:
+    frames = sprites.load_strip(settings.SPRITE_PLAYER_WALK, settings.SPRITE_FRAME_SIZE)
+    return sprites.StripAnimation(frames, settings.ANIM_WALK_FRAME_TIME, loop=True)
 
 
 def _exp_alpha(delta_time: float, smooth_time: float) -> float:
@@ -33,23 +44,23 @@ def _approach(current: float, target: float, max_delta: float) -> float:
     return max(current - max_delta, target)
 
 
-class Player(arcade.SpriteSolidColor):
+class Player(arcade.Sprite):
     """Corps physique controle au clavier."""
 
     def __init__(self, center_x: float, center_y: float) -> None:
-        super().__init__(
-            settings.PLAYER_WIDTH,
-            settings.PLAYER_HEIGHT,
-            center_x=center_x,
-            center_y=center_y,
-            color=settings.COLOR_PLAYER,
-        )
+        self._idle = _idle_animation()
+        self._walk = _walk_animation()
+        super().__init__(self._idle.textures[0], center_x=center_x, center_y=center_y)
+        sprites.apply_rect_hit_box(self, settings.PLAYER_WIDTH, settings.PLAYER_HEIGHT)
+        self.scale = settings.ENTITY_SCALE
+        self._animator = sprites.Animator(self._idle)
         self.alive = True
         self.facing = 1
         self.inventory: set[ItemKind] = set()
         self.respawn_point: tuple[float, float] = (center_x, center_y)
         self._physics: arcade.PhysicsEnginePlatformer | None = None
         self._time_off_ground = 0.0
+        self._place_on_tile(center_x, center_y)
         self._was_on_ground = True
         self._move_dir = 0
         self._landing_timer = 0.0
@@ -83,6 +94,11 @@ class Player(arcade.SpriteSolidColor):
             platforms=list(platforms) if platforms else None,
             gravity_constant=settings.PLAYER_GRAVITY,
         )
+
+    def _place_on_tile(self, center_x: float, center_y: float) -> None:
+        """Pose les pieds sur le bas de la tuile dont `center` est le milieu."""
+        self.center_x = center_x
+        self.center_y = center_y - settings.TILE_SIZE / 2 + abs(self.height) / 2
 
     # ------------------------------------------------------------------ #
     # Etat
@@ -136,7 +152,7 @@ class Player(arcade.SpriteSolidColor):
     def respawn_at(self, position: tuple[float, float]) -> None:
         """Fait reapparaitre le corps au checkpoint fourni."""
         self.alive = True
-        self.center_x, self.center_y = position
+        self._place_on_tile(*position)
         self.change_x = 0.0
         self.change_y = 0.0
         self._time_off_ground = 0.0
@@ -230,8 +246,14 @@ class Player(arcade.SpriteSolidColor):
     # ------------------------------------------------------------------ #
 
     def update(self, delta_time: float = settings.FRAME_TIME, *args, **kwargs) -> None:
-        if self._physics is None or not self.alive:
+        if not self.alive or self._physics is None:
             return
+        if abs(self.change_x) > 0.05:
+            self._animator.play(self._walk)
+        else:
+            self._animator.play(self._idle)
+        self.texture = self._animator.update(delta_time)
+        sprites.apply_facing(self, self.facing)
         self._tick_dash(delta_time)
         if self.is_dashing:
             self.change_x = self._dash_dir * settings.PLAYER_DASH_SPEED

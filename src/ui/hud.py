@@ -19,6 +19,7 @@ import arcade
 
 import settings
 from src.ui import keys
+from src.ui.fonts import PIXEL_FONT
 
 
 @dataclass(frozen=True, slots=True)
@@ -92,6 +93,7 @@ class Hud:
             color,
             font_size=size,
             anchor_x=anchor_x,
+            font_name=PIXEL_FONT,
         )
 
     def draw(self, data: HudData) -> None:

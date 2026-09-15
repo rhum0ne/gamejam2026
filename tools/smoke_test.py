@@ -13,6 +13,7 @@ n'apparait, mais le contexte OpenGL est bien reel, donc `on_draw` est teste.
 from __future__ import annotations
 
 import sys
+from dataclasses import replace
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -26,7 +27,7 @@ from src.systems.events import PLAYER_DEATH, PLAYER_GHOST_END, PLAYER_WIN  # noq
 from src.systems.game_state import GameSession, GameState, PlayView  # noqa: E402
 from src.systems.upgrades import SoulProgression  # noqa: E402
 from src.ui import keys  # noqa: E402
-from src.ui.menus import TitleView, UpgradeTreeView, VictoryView  # noqa: E402
+from src.ui.menus import TitleView, VictoryView  # noqa: E402
 from src.world.level import Level  # noqa: E402
 
 FRAME = settings.FRAME_TIME
@@ -44,17 +45,16 @@ def check_levels() -> None:
 
 
 def check_progression() -> None:
-    """La progression d'ames et l'arbre de competences se comportent comme prevu."""
+    """Les paliers d'ames se debloquent tout seuls, sans shop."""
     progression = SoulProgression()
     assert progression.level == 1
-    assert not progression.can_unlock("range_1")
+    assert progression.ghost_stats.max_range == settings.GHOST_MAX_RANGE
+    assert progression.ghost_stats.duration == settings.GHOST_DURATION
     for _ in range(3):
         progression.absorb_orb()
-    assert progression.can_unlock("range_1")
-    assert progression.unlock("range_1")
-    assert progression.essence == 0
+    assert progression.level == 2
     assert progression.ghost_stats.max_range > settings.GHOST_MAX_RANGE
-    assert not progression.unlock("range_1"), "une amelioration ne doit pas etre achetee deux fois"
+    assert progression.ghost_stats.duration > settings.GHOST_DURATION
     print(f"  progression -> niveau {progression.level}, "
           f"portee fantome {progression.ghost_stats.max_range:.0f} px")
 
@@ -155,19 +155,14 @@ def check_vertical_scroll(window: arcade.Window) -> None:
     view.on_key_press(arcade.key.F, 0)
     view.on_key_release(arcade.key.F, 0)
     assert view.ghost is not None
+    # La longe de base ne couvre pas spawn -> fond du puits ; le test
+    # verifie la camera, pas la longe.
+    view.ghost.stats = replace(view.ghost.stats, max_range=2000)
 
-    view.held_keys = {arcade.key.UP}
-    for _ in range(200):
-        view.ghost.time_left = settings.GHOST_DURATION
-        view.on_update(FRAME)
-    up_y = _camera_y(view)
-    assert up_y > start_y + 40, (
-        f"la camera doit monter avec le fantome (depart {start_y:.0f}, haut {up_y:.0f})"
-    )
-
+    # Le spawn est en haut du niveau : la camera y est deja clampee.
+    # On descend dans le puits, puis on remonte, pour tester les deux axes.
     pit_x = 18 * settings.TILE_SIZE + settings.TILE_SIZE / 2
-    view.held_keys.clear()
-    for _ in range(250):
+    for _ in range(300):
         view.held_keys.clear()
         if view.ghost.center_x < pit_x - 6:
             view.held_keys.add(arcade.key.RIGHT)
@@ -181,7 +176,16 @@ def check_vertical_scroll(window: arcade.Window) -> None:
     assert down_y < start_y - 20, (
         f"la camera doit descendre dans le puits (sol {start_y:.0f}, puits {down_y:.0f})"
     )
-    print(f"  camera Y -> {start_y:.0f} (sol) / {up_y:.0f} (montee) / {down_y:.0f} (descente), "
+
+    view.held_keys = {arcade.key.UP}
+    for _ in range(200):
+        view.ghost.time_left = settings.GHOST_DURATION
+        view.on_update(FRAME)
+    up_y = _camera_y(view)
+    assert up_y > down_y + 40, (
+        f"la camera doit remonter avec le fantome (puits {down_y:.0f}, haut {up_y:.0f})"
+    )
+    print(f"  camera Y -> {start_y:.0f} (sol) / {down_y:.0f} (descente) / {up_y:.0f} (montee), "
           f"monde {view.level.height:.0f} px")
 
 
@@ -302,7 +306,7 @@ def check_menus(window: arcade.Window) -> None:
     assert not keys.is_pressed("enter", {arcade.key.ESCAPE})
     assert keys.key_size("space")[0] == keys.key_size("q")[0] * 2
     session = GameSession()
-    for view in (TitleView(session), VictoryView(session), UpgradeTreeView(session)):
+    for view in (TitleView(session), VictoryView(session)):
         window.show_view(view)
         if isinstance(view, TitleView):
             view.held_keys.update({arcade.key.T, arcade.key.SPACE, arcade.key.LSHIFT})
@@ -334,7 +338,7 @@ def check_menus(window: arcade.Window) -> None:
     play.on_key_press(arcade.key.F3, 0)
     assert play._debug_enabled is settings.DEBUG_OVERLAY
     play.on_resize(settings.SCREEN_WIDTH, settings.SCREEN_HEIGHT)
-    print("  menus -> titre, victoire, arbre et resize OK")
+    print("  menus -> titre, victoire et resize OK")
 
 
 def main() -> int:

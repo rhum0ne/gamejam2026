@@ -19,6 +19,8 @@ from enum import Enum, auto
 import arcade
 
 import settings
+from src.entities.glow import draw_glow
+from src.ui import sprites
 
 
 class ItemKind(Enum):
@@ -44,7 +46,7 @@ ITEM_PROFILES: dict[ItemKind, ItemProfile] = {
     ItemKind.KEY: ItemProfile(
         label="Cle",
         color=settings.COLOR_KEY,
-        size=settings.ITEM_SIZE,
+        size=settings.TILE_SIZE,
         weight=1,
         body_can_pick=True,
         ghost_can_carry=True,
@@ -52,7 +54,7 @@ ITEM_PROFILES: dict[ItemKind, ItemProfile] = {
     ItemKind.SOUL_ORB: ItemProfile(
         label="Ame",
         color=settings.COLOR_SOUL_ORB,
-        size=settings.ITEM_SIZE - 4,
+        size=settings.SOUL_ORB_SIZE,
         weight=1,
         body_can_pick=True,
         ghost_can_carry=True,
@@ -66,23 +68,28 @@ ITEM_BY_MAP_SYMBOL: dict[str, ItemKind] = {
 }
 
 
-class Item(arcade.SpriteSolidColor):
+def _texture_for(kind: ItemKind) -> arcade.Texture:
+    if kind is ItemKind.KEY:
+        return sprites.load_texture(settings.SPRITE_KEY)
+    return sprites.soul_orb_texture()
+
+
+class Item(arcade.Sprite):
     """Objet pose dans le niveau, eventuellement transporte par le fantome."""
 
     def __init__(self, kind: ItemKind, center_x: float, center_y: float) -> None:
         profile = ITEM_PROFILES[kind]
-        super().__init__(
-            profile.size,
-            profile.size,
-            center_x=center_x,
-            center_y=center_y,
-            color=profile.color,
-        )
+        super().__init__(_texture_for(kind), center_x=center_x, center_y=center_y)
+        sprites.apply_rect_hit_box(self, profile.size, profile.size)
         self.kind = kind
         self.profile = profile
         self.carrier: arcade.Sprite | None = None
+        self._rest_x = center_x
         self._rest_y = center_y
         self._elapsed = 0.0
+        if kind is ItemKind.SOUL_ORB:
+            self.color = profile.color
+            self.alpha = settings.SOUL_ORB_ALPHA
 
     @property
     def is_carried(self) -> bool:
@@ -95,18 +102,58 @@ class Item(arcade.SpriteSolidColor):
     def drop_at(self, center_x: float, center_y: float) -> None:
         """Depose l'objet a une position donnee."""
         self.carrier = None
+        self._rest_x = center_x
+        self._rest_y = center_y
         self.center_x = center_x
         self.center_y = center_y
-        self._rest_y = center_y
 
-    def update(self, delta_time: float = settings.FRAME_TIME, *args, **kwargs) -> None:
+    def draw_fx(self) -> None:
+        """Aura de la bille bleue ; no-op pour les autres objets."""
+        if self.kind is not ItemKind.SOUL_ORB:
+            return
+        pulse = 1.0 + settings.SOUL_ORB_GLOW_PULSE * math.sin(
+            self._elapsed * settings.SOUL_ORB_GLOW_PULSE_SPEED
+        )
+        size = self.profile.size * settings.SOUL_ORB_GLOW_SCALE
+        draw_glow(
+            self.center_x,
+            self.center_y,
+            size,
+            size,
+            settings.COLOR_SOUL_ORB,
+            int(settings.SOUL_ORB_GLOW_ALPHA * pulse),
+        )
+
+    def update(
+        self,
+        delta_time: float = settings.FRAME_TIME,
+        attractor: arcade.Sprite | None = None,
+        *args,
+        **kwargs,
+    ) -> None:
         self._elapsed += delta_time
         if self.carrier is not None:
             self.center_x = self.carrier.center_x
-            self.center_y = self.carrier.top + self.height
+            self.center_y = self.carrier.top + self.height / 2
             return
+        if self.kind is ItemKind.SOUL_ORB:
+            self._attract_toward(attractor, delta_time)
         offset = math.sin(self._elapsed * settings.ITEM_BOB_SPEED) * settings.ITEM_BOB_AMPLITUDE
+        self.center_x = self._rest_x
         self.center_y = self._rest_y + offset
+
+    def _attract_toward(self, attractor: arcade.Sprite | None, delta_time: float) -> None:
+        if attractor is None:
+            return
+        offset_x = attractor.center_x - self._rest_x
+        offset_y = attractor.center_y - self._rest_y
+        distance = math.hypot(offset_x, offset_y)
+        if distance > settings.SOUL_ORB_MAGNET_RANGE or distance == 0.0:
+            return
+        step = min(settings.SOUL_ORB_MAGNET_SPEED * max(delta_time, 0.0), distance)
+        scale = step / distance
+        self._rest_x += offset_x * scale
+        self._rest_y += offset_y * scale
 
 
 def make_soul_orb(center_x: float, center_y: float) -> Item:
