@@ -230,9 +230,11 @@ class PlayView(arcade.View):
         if self.player.alive:
             self.player.draw_fx()
             arcade.draw_sprite(self.player)
-        if self.machine.state is GameState.GHOST and self.ghost is not None:
-            self._draw_ghost_layer(self.ghost)
-        # Premier plan : passe devant le monde, reste sous le HUD.
+        if self.ghost is not None:
+            if self.machine.state is GameState.GHOST:
+                self._draw_ghost_layer(self.ghost)
+            elif self.ghost.vanishing:
+                arcade.draw_sprite(self.ghost)
         self.atmosphere.draw(self.camera.world)
         if settings.DEBUG_SHOW_HITBOXES:
             self._draw_hitboxes()
@@ -306,7 +308,7 @@ class PlayView(arcade.View):
             hint=self._hint_for(state),
             has_key=self.player.has_item(ItemKind.KEY),
             corpse_count=len(self.level.corpses),
-            ghost_time_left=self.ghost.time_left if self.ghost is not None else None,
+            ghost_time_left=self.ghost.time_left if state is GameState.GHOST and self.ghost is not None else None,
             ghost_duration=self.ghost.stats.duration if self.ghost is not None else settings.GHOST_DURATION,
             leash_ratio=self.ghost.leash_ratio if self.ghost is not None else 0.0,
             fps=self._fps if settings.DEBUG_SHOW_FPS and not self._debug_enabled else None,
@@ -409,15 +411,23 @@ class PlayView(arcade.View):
             ghost.anchor = (self.anchor_corpse.center_x, self.anchor_corpse.center_y)
         ghost.update(delta_time)
         self._update_enemies(delta_time)
-        self._resolve_ghost_collisions(ghost)
+        if not ghost.vanishing:
+            self._resolve_ghost_collisions(ghost)
         self.camera.follow(ghost, delta_time)
         if ghost.expired:
             emit_ghost_end(self, "timer")
+        elif ghost.vanished:
+            emit_ghost_end(self, "manual")
 
     def _update_respawning(self, delta_time: float) -> None:
+        if self.ghost is not None:
+            self.ghost.update(delta_time)
+            if self.ghost.vanished:
+                self.ghost = None
         self._respawn_timer -= delta_time
         if self._respawn_timer > 0:
             return
+        self.ghost = None
         self.player.respawn_at(self.player.respawn_point)
         for kind in self._delivered_items:
             self.player.give_item(kind)
@@ -545,7 +555,8 @@ class PlayView(arcade.View):
             elif symbol == _PROJECT_KEY:
                 emit_player_death(self, "sacrifice")
         elif state is GameState.GHOST and symbol == _RETURN_KEY:
-            emit_ghost_end(self, "manual")
+            if self.ghost is not None:
+                self.ghost.start_vanish()
 
     def on_key_release(self, symbol: int, modifiers: int) -> None:
         self.held_keys.discard(symbol)
