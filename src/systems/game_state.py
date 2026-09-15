@@ -246,6 +246,8 @@ class PlayView(arcade.View):
         self.level.draw_static_hit_boxes(color, view_rect)
         self.level.enemies.draw_hit_boxes(color)
         self.level.corpses.draw_hit_boxes(color)
+        self.level.plates.draw_hit_boxes(color)
+        self.level.falling_spikes.draw_hit_boxes(color)
         if self.player.alive:
             self.player.draw_hit_box(color)
         if self.ghost is not None:
@@ -265,9 +267,19 @@ class PlayView(arcade.View):
             if ghost.reveals(enemy):
                 arcade.draw_sprite(enemy)
         self.fog.draw(ghost, self.camera.world)
+        self._draw_mechanism_hints(ghost)
         ghost.draw_fx()
         arcade.draw_sprite(ghost)
         self._draw_body_arrow(ghost)
+
+    def _draw_mechanism_hints(self, ghost: Ghost) -> None:
+        """Auras silhouette et vrilles d'ame, visibles seulement en projection."""
+        now = time.perf_counter()
+        for mechanism in self.level.mechanisms:
+            sprites = [mechanism.plate, *[tile.sprite for tile in mechanism.targets]]
+            if not any(ghost.reveals(sprite) for sprite in sprites):
+                continue
+            mechanism.draw_soul(now)
 
     def _draw_body_arrow(self, ghost: Ghost) -> None:
         """Petite pointe vers le corps physique, seulement au-dela d'une distance minimale."""
@@ -390,13 +402,33 @@ class PlayView(arcade.View):
         elif state is GameState.GHOST and self.ghost is not None and not self.ghost.vanishing:
             attractor = self.ghost
         self.level.update(delta_time, attractor)
+        self._update_mechanisms()
+        self.level.update_spikes()
         if state is GameState.PLAYING:
             self._update_playing(delta_time)
         elif state is GameState.GHOST:
             self._update_ghost(delta_time)
         elif state is GameState.RESPAWNING:
             self._update_respawning(delta_time)
+        self._resolve_falling_spike_kills()
         self.atmosphere.update(delta_time)
+
+    def _mechanism_weights(self) -> list[arcade.Sprite]:
+        """Corps, cadavres et ennemis : le fantome ne pese pas sur les plaques."""
+        weights: list[arcade.Sprite] = []
+        if self.player.alive:
+            weights.append(self.player)
+        weights.extend(self.level.corpses)
+        weights.extend(self.level.enemies)
+        return weights
+
+    def _update_mechanisms(self) -> None:
+        if not self.level.mechanisms:
+            return
+        weights = self._mechanism_weights()
+        for mechanism in self.level.mechanisms:
+            pressed = collisions.plate_is_weighted(mechanism.plate, weights)
+            mechanism.set_pressed(pressed, weights)
 
     def _update_playing(self, delta_time: float) -> None:
         self.player.walk(self._horizontal_input())
@@ -484,6 +516,15 @@ class PlayView(arcade.View):
             emit_player_death(self, "out_of_bounds")
         elif collisions.enemy_touching_player(self.player, self.level.enemies) is not None:
             emit_player_death(self, "enemy")
+
+    def _resolve_falling_spike_kills(self) -> None:
+        """Une pique en chute tue les ennemis (le joueur est deja gere via les hazards)."""
+        for enemy in collisions.enemies_hit_by_falling_spikes(
+            self.level.enemies, self.level.falling_spikes
+        ):
+            orb = enemy.take_damage()
+            if orb is not None:
+                self.level.spawn_item(orb)
 
     def _resolve_ghost_collisions(self, ghost: Ghost) -> None:
         for item in collisions.items_reachable_by_ghost(ghost, self.level):

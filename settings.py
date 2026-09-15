@@ -100,6 +100,8 @@ ANIM_SPEED = 0.5
 # --------------------------------------------------------------------------- #
 
 GRAVITY = 1.0
+SPIKE_FALL_GRAVITY = GRAVITY
+SPIKE_FALL_MAX_SPEED = 14.0
 # Hitbox locale (taille du sprite). ENTITY_SCALE l'agrandit ensuite.
 PLAYER_WIDTH = SPRITE_FRAME_SIZE
 PLAYER_HEIGHT = SPRITE_FRAME_SIZE
@@ -164,6 +166,45 @@ CORPSE_FADE_TIME = 3.0  # secondes de fondu en fin de vie
 CORPSE_EAT_TIME = 4.0  # secondes pour qu'un ennemi devore un cadavre
 
 # --------------------------------------------------------------------------- #
+# Plaques d'activation
+# --------------------------------------------------------------------------- #
+
+# Epaisseur visuelle de la plaque, posee au sol de la tuile.
+PLATE_HEIGHT = 8
+# Retrait horizontal de chaque cote, en pixels (la hitbox suit la plaque).
+PLATE_INSET = 4
+# Halo spectral : epouse la silhouette (pas un blob rond).
+MECHANISM_AURA_EDGE = 20.0  # epaisseur max du voile, en px (blocs carres)
+MECHANISM_AURA_MIN_PAD = 3.0  # pad mini, meme sur une plaque tres plate
+MECHANISM_AURA_AXIS_RATIO = 0.35  # le pad d'un axe ne depasse pas ratio * taille
+MECHANISM_AURA_FILL_ALPHA = 16
+MECHANISM_AURA_EDGE_ALPHA = 34
+MECHANISM_AURA_OUTER_SCALE = 1.8  # deuxieme passe, plus large et plus faible
+MECHANISM_AURA_PULSE = 0.22
+MECHANISM_AURA_MOTE_SPACING = 26.0  # px de perimetre entre deux motes
+MECHANISM_AURA_MOTE_SIZE = 11.0
+MECHANISM_AURA_MOTE_ALPHA = 40
+MECHANISM_AURA_MOTE_DRIFT = 7.0  # px vers l'exterieur de la forme
+MECHANISM_AURA_MOTE_SPEED = 0.12  # tours de perimetre par seconde
+# Vrilles plaque -> cibles : trainee d'ame, pas un trait.
+MECHANISM_LINK_CURVE = 0.26  # amplitude du S, fraction de la longueur
+MECHANISM_LINK_FAN = 10.0  # px : ecarte les brins d'une meme plaque
+MECHANISM_LINK_WIGGLE = 5.0  # px d'ondulation orthogonale
+MECHANISM_LINK_WIGGLE_WAVES = 1.7
+MECHANISM_LINK_PULSE_SPEED = 1.15
+MECHANISM_LINK_SPACING = 10.0  # px entre deux samples de la courbe
+MECHANISM_LINK_MIN_SEGMENTS = 24
+MECHANISM_LINK_STAMP_SIZE = 5.0
+MECHANISM_LINK_STAMP_ALPHA = 32
+MECHANISM_LINK_STAMP_SPACING = 4.0
+MECHANISM_LINK_BLUR_SCALE = 2.2
+MECHANISM_LINK_BLUR_ALPHA = 10
+MECHANISM_LINK_MOTE_COUNT = 4
+MECHANISM_LINK_MOTE_SIZE = 3.5
+MECHANISM_LINK_MOTE_ALPHA = 42
+MECHANISM_LINK_MOTE_SPEED = 0.18
+
+# --------------------------------------------------------------------------- #
 # Ennemis
 # --------------------------------------------------------------------------- #
 
@@ -204,6 +245,10 @@ COLOR_SPIKE = (196, 84, 84)
 COLOR_DOOR_LOCKED = (150, 110, 46)
 COLOR_DOOR_OPEN = (96, 170, 110)
 COLOR_CHECKPOINT = (86, 148, 196)
+COLOR_PRESSURE_PLATE = (92, 108, 132)
+COLOR_PRESSURE_PLATE_PRESSED = (64, 168, 214)
+COLOR_MECHANISM_LINK = (80, 190, 255)
+COLOR_MECHANISM_GLOW = (90, 186, 255)
 COLOR_PLAYER = (232, 232, 240)
 COLOR_GHOST = (128, 200, 255)
 COLOR_GHOST_GLOW = (110, 190, 255)
