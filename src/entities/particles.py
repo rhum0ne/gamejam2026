@@ -250,3 +250,112 @@ class SoulBurst:
                 grain.y + half,
                 (*settings.COLOR_CHECKPOINT_PARTICLE_CORE, alpha),
             )
+
+
+class EmergenceBurst:
+    """Nuage dense de motes d'ame, pour la sortie du fantome hors du corps."""
+
+    def __init__(self, rng: random.Random | None = None) -> None:
+        self._grains: list[_Grain] = []
+        self._rng = rng if rng is not None else random.Random()
+        self._stream_timer = 0.0
+
+    def clear(self) -> None:
+        self._grains.clear()
+        self._stream_timer = 0.0
+
+    def emit_burst(self, x: float, y: float) -> None:
+        """Explosion initiale autour du corps."""
+        for _ in range(settings.DEATH_PARTICLE_COUNT):
+            self._spawn_mote(x, y, burst=True)
+
+    def emit_stream(self, x: float, y: float, delta_time: float) -> None:
+        """Filet continu pendant que le fantome se detache."""
+        self._stream_timer -= max(0.0, delta_time)
+        if self._stream_timer > 0.0:
+            return
+        self._stream_timer = settings.DEATH_PARTICLE_STREAM_INTERVAL
+        for _ in range(settings.DEATH_PARTICLE_STREAM_COUNT):
+            self._spawn_mote(x, y, burst=False)
+
+    def update(self, delta_time: float = settings.FRAME_TIME) -> None:
+        dt = max(0.0, delta_time)
+        alive: list[_Grain] = []
+        for grain in self._grains:
+            grain.life -= dt
+            if grain.life <= 0.0:
+                continue
+            grain.vy -= grain.gravity * dt
+            grain.x += grain.vx * dt
+            grain.y += grain.vy * dt
+            grain.vx *= max(0.0, 1.0 - 1.1 * dt)
+            alive.append(grain)
+        self._grains = alive[-settings.DEATH_PARTICLE_MAX :]
+
+    def draw(self) -> None:
+        if not self._grains:
+            return
+        core = settings.DEATH_PARTICLE_CORE_SIZE
+        with additive_blend():
+            for grain in self._grains:
+                fade = max(0.0, min(1.0, grain.life / grain.max_life))
+                alpha = int(settings.DEATH_PARTICLE_GLOW_ALPHA * fade)
+                if alpha <= 0:
+                    continue
+                draw_glow(
+                    grain.x,
+                    grain.y,
+                    grain.size,
+                    grain.size,
+                    grain.color,
+                    alpha,
+                    bind_blend=False,
+                )
+        for grain in self._grains:
+            fade = max(0.0, min(1.0, grain.life / grain.max_life))
+            alpha = int(settings.DEATH_PARTICLE_CORE_ALPHA * fade)
+            if alpha <= 0:
+                continue
+            half = core * (0.45 + 0.55 * fade) / 2
+            arcade.draw_lrbt_rectangle_filled(
+                grain.x - half,
+                grain.x + half,
+                grain.y - half,
+                grain.y + half,
+                (*settings.COLOR_DEATH_PARTICLE_CORE, alpha),
+            )
+
+    def _spawn_mote(self, x: float, y: float, *, burst: bool) -> None:
+        if burst:
+            angle = self._rng.uniform(0.0, math.tau)
+            speed = self._rng.uniform(0.35, 1.0) * settings.DEATH_PARTICLE_SPEED
+        else:
+            angle = self._rng.uniform(math.pi * 0.15, math.pi * 0.85)
+            speed = self._rng.uniform(0.25, 0.8) * settings.DEATH_PARTICLE_SPEED_UP
+        vx = math.cos(angle) * speed
+        vy = math.sin(angle) * speed + self._rng.uniform(20.0, 70.0)
+        life = settings.DEATH_PARTICLE_LIFE * self._rng.uniform(0.55, 1.2)
+        size = self._rng.uniform(
+            settings.DEATH_PARTICLE_SIZE_MIN,
+            settings.DEATH_PARTICLE_SIZE_MAX,
+        )
+        spread = settings.DEATH_PARTICLE_SPREAD
+        color = (
+            settings.COLOR_DEATH_PARTICLE_CORE
+            if self._rng.random() > 0.45
+            else settings.COLOR_DEATH_PARTICLE
+        )
+        self._grains.append(
+            _Grain(
+                x=x + self._rng.uniform(-spread, spread),
+                y=y + self._rng.uniform(-spread * 0.5, spread),
+                vx=vx,
+                vy=vy,
+                life=life,
+                max_life=max(life, 0.001),
+                size=size,
+                gravity=settings.DEATH_PARTICLE_GRAVITY,
+                color=color,
+            )
+        )
+        self._grains = self._grains[-settings.DEATH_PARTICLE_MAX :]

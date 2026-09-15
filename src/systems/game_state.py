@@ -29,10 +29,11 @@ import arcade
 import settings
 from src.entities.corpse import Corpse
 from src.entities.ghost import Ghost
-from src.entities.glow import additive_blend
+from src.entities.glow import glow_pass
 from src.entities.item import ItemKind
 from src.entities.player import Player
 from src.systems import collisions
+from src.systems.ghost_emergence import GhostEmergence
 from src.systems.play_events import bind_play_view, emit_ghost_end, emit_player_death, emit_player_win
 from src.systems.upgrades import SoulProgression
 from src.ui.debug import DebugOverlay, DebugSnapshot
@@ -84,6 +85,21 @@ def _in_view(sprite: arcade.Sprite, view, pad: float) -> bool:
         or sprite.center_x > view.right + pad
         or sprite.center_y < view.bottom - pad
         or sprite.center_y > view.top + pad
+    )
+
+
+def _mechanism_in_view(mechanism, view, pad: float) -> bool:
+    """True si la plaque, une cible ou le lien entre les deux touche l'ecran."""
+    xs = [mechanism.plate.center_x]
+    ys = [mechanism.plate.center_y]
+    for tile in mechanism.targets:
+        xs.append(tile.sprite.center_x)
+        ys.append(tile.sprite.center_y)
+    return not (
+        max(xs) < view.left - pad
+        or min(xs) > view.right + pad
+        or max(ys) < view.bottom - pad
+        or min(ys) > view.top + pad
     )
 
 
@@ -196,6 +212,7 @@ class PlayView(arcade.View):
         self.player: Player
         self.ghost: Ghost | None = None
         self.anchor_corpse: Corpse | None = None
+        self._emergence: GhostEmergence | None = None
         self.held_keys: set[int] = set()
         self._respawn_timer = 0.0
         self._delivered_items: list[ItemKind] = []
@@ -228,15 +245,45 @@ class PlayView(arcade.View):
         self.camera.snap_to(self.player)
         self.ghost = None
         self.anchor_corpse = None
+        self._emergence = None
         self.held_keys.clear()
         self._respawn_timer = 0.0
         self._delivered_items.clear()
         self.machine = GameStateMachine(GameState.MENU)
         self.machine.to(GameState.PLAYING)
 
+    @property
+    def ghost_emerging(self) -> bool:
+        return self._emergence is not None and self._emergence.active
+
+    def start_ghost_emergence(self, origin_x: float, origin_y: float) -> None:
+        """Lance le gros plan, les particules et la sortie du fantome."""
+        if self.ghost is not None:
+            self.ghost.begin_emerge()
+        sequence = GhostEmergence(origin_x, origin_y)
+        sequence.capture_zoom(self.camera)
+        self._emergence = sequence
+
     def _static_platforms(self) -> list[arcade.SpriteList]:
         """Plateformes solides hors cadavres (un cadavre ne doit pas se bloquer lui-meme)."""
         return [self.level.walls, self.level.spectral_walls]
+
+    def _terrain_cull_rect(self):
+        """Chunks a dessiner : ecran + marge, et le trou de vision en fantome.
+
+        Hors du voile le decor est presque noir : le dessiner quand meme
+        coutait ~5 ms et faisait chuter le FPS a 45.
+        """
+        view = self.camera.cull_rect()
+        ghost = self.ghost
+        if (
+            self.machine.state is not GameState.GHOST
+            or ghost is None
+            or self.ghost_emerging
+        ):
+            return view
+        radius = ghost.vision_radius + settings.RENDER_CULL_PAD
+        return self.camera.cull_rect_around(ghost.center_x, ghost.center_y, radius)
 
     # ------------------------------------------------------------------ #
     # Dessin
@@ -246,7 +293,7 @@ class PlayView(arcade.View):
         self._sample_fps()
         self.camera.begin_frame()
         self.camera.use_world()
-        self.level.draw(self.camera.visible_rect())
+        self.level.draw(self._terrain_cull_rect())
         if self.player.alive:
             self.player.draw_fx()
             draw_pixel_sprite(self.player)
@@ -255,7 +302,7 @@ class PlayView(arcade.View):
         self.atmosphere.draw(self.camera.world)
         if self.ghost is not None:
             if self.machine.state is GameState.GHOST:
-                self._draw_ghost_layer(self.ghost)
+                self._draw_ghost_or_emergence(self.ghost)
             elif self.ghost.vanishing:
                 draw_pixel_sprite(self.ghost)
         if settings.DEBUG_SHOW_HITBOXES:
@@ -267,6 +314,9 @@ class PlayView(arcade.View):
         warp = 0.0
         if self.machine.state is GameState.GHOST and self.ghost is not None:
             warp = self.ghost.warp_strength
+            emergence = self._emergence
+            if emergence is not None and emergence.active:
+                warp *= emergence.fog_strength
         self.camera.present(warp)
 
     def _draw_hitboxes(self) -> None:
@@ -282,6 +332,26 @@ class PlayView(arcade.View):
         if self.ghost is not None:
             self.ghost.draw_hit_box(color)
 
+    def _draw_ghost_or_emergence(self, ghost: Ghost) -> None:
+        """Voile du fantome, ou cinematique de sortie hors du corps."""
+        emergence = self._emergence
+        if emergence is None or not emergence.active:
+            self._draw_ghost_layer(ghost)
+            return
+        fade = emergence.player_fade
+        if fade > 0.0:
+            self.player.alpha = int(255 * fade)
+            draw_pixel_sprite(self.player)
+            self.player.alpha = 255
+        if emergence.shows_fog:
+            self._draw_ghost_layer(ghost)
+        elif ghost.alpha > 0:
+            with glow_pass():
+                ghost.draw_fx()
+            draw_pixel_sprite(ghost)
+        with glow_pass():
+            emergence.draw_fx()
+
     def _draw_ghost_layer(self, ghost: Ghost) -> None:
         """Voile radial, auras toujours visibles, secrets dans le champ, fantome."""
         for wall in self.level.spectral_walls:
@@ -290,33 +360,39 @@ class PlayView(arcade.View):
         for wall in self.level.spectral_walls:
             if wall.revealed:
                 arcade.draw_sprite(wall)
+        with glow_pass():
+            for item in self.level.items:
+                if ghost.reveals(item):
+                    item.draw_fx()
+            self._draw_ghost_danger_glows()
+            self._draw_mechanism_hints()
+            ghost.draw_fx()
         for item in self.level.items:
             if ghost.reveals(item):
-                item.draw_fx()
                 arcade.draw_sprite(item)
-        self._draw_ghost_danger_auras(ghost)
-        self._draw_mechanism_hints()
-        ghost.draw_fx()
+        self._draw_ghost_danger_sprites(ghost)
         draw_pixel_sprite(ghost)
         self._draw_body_arrow(ghost)
 
-    def _draw_ghost_danger_auras(self, ghost: Ghost) -> None:
-        """Surbrillances d'ennemis et de pieges, au-dessus du voile."""
-        view = self.camera.visible_rect()
+    def _draw_ghost_danger_glows(self) -> None:
+        """Halos d'ennemis et de pieges, au-dessus du voile."""
+        view = self.camera.cull_rect()
         pad = max(
             settings.ENEMY_WIDTH * settings.ENEMY_GHOST_GLOW_SCALE,
             settings.TILE_SIZE * settings.SPIKE_GHOST_GLOW_SCALE,
         )
-        with additive_blend():
-            for enemy in self.level.enemies:
-                if _in_view(enemy, view, pad):
-                    enemy.draw_ghost_glow(bind_blend=False)
-            for spike in self.level.hazards:
-                if _in_view(spike, view, pad):
-                    spike.draw_ghost_glow(bind_blend=False)
-            for spike in self.level.falling_spikes:
-                if _in_view(spike, view, pad):
-                    spike.draw_ghost_glow(bind_blend=False)
+        for enemy in self.level.enemies:
+            if _in_view(enemy, view, pad):
+                enemy.draw_ghost_glow(bind_blend=False)
+        for spike in self.level.hazards:
+            if _in_view(spike, view, pad):
+                spike.draw_ghost_glow(bind_blend=False)
+        for spike in self.level.falling_spikes:
+            if _in_view(spike, view, pad):
+                spike.draw_ghost_glow(bind_blend=False)
+
+    def _draw_ghost_danger_sprites(self, ghost: Ghost) -> None:
+        """Sprites d'ennemis et de pieges reveles, au-dessus de leurs halos."""
         for enemy in self.level.enemies:
             if ghost.reveals(enemy):
                 arcade.draw_sprite(enemy)
@@ -328,9 +404,13 @@ class PlayView(arcade.View):
                 arcade.draw_sprite(spike)
 
     def _draw_mechanism_hints(self) -> None:
-        """Auras silhouette et vrilles d'ame, visibles partout en projection."""
+        """Auras silhouette et vrilles d'ame, visibles en projection."""
         now = time.perf_counter()
+        view = self.camera.cull_rect()
+        pad = settings.RENDER_CULL_PAD
         for mechanism in self.level.mechanisms:
+            if not _mechanism_in_view(mechanism, view, pad):
+                continue
             mechanism.draw_soul(now)
 
     def _draw_body_arrow(self, ghost: Ghost) -> None:
@@ -371,14 +451,24 @@ class PlayView(arcade.View):
             hint=self._hint_for(state),
             has_key=self.player.has_item(ItemKind.KEY),
             corpse_count=len(self.level.corpses),
-            ghost_time_left=self.ghost.time_left if state is GameState.GHOST and self.ghost is not None else None,
+            ghost_time_left=(
+                self.ghost.time_left
+                if state is GameState.GHOST
+                and self.ghost is not None
+                and not self.ghost_emerging
+                else None
+            ),
             ghost_duration=self.ghost.stats.duration if self.ghost is not None else settings.GHOST_DURATION,
             leash_ratio=self.ghost.leash_ratio if self.ghost is not None else 0.0,
             fps=self._fps if settings.DEBUG_SHOW_FPS and not self._debug_enabled else None,
             dash_ratio=self.player.dash_ratio if state is GameState.PLAYING else None,
             dash_ready=self.player.dash_ready,
             dash_flash=self.player.dash_flash,
-            controls="ghost" if state is GameState.GHOST else ("playing" if state is GameState.PLAYING else ""),
+            controls=(
+                "ghost"
+                if state is GameState.GHOST and not self.ghost_emerging
+                else ("playing" if state is GameState.PLAYING else "")
+            ),
             pressed_keys=frozenset(self.held_keys),
             show_esprit=self.session.knows_esprit,
         )
@@ -451,7 +541,12 @@ class PlayView(arcade.View):
         attractor: arcade.Sprite | None = None
         if state is GameState.PLAYING and self.player.alive:
             attractor = self.player
-        elif state is GameState.GHOST and self.ghost is not None and not self.ghost.vanishing:
+        elif (
+            state is GameState.GHOST
+            and self.ghost is not None
+            and not self.ghost.vanishing
+            and not self.ghost_emerging
+        ):
             attractor = self.ghost
         self.level.update(delta_time, attractor)
         self._update_mechanisms()
@@ -494,6 +589,8 @@ class PlayView(arcade.View):
         ghost = self.ghost
         if ghost is None:
             return
+        if self._update_emergence(delta_time, ghost):
+            return
         ghost.steer(self._horizontal_input(), self._vertical_input())
         if self.anchor_corpse is not None and self.anchor_corpse.time_left > 0:
             ghost.anchor = (self.anchor_corpse.center_x, self.anchor_corpse.center_y)
@@ -506,6 +603,17 @@ class PlayView(arcade.View):
             emit_ghost_end(self, "timer")
         elif ghost.vanished:
             emit_ghost_end(self, "manual")
+
+    def _update_emergence(self, delta_time: float, ghost: Ghost) -> bool:
+        """Avance la cinematique. True tant qu'elle bloque le pilotage."""
+        emergence = self._emergence
+        if emergence is None:
+            return False
+        emergence.update(delta_time, self.camera, ghost)
+        if emergence.active:
+            return True
+        self._emergence = None
+        return False
 
     def _update_respawning(self, delta_time: float) -> None:
         if self.ghost is not None:
@@ -653,6 +761,8 @@ class PlayView(arcade.View):
             elif symbol == _PROJECT_KEY:
                 emit_player_death(self, "sacrifice")
         elif state is GameState.GHOST and symbol == _RETURN_KEY:
+            if self.ghost_emerging:
+                return
             if self.ghost is not None:
                 self.ghost.start_vanish()
 

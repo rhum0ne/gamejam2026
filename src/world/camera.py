@@ -153,6 +153,33 @@ class CameraRig:
         self._shake_time = self._shake_duration
         self._shake_phase = 0.0
 
+    @property
+    def zoom(self) -> float:
+        return self._zoom
+
+    def apply_cinematic(
+        self,
+        x: float,
+        y: float,
+        zoom: float,
+        delta_time: float,
+    ) -> None:
+        """Cadre un point avec un zoom impose, sans look-ahead.
+
+        Sert a la transition mort -> fantome : le zoom est pilote par la
+        cinematique (courbe finie), la position reste collee au corps.
+        """
+        self._zoom = zoom
+        self.world.zoom = zoom
+        self._look_x = 0.0
+        self._look_y = 0.0
+        desired_x, desired_y = self._clamp(x, y)
+        alpha = _exp_alpha(delta_time, settings.DEATH_CAMERA_LOCK_TIME)
+        self._anchor_x += (desired_x - self._anchor_x) * alpha
+        self._anchor_y += (desired_y - self._anchor_y) * alpha
+        self._tick_shake(delta_time)
+        self._apply_offset()
+
     def follow(
         self,
         target: arcade.Sprite,
@@ -213,6 +240,28 @@ class CameraRig:
             center_y - half_height,
             center_y + half_height,
         )
+
+    def cull_rect(self) -> LRBT:
+        """Rectangle de culling, plus large que l'ecran pour eviter les pop-in."""
+        view = self.visible_rect()
+        pad = settings.RENDER_CULL_PAD
+        return LRBT(
+            view.left - pad,
+            view.right + pad,
+            view.bottom - pad,
+            view.top + pad,
+        )
+
+    def cull_rect_around(self, x: float, y: float, radius: float) -> LRBT:
+        """Intersection du culling camera et d'un disque (vision du fantome)."""
+        view = self.cull_rect()
+        left = max(view.left, x - radius)
+        right = min(view.right, x + radius)
+        bottom = max(view.bottom, y - radius)
+        top = min(view.top, y + radius)
+        if left >= right or bottom >= top:
+            return view
+        return LRBT(left, right, bottom, top)
 
     def begin_frame(self) -> None:
         """Efface l'image hors-ecran, avant que le monde et le HUD n'y dessinent."""

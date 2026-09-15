@@ -186,6 +186,16 @@ def advance(view: arcade.View, frames: int) -> None:
         view.on_draw()
 
 
+def wait_ghost_ready(view: PlayView, limit: int = 180) -> None:
+    """Laisse finir le gros plan / l'emergence avant de piloter le fantome."""
+    for _ in range(limit):
+        if not view.ghost_emerging:
+            return
+        view.on_update(FRAME)
+        view.on_draw()
+    raise AssertionError("la transition mort -> fantome n'est pas terminee")
+
+
 def check_gameplay_loop(window: arcade.Window) -> None:
     """Boucle corps physique -> mort -> fantome -> retour au corps."""
     view = PlayView(GameSession())
@@ -206,6 +216,9 @@ def check_gameplay_loop(window: arcade.Window) -> None:
     view.on_key_release(arcade.key.F, 0)
     assert view.machine.state is GameState.GHOST, "F doit projeter l'esprit"
     assert view.ghost is not None and len(view.level.corpses) == 1
+    assert view.ghost_emerging, "la mort doit ouvrir une cinematique"
+    wait_ghost_ready(view)
+    assert not view.ghost_emerging
 
     view.on_key_press(arcade.key.DOWN, 0)
     advance(view, 60)
@@ -240,6 +253,7 @@ def check_vertical_scroll(window: arcade.Window) -> None:
     view.on_key_press(arcade.key.F, 0)
     view.on_key_release(arcade.key.F, 0)
     assert view.ghost is not None
+    wait_ghost_ready(view)
 
     # Le spawn est en haut du niveau : la camera y est deja clampee.
     # On descend dans le puits, puis on remonte, pour tester les deux axes.
@@ -297,6 +311,7 @@ def check_tutorial_is_solvable(window: arcade.Window) -> None:
     view.on_key_release(arcade.key.F, 0)
     assert view.machine.state is GameState.GHOST
     assert view.session.knows_esprit
+    wait_ghost_ready(view)
     corpse = view.level.corpses[0]
     key_item = next(item for item in view.level.items if item.kind is ItemKind.KEY)
     view.on_update(FRAME)

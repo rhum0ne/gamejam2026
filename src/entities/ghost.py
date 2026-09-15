@@ -67,6 +67,9 @@ class Ghost(arcade.Sprite):
         self._input = (0.0, 0.0)
         self._solid_walls: arcade.SpriteList | None = None
         self._glow_time = 0.0
+        self._emerging = False
+        self._emerge_x = center_x
+        self._emerge_y = center_y
         self._trail = PointTrail(
             settings.COLOR_TRAIL_GHOST,
             settings.COLOR_TRAIL_GHOST_CORE,
@@ -121,6 +124,39 @@ class Ghost(arcade.Sprite):
     @property
     def expired(self) -> bool:
         return self.time_left <= 0.0
+
+    @property
+    def emerging(self) -> bool:
+        return self._emerging
+
+    def begin_emerge(self) -> None:
+        """Cache le fantome au centre du corps, pret a s'en extraire."""
+        self._emerging = True
+        self.alpha = 0
+        self.scale = settings.DEATH_EMERGE_SCALE
+        self.change_x = 0.0
+        self.change_y = 0.0
+        self._input = (0.0, 0.0)
+        self._emerge_x = self.center_x
+        self._emerge_y = self.center_y
+        sprites.apply_facing(self, self.facing)
+
+    def tick_emerge(self, progress: float) -> None:
+        """Interpole opacite, taille et elevation. `progress` va de 0 a 1."""
+        amount = max(0.0, min(1.0, progress))
+        self.alpha = int(255 * amount)
+        self.scale = settings.DEATH_EMERGE_SCALE + (
+            1.0 - settings.DEATH_EMERGE_SCALE
+        ) * amount
+        sprites.apply_facing(self, self.facing)
+        self.center_x = self._emerge_x
+        self.center_y = self._emerge_y + settings.DEATH_EMERGE_LIFT * amount
+
+    def end_emerge(self) -> None:
+        """Laisse le fantome a sa taille normale, au-dessus du cadavre."""
+        self.tick_emerge(1.0)
+        self._emerging = False
+        self.alpha = 255
 
     @property
     def vanishing(self) -> bool:
@@ -213,6 +249,8 @@ class Ghost(arcade.Sprite):
     # ------------------------------------------------------------------ #
 
     def update(self, delta_time: float = settings.FRAME_TIME, *args, **kwargs) -> None:
+        if self._emerging:
+            return
         self.time_left = max(0.0, self.time_left - delta_time)
         if not self._vanishing and self.time_left <= self.vanish_duration:
             self.start_vanish()

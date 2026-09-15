@@ -55,6 +55,7 @@ import arcade
 
 import settings
 from src.entities.enemy import Enemy
+from src.entities.glow import glow_pass
 from src.entities.item import Item, ItemKind
 from src.world.mechanisms import GatedTile, Mechanism, PressurePlate, plate_geometry
 from src.world.obstacles import (
@@ -355,10 +356,11 @@ class Level:
         for checkpoint in self.checkpoints:
             checkpoint.draw_fx()
         self.doors.draw()
-        self._draw_torches(view_rect)
+        with glow_pass():
+            self._draw_torches(view_rect)
+            for item in self.items:
+                item.draw_fx()
         self.corpses.draw()
-        for item in self.items:
-            item.draw_fx()
         self.items.draw()
         self.enemies.draw()
 
