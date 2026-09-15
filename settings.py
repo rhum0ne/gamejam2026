@@ -339,6 +339,12 @@ CAMERA_RISE_LOOK_THRESHOLD = 10.0
 # Secousse du dash : amplitude en pixels, duree en secondes.
 CAMERA_DASH_SHAKE = 5.5
 CAMERA_DASH_SHAKE_TIME = 0.18
+# Zoom : > 1.0 rapproche (corps), < 1.0 eloigne (fantome). La transition entre
+# les deux, lissee par CAMERA_ZOOM_SMOOTH_TIME, donne l'effet de projection
+# hors du corps (la camera recule) quand on passe humain -> fantome.
+CAMERA_ZOOM_PLAYER = 1.18
+CAMERA_ZOOM_GHOST = 0.82
+CAMERA_ZOOM_SMOOTH_TIME = 0.55
 
 # --------------------------------------------------------------------------- #
 # Icones clavier (Kenney Input Prompts, dans assets/ui/)

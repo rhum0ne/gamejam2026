@@ -410,7 +410,7 @@ class PlayView(arcade.View):
         self._update_enemies(delta_time)
         self._resolve_player_collisions()
         if self.machine.state is GameState.PLAYING:
-            self.camera.follow(self.player, delta_time)
+            self.camera.follow(self.player, delta_time, zoom=settings.CAMERA_ZOOM_PLAYER)
 
     def _update_ghost(self, delta_time: float) -> None:
         ghost = self.ghost
@@ -423,7 +423,7 @@ class PlayView(arcade.View):
         self._update_enemies(delta_time)
         if not ghost.vanishing:
             self._resolve_ghost_collisions(ghost)
-        self.camera.follow(ghost, delta_time)
+        self.camera.follow(ghost, delta_time, zoom=settings.CAMERA_ZOOM_GHOST)
         if ghost.expired:
             emit_ghost_end(self, "timer")
         elif ghost.vanished:
@@ -435,6 +435,8 @@ class PlayView(arcade.View):
             if self.ghost.vanished:
                 self.ghost = None
         self._respawn_timer -= delta_time
+        respawn_x, respawn_y = self.player.respawn_point
+        self.camera.drift_to(respawn_x, respawn_y, delta_time, zoom=settings.CAMERA_ZOOM_PLAYER)
         if self._respawn_timer > 0:
             return
         self.ghost = None
@@ -443,7 +445,6 @@ class PlayView(arcade.View):
             self.player.give_item(kind)
         self._delivered_items.clear()
         self._update_respawn_enemies()
-        self.camera.snap_to(self.player)
         self.machine.try_to(GameState.PLAYING)
 
     def _update_enemies(self, delta_time: float) -> None:
