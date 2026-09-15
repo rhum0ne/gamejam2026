@@ -21,12 +21,8 @@ import arcade  # noqa: E402
 
 import settings  # noqa: E402
 from src.entities.item import ItemKind  # noqa: E402
-from src.systems.event_manager import (  # noqa: E402
-    PLAYER_DEATH,
-    PLAYER_GHOST_END,
-    PLAYER_WIN,
-    EventManager,
-)
+from src.systems.event_manager import EventManager  # noqa: E402
+from src.systems.events import PLAYER_DEATH, PLAYER_GHOST_END, PLAYER_WIN  # noqa: E402
 from src.systems.game_state import GameSession, GameState, PlayView  # noqa: E402
 from src.systems.upgrades import SoulProgression  # noqa: E402
 from src.ui.menus import TitleView, UpgradeTreeView, VictoryView  # noqa: E402

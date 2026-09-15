@@ -4,19 +4,7 @@ Un producteur declenche un evenement (`dispatch`) ; les systemes interesses
 s'abonnent (`subscribe`) et recoivent le payload. Ajouter un comportement
 revient a ecrire une fonction et l'abonner, sans modifier l'emetteur.
 
-Les types d'evenements sont des chaines. Ce module en declare trois pour
-le squelette actuel ; en ajouter un = une constante + `dispatch` + `subscribe`.
-
-Usage :
-
-    from src.systems.event_manager import event_manager, PLAYER_DEATH
-
-    def on_death(data: dict) -> None:
-        x, y = data["position"]
-        ...
-
-    event_manager.subscribe(PLAYER_DEATH, on_death)
-    event_manager.dispatch(PLAYER_DEATH, {"position": (x, y), "cause": "spikes"})
+Les noms d'evenements sont declares dans `src.systems.events`.
 """
 
 from __future__ import annotations
@@ -26,17 +14,6 @@ from collections.abc import Callable
 from typing import Any
 
 Listener = Callable[[Any], None]
-
-# --------------------------------------------------------------------------- #
-# Types d'evenements (squelette)
-# --------------------------------------------------------------------------- #
-
-# data: {"position": (x, y), "cause": "spikes"|"out_of_bounds"|"enemy"|"sacrifice"}
-PLAYER_DEATH = "PLAYER_DEATH"
-# data: {"reason": "timer"|"manual", "position": (x, y) | None}
-PLAYER_GHOST_END = "PLAYER_GHOST_END"
-# data: {"level_index": int, "level_name": str, "is_last_level": bool}
-PLAYER_WIN = "PLAYER_WIN"
 
 
 class EventManager:
