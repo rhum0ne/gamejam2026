@@ -108,6 +108,7 @@ def on_player_ghost_end(view: PlayView, data: dict) -> None:
     view.ghost = None
     for wall in view.level.spectral_walls:
         wall.set_revealed(False)
+    view.anchor_corpse = None
     view._respawn_timer = settings.PLAYER_RESPAWN_DELAY
     view.machine.try_to(GameState.RESPAWNING)
 

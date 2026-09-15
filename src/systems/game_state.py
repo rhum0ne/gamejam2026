@@ -296,7 +296,7 @@ class PlayView(arcade.View):
             state_label=STATE_LABELS[state],
             essence=self.session.progression.essence,
             ghost_level=self.session.progression.level,
-            hint=self.level.hint if state is GameState.PLAYING else "",
+            hint=self._hint_for(state),
             has_key=self.player.has_item(ItemKind.KEY),
             corpse_count=len(self.level.corpses),
             ghost_time_left=self.ghost.time_left if self.ghost is not None else None,
@@ -307,6 +307,13 @@ class PlayView(arcade.View):
             dash_ready=self.player.dash_ready,
             dash_flash=self.player.dash_flash,
         )
+
+    def _hint_for(self, state: GameState) -> str:
+        if state is GameState.PLAYING:
+            return self.level.hint
+        if state is GameState.GHOST:
+            return "R : ecourter le mode fantome et revenir au checkpoint"
+        return ""
 
     def _sample_fps(self) -> None:
         """Moyenne glissante du FPS de dessin, independante de update_rate."""
