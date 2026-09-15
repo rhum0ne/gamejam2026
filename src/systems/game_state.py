@@ -18,6 +18,8 @@ methodes, pour eviter un import circulaire.
 
 from __future__ import annotations
 
+import math
+import time
 from dataclasses import dataclass, field
 from enum import Enum, auto
 
@@ -30,8 +32,10 @@ from src.entities.item import ItemKind
 from src.entities.player import Player
 from src.systems import collisions
 from src.systems.upgrades import SoulProgression
+from src.ui.display import handle_display_key
 from src.ui.hud import Hud, HudData
 from src.world.camera import CameraRig
+from src.world.fog import GhostFog
 from src.world.level import Level
 
 
@@ -158,6 +162,7 @@ class PlayView(arcade.View):
         self.session = session if session is not None else GameSession()
         self.machine = GameStateMachine(GameState.MENU)
         self.camera = CameraRig()
+        self.fog = GhostFog()
         self.hud = Hud(self.window.width, self.window.height)
         self.level: Level
         self.player: Player
@@ -166,7 +171,13 @@ class PlayView(arcade.View):
         self.held_keys: set[int] = set()
         self._respawn_timer = 0.0
         self._delivered_items: list[ItemKind] = []
+        self._fps = 0.0
+        self._last_draw_time = 0.0
         self.setup()
+
+    def on_show_view(self) -> None:
+        self.camera.on_resize(self.window.width, self.window.height)
+        self.hud.resize(self.window.width, self.window.height)
 
     # ------------------------------------------------------------------ #
     # Mise en place
@@ -177,7 +188,10 @@ class PlayView(arcade.View):
         self.level = Level.from_file(self.session.level_file)
         self.player = Player(*self.level.player_spawn)
         self.player.respawn_point = self.level.checkpoint_spawn
-        self.player.bind_world(self.level.solid_platforms)
+        for checkpoint in self.level.checkpoints:
+            if (checkpoint.center_x, checkpoint.center_y) == self.level.checkpoint_spawn:
+                checkpoint.activate()
+        self.player.bind_world(self.level.static_walls, platforms=[self.level.corpses])
         for enemy in self.level.enemies:
             enemy.bind_world(self._static_platforms())
         self.camera.set_bounds(self.level.width, self.level.height)
@@ -199,6 +213,7 @@ class PlayView(arcade.View):
     # ------------------------------------------------------------------ #
 
     def on_draw(self) -> None:
+        self._sample_fps()
         self.clear()
         self.camera.use_world()
         self.level.draw()
@@ -210,21 +225,7 @@ class PlayView(arcade.View):
         self.hud.draw(self._hud_data())
 
     def _draw_ghost_layer(self, ghost: Ghost) -> None:
-        """Voile d'obscurite, elements reveles, longe et fantome.
-
-        TODO(rendu) : remplacer le voile par un masque en shader pour obtenir un
-        vrai cone de vision aux bords adoucis.
-        """
-        camera_x, camera_y = self.camera.world.position
-        half_width = self.camera.world.viewport_width / 2
-        half_height = self.camera.world.viewport_height / 2
-        arcade.draw_lrbt_rectangle_filled(
-            camera_x - half_width,
-            camera_x + half_width,
-            camera_y - half_height,
-            camera_y + half_height,
-            (0, 0, 0, settings.FOG_ALPHA),
-        )
+        """Voile radial, fleche vers le corps, et fantome."""
         for wall in self.level.spectral_walls:
             wall.set_revealed(ghost.reveals(wall))
             if wall.revealed:
@@ -233,11 +234,37 @@ class PlayView(arcade.View):
             for sprite in sprite_list:
                 if ghost.reveals(sprite):
                     arcade.draw_sprite(sprite)
-        arcade.draw_line(*ghost.anchor, ghost.center_x, ghost.center_y, settings.COLOR_GHOST, 1)
-        arcade.draw_circle_outline(
-            ghost.center_x, ghost.center_y, ghost.vision_radius, settings.COLOR_GHOST, 1
-        )
+        self.fog.draw(ghost, self.camera.world)
         arcade.draw_sprite(ghost)
+        self._draw_body_arrow(ghost)
+
+    def _draw_body_arrow(self, ghost: Ghost) -> None:
+        """Petite pointe vers le corps physique, seulement au-dela d'une distance minimale."""
+        delta_x = self.player.center_x - ghost.center_x
+        delta_y = self.player.center_y - ghost.center_y
+        distance = math.hypot(delta_x, delta_y)
+        if distance < settings.GHOST_HOME_ARROW_MIN_DISTANCE:
+            return
+        direction_x = delta_x / distance
+        direction_y = delta_y / distance
+        tip_x = ghost.center_x + direction_x * settings.GHOST_HOME_ARROW_OFFSET
+        tip_y = ghost.center_y + direction_y * settings.GHOST_HOME_ARROW_OFFSET
+        back_x = tip_x - direction_x * settings.GHOST_HOME_ARROW_LENGTH
+        back_y = tip_y - direction_y * settings.GHOST_HOME_ARROW_LENGTH
+        half_width = settings.GHOST_HOME_ARROW_WIDTH / 2
+        left_x = back_x - direction_y * half_width
+        left_y = back_y + direction_x * half_width
+        right_x = back_x + direction_y * half_width
+        right_y = back_y - direction_x * half_width
+        arcade.draw_triangle_filled(
+            tip_x,
+            tip_y,
+            left_x,
+            left_y,
+            right_x,
+            right_y,
+            settings.COLOR_PLAYER,
+        )
 
     def _hud_data(self) -> HudData:
         state = self.machine.state
@@ -252,7 +279,18 @@ class PlayView(arcade.View):
             ghost_time_left=self.ghost.time_left if self.ghost is not None else None,
             ghost_duration=self.ghost.stats.duration if self.ghost is not None else settings.GHOST_DURATION,
             leash_ratio=self.ghost.leash_ratio if self.ghost is not None else 0.0,
+            fps=self._fps if settings.DEBUG_SHOW_FPS else None,
         )
+
+    def _sample_fps(self) -> None:
+        """Moyenne glissante du FPS de dessin, independante de update_rate."""
+        now = time.perf_counter()
+        if self._last_draw_time > 0.0:
+            elapsed = now - self._last_draw_time
+            if elapsed > 0.0:
+                instant = 1.0 / elapsed
+                self._fps = instant if self._fps == 0.0 else self._fps * 0.9 + instant * 0.1
+        self._last_draw_time = now
 
     # ------------------------------------------------------------------ #
     # Boucle de jeu
@@ -320,6 +358,11 @@ class PlayView(arcade.View):
         for item in collisions.items_reachable_by_body(self.player, self.level):
             self._collect(item.kind)
             item.remove_from_sprite_lists()
+
+        checkpoint = collisions.checkpoint_touched_by_player(self.player, self.level)
+        if checkpoint is not None:
+            self.player.respawn_point = (checkpoint.center_x, checkpoint.center_y)
+            checkpoint.activate()
 
         door = collisions.door_touched_by_player(self.player, self.level)
         if door is not None and self.player.has_item(ItemKind.KEY):
@@ -425,6 +468,8 @@ class PlayView(arcade.View):
     def on_key_press(self, symbol: int, modifiers: int) -> None:
         from src.ui.menus import TitleView, UpgradeTreeView
 
+        if handle_display_key(self.window, symbol, modifiers):
+            return
         self.held_keys.add(symbol)
         state = self.machine.state
         if symbol == arcade.key.ESCAPE:

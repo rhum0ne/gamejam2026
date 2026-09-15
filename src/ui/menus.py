@@ -1,12 +1,7 @@
 """Ecrans hors-jeu : titre, game over, victoire, arbre de competences.
 
-Ces vues sont statiques, mais Arcade deconseille `draw_text` dans une boucle de
-rendu. Les libelles passent donc par un petit cache d'objets `arcade.Text`
-(`_label`) : le code reste aussi court qu'avec `draw_text`, sans le cout ni
-l'avertissement de performance.
-
-Chaque vue recoit la `GameSession` pour pouvoir afficher / modifier la
-progression et relancer une partie.
+Les positions sont calculees d'apres la taille actuelle de la fenetre, pour
+rester lisibles apres un redimensionnement ou un passage en plein ecran.
 """
 
 from __future__ import annotations
@@ -16,6 +11,7 @@ import arcade
 import settings
 from src.systems.game_state import GameSession, PlayView
 from src.systems.upgrades import UPGRADES, UPGRADES_BY_ID, Upgrade
+from src.ui.display import handle_display_key, use_default_camera
 
 _TEXT_CACHE: dict[tuple, arcade.Text] = {}
 _TEXT_CACHE_LIMIT = 256
@@ -30,7 +26,7 @@ def _label(
     anchor_x: str,
 ) -> arcade.Text:
     """Retourne un objet Text reutilisable pour ce libelle."""
-    key = (text, x, y, size, color, anchor_x)
+    key = (text, round(x), round(y), size, color, anchor_x)
     cached = _TEXT_CACHE.get(key)
     if cached is None:
         if len(_TEXT_CACHE) >= _TEXT_CACHE_LIMIT:
@@ -40,8 +36,10 @@ def _label(
     return cached
 
 
-def _draw_centered(text: str, y: float, size: float, color: tuple[int, int, int]) -> None:
-    _label(text, settings.SCREEN_WIDTH / 2, y, size, color, "center").draw()
+def _draw_centered(
+    view: arcade.View, text: str, y: float, size: float, color: tuple[int, int, int]
+) -> None:
+    _label(text, view.window.width / 2, y, size, color, "center").draw()
 
 
 def _draw_left(text: str, x: float, y: float, size: float, color: tuple[int, int, int]) -> None:
@@ -56,27 +54,36 @@ class TitleView(arcade.View):
         self.background_color = settings.COLOR_BACKGROUND
         self.session = session if session is not None else GameSession()
 
+    def on_show_view(self) -> None:
+        use_default_camera(self.window)
+
     def on_draw(self) -> None:
         self.clear()
-        _draw_centered("PROJECT ASTRAL PLATFORMER", 500, 44, settings.COLOR_MENU_TITLE)
-        _draw_centered("Dualite Joueur / Fantome", 450, 20, settings.COLOR_MENU_HINT)
-        _draw_centered("ENTREE  -  Commencer l'aventure", 340, 20, settings.COLOR_HUD_TEXT)
-        _draw_centered("T  -  Arbre de competences", 300, 20, settings.COLOR_HUD_TEXT)
-        _draw_centered("ECHAP  -  Quitter", 260, 20, settings.COLOR_HUD_TEXT)
+        height = self.window.height
+        _draw_centered(self, "PROJECT ASTRAL PLATFORMER", height * 0.70, 44, settings.COLOR_MENU_TITLE)
+        _draw_centered(self, "Dualite Joueur / Fantome", height * 0.63, 20, settings.COLOR_MENU_HINT)
+        _draw_centered(self, "ENTREE  -  Commencer l'aventure", height * 0.48, 20, settings.COLOR_HUD_TEXT)
+        _draw_centered(self, "T  -  Arbre de competences", height * 0.42, 20, settings.COLOR_HUD_TEXT)
+        _draw_centered(self, "F11  -  Plein ecran", height * 0.36, 20, settings.COLOR_HUD_TEXT)
+        _draw_centered(self, "ECHAP  -  Quitter", height * 0.30, 20, settings.COLOR_HUD_TEXT)
         _draw_centered(
+            self,
             "Deplacements : ZQSD / fleches  -  Saut : Espace  -  Projeter l'esprit : F",
-            160,
+            height * 0.18,
             15,
             settings.COLOR_MENU_HINT,
         )
         _draw_centered(
+            self,
             "Mode fantome : traverse les murs spectraux, ramene les objets au cadavre.",
-            130,
+            height * 0.13,
             15,
             settings.COLOR_MENU_HINT,
         )
 
     def on_key_press(self, symbol: int, modifiers: int) -> None:
+        if handle_display_key(self.window, symbol, modifiers):
+            return
         if symbol in (arcade.key.ENTER, arcade.key.NUM_ENTER, arcade.key.SPACE):
             self.session.restart()
             self.window.show_view(PlayView(self.session))
@@ -94,14 +101,20 @@ class GameOverView(arcade.View):
         self.background_color = settings.COLOR_BACKGROUND
         self.session = session
 
+    def on_show_view(self) -> None:
+        use_default_camera(self.window)
+
     def on_draw(self) -> None:
         self.clear()
-        _draw_centered("GAME OVER", 460, 44, settings.COLOR_SPIKE)
-        _draw_centered(f"Morts : {self.session.deaths}", 400, 20, settings.COLOR_HUD_TEXT)
-        _draw_centered("ENTREE  -  Reessayer", 320, 20, settings.COLOR_HUD_TEXT)
-        _draw_centered("ECHAP  -  Menu principal", 280, 20, settings.COLOR_MENU_HINT)
+        height = self.window.height
+        _draw_centered(self, "GAME OVER", height * 0.64, 44, settings.COLOR_SPIKE)
+        _draw_centered(self, f"Morts : {self.session.deaths}", height * 0.55, 20, settings.COLOR_HUD_TEXT)
+        _draw_centered(self, "ENTREE  -  Reessayer", height * 0.42, 20, settings.COLOR_HUD_TEXT)
+        _draw_centered(self, "ECHAP  -  Menu principal", height * 0.36, 20, settings.COLOR_MENU_HINT)
 
     def on_key_press(self, symbol: int, modifiers: int) -> None:
+        if handle_display_key(self.window, symbol, modifiers):
+            return
         if symbol in (arcade.key.ENTER, arcade.key.NUM_ENTER):
             self.window.show_view(PlayView(self.session))
         elif symbol == arcade.key.ESCAPE:
@@ -116,21 +129,28 @@ class VictoryView(arcade.View):
         self.background_color = settings.COLOR_BACKGROUND
         self.session = session
 
+    def on_show_view(self) -> None:
+        use_default_camera(self.window)
+
     def on_draw(self) -> None:
         self.clear()
+        height = self.window.height
         progression = self.session.progression
-        _draw_centered("VICTOIRE", 470, 44, settings.COLOR_DOOR_OPEN)
+        _draw_centered(self, "VICTOIRE", height * 0.66, 44, settings.COLOR_DOOR_OPEN)
         _draw_centered(
+            self,
             f"Ames recoltees : {progression.collected_total}  -  Fantome niveau {progression.level}",
-            410,
+            height * 0.56,
             20,
             settings.COLOR_HUD_TEXT,
         )
-        _draw_centered(f"Morts : {self.session.deaths}", 375, 20, settings.COLOR_HUD_TEXT)
-        _draw_centered("T  -  Arbre de competences", 300, 20, settings.COLOR_HUD_TEXT)
-        _draw_centered("ECHAP  -  Menu principal", 260, 20, settings.COLOR_MENU_HINT)
+        _draw_centered(self, f"Morts : {self.session.deaths}", height * 0.50, 20, settings.COLOR_HUD_TEXT)
+        _draw_centered(self, "T  -  Arbre de competences", height * 0.40, 20, settings.COLOR_HUD_TEXT)
+        _draw_centered(self, "ECHAP  -  Menu principal", height * 0.34, 20, settings.COLOR_MENU_HINT)
 
     def on_key_press(self, symbol: int, modifiers: int) -> None:
+        if handle_display_key(self.window, symbol, modifiers):
+            return
         if symbol == arcade.key.T:
             self.window.show_view(UpgradeTreeView(self.session, back_view=self))
         elif symbol == arcade.key.ESCAPE:
@@ -151,26 +171,34 @@ class UpgradeTreeView(arcade.View):
         self.back_view = back_view
         self.message = ""
 
+    def on_show_view(self) -> None:
+        use_default_camera(self.window)
+
     def on_draw(self) -> None:
         self.clear()
+        width = self.window.width
+        height = self.window.height
         progression = self.session.progression
         stats = progression.ghost_stats
-        _draw_centered("ARBRE DE COMPETENCES", 660, 32, settings.COLOR_MENU_TITLE)
+        _draw_centered(self, "ARBRE DE COMPETENCES", height - 60, 32, settings.COLOR_MENU_TITLE)
         _draw_centered(
+            self,
             f"Essence disponible : {progression.essence}  -  Niveau du fantome : {progression.level}",
-            620,
+            height - 100,
             18,
             settings.COLOR_HUD_TEXT,
         )
         _draw_centered(
+            self,
             f"Portee {stats.max_range:.0f} px  -  Duree {stats.duration:.0f} s  -  "
             f"Vision {stats.vision_radius:.0f} px  -  Charge {stats.carry_capacity}",
-            590,
+            height - 130,
             15,
             settings.COLOR_MENU_HINT,
         )
 
-        top = 510
+        left = max(48.0, width * 0.14)
+        top = height - 210
         for index, upgrade in enumerate(UPGRADES):
             y = top - index * 60
             unlocked = progression.is_unlocked(upgrade.identifier)
@@ -184,12 +212,12 @@ class UpgradeTreeView(arcade.View):
             else:
                 color = settings.COLOR_MENU_HINT
                 status = f"{upgrade.cost} essence - {self._blocking_reason(upgrade)}"
-            _draw_left(f"[{index + 1}] {upgrade.name}  ({status})", 220, y, 18, color)
-            _draw_left(upgrade.description, 250, y - 24, 14, settings.COLOR_MENU_HINT)
+            _draw_left(f"[{index + 1}] {upgrade.name}  ({status})", left, y, 18, color)
+            _draw_left(upgrade.description, left + 30, y - 24, 14, settings.COLOR_MENU_HINT)
 
         if self.message:
-            _draw_centered(self.message, 140, 16, settings.COLOR_SPIKE)
-        _draw_centered("ECHAP  -  Retour", 100, 18, settings.COLOR_MENU_HINT)
+            _draw_centered(self, self.message, 140, 16, settings.COLOR_SPIKE)
+        _draw_centered(self, "ECHAP  -  Retour", 80, 18, settings.COLOR_MENU_HINT)
 
     def _blocking_reason(self, upgrade: Upgrade) -> str:
         """Explique pourquoi une amelioration n'est pas encore accessible."""
@@ -206,6 +234,8 @@ class UpgradeTreeView(arcade.View):
         return "essence insuffisante"
 
     def on_key_press(self, symbol: int, modifiers: int) -> None:
+        if handle_display_key(self.window, symbol, modifiers):
+            return
         if symbol == arcade.key.ESCAPE or symbol == arcade.key.TAB:
             self.window.show_view(self.back_view or TitleView(self.session))
             return

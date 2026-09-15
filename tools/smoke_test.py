@@ -94,6 +94,53 @@ def check_gameplay_loop(window: arcade.Window) -> None:
           f"etats visites : {' > '.join(state.name for state in view.machine.history)}")
 
 
+def _camera_y(view: PlayView) -> float:
+    return float(view.camera.world.position[1])
+
+
+def check_vertical_scroll(window: arcade.Window) -> None:
+    """Le niveau est plus haut que l'ecran, et la camera suit le fantome en Y."""
+    view = PlayView(GameSession())
+    window.show_view(view)
+    assert view.level.height > settings.SCREEN_HEIGHT, (
+        f"le niveau ({view.level.height:.0f} px) doit depasser l'ecran "
+        f"({settings.SCREEN_HEIGHT} px) pour tester le defilement vertical"
+    )
+
+    start_y = _camera_y(view)
+    view.on_key_press(arcade.key.F, 0)
+    view.on_key_release(arcade.key.F, 0)
+    assert view.ghost is not None
+
+    view.held_keys = {arcade.key.UP}
+    for _ in range(200):
+        view.ghost.time_left = settings.GHOST_DURATION
+        view.on_update(FRAME)
+    up_y = _camera_y(view)
+    assert up_y > start_y + 40, (
+        f"la camera doit monter avec le fantome (depart {start_y:.0f}, haut {up_y:.0f})"
+    )
+
+    pit_x = 18 * settings.TILE_SIZE + settings.TILE_SIZE / 2
+    view.held_keys.clear()
+    for _ in range(250):
+        view.held_keys.clear()
+        if view.ghost.center_x < pit_x - 6:
+            view.held_keys.add(arcade.key.RIGHT)
+        elif view.ghost.center_x > pit_x + 6:
+            view.held_keys.add(arcade.key.LEFT)
+        else:
+            view.held_keys.add(arcade.key.DOWN)
+        view.ghost.time_left = settings.GHOST_DURATION
+        view.on_update(FRAME)
+    down_y = _camera_y(view)
+    assert down_y < start_y - 20, (
+        f"la camera doit descendre dans le puits (sol {start_y:.0f}, puits {down_y:.0f})"
+    )
+    print(f"  camera Y -> {start_y:.0f} (sol) / {up_y:.0f} (montee) / {down_y:.0f} (descente), "
+          f"monde {view.level.height:.0f} px")
+
+
 def check_tutorial_is_solvable(window: arcade.Window) -> None:
     """Rejoue la solution attendue du niveau 1 (fiche concept, section 5).
 
@@ -172,15 +219,20 @@ def check_tutorial_is_solvable(window: arcade.Window) -> None:
 
     view.held_keys.add(arcade.key.RIGHT)
     previous_x = view.player.center_x
-    for _ in range(900):
+    for _ in range(3500):
         blocked = abs(view.player.center_x - previous_x) < 0.2
-        at_pit_edge = 515 < view.player.center_x < 540
         previous_x = view.player.center_x
-        # Sauter au bord du puits, et par-dessus ce qui bloque la course.
-        if view.player.on_ground and (at_pit_edge or blocked):
+        probe = (view.player.center_x + view.player.width / 2 + 10, view.player.bottom - 4)
+        hole_ahead = not (
+            arcade.get_sprites_at_point(probe, view.level.walls)
+            or arcade.get_sprites_at_point(probe, view.level.spectral_walls)
+        )
+        if view.player.on_ground and (blocked or hole_ahead):
             view.player.jump()
         view.on_update(FRAME)
         if view.machine.state is GameState.VICTORY:
+            break
+        if view.machine.state is GameState.GHOST:
             break
     assert view.machine.state is GameState.VICTORY, (
         f"le niveau doit pouvoir etre termine (etat : {view.machine.state.name}, "
@@ -191,19 +243,28 @@ def check_tutorial_is_solvable(window: arcade.Window) -> None:
 
 
 def check_menus(window: arcade.Window) -> None:
-    """Les vues hors-jeu se dessinent sans erreur."""
+    """Les vues hors-jeu se dessinent sans erreur, y compris apres un resize."""
     session = GameSession()
     for view in (TitleView(session), VictoryView(session), UpgradeTreeView(session)):
         window.show_view(view)
         advance(view, 2)
-    print("  menus -> titre, victoire et arbre de competences dessines")
+        view.on_resize(1920, 1080)
+        advance(view, 1)
+        view.on_resize(settings.SCREEN_MIN_WIDTH, settings.SCREEN_MIN_HEIGHT)
+        advance(view, 1)
+    play = PlayView(session)
+    window.show_view(play)
+    play.on_resize(1600, 900)
+    play.on_draw()
+    play.on_resize(settings.SCREEN_WIDTH, settings.SCREEN_HEIGHT)
+    print("  menus -> titre, victoire, arbre et resize OK")
 
 
 def main() -> int:
     print("Project Astral Platformer - smoke test")
-    print("[1/5] chargement des cartes")
+    print("[1/6] chargement des cartes")
     check_levels()
-    print("[2/5] progression et ameliorations")
+    print("[2/6] progression et ameliorations")
     check_progression()
 
     window = arcade.Window(
@@ -211,13 +272,19 @@ def main() -> int:
         height=settings.SCREEN_HEIGHT,
         title="smoke test",
         visible=False,
+        vsync=True,
+        update_rate=settings.FRAME_TIME,
+        draw_rate=settings.FRAME_TIME,
     )
+    assert window.vsync
     try:
-        print("[3/5] boucle de jeu")
+        print("[3/6] boucle de jeu")
         check_gameplay_loop(window)
-        print("[4/5] solution du niveau tutoriel")
+        print("[4/6] defilement vertical de la camera")
+        check_vertical_scroll(window)
+        print("[5/6] solution du niveau tutoriel")
         check_tutorial_is_solvable(window)
-        print("[5/5] menus")
+        print("[6/6] menus")
         check_menus(window)
     finally:
         window.close()

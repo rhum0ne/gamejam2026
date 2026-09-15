@@ -34,7 +34,7 @@ Les options sont transmises au jeu :
 ```bash
 ./play.sh --play          # demarre directement le niveau, sans passer par le menu
 ./play.sh --level 0       # choisit le niveau de depart
-./play.sh --check         # lance le test de demarrage au lieu du jeu
+./play.sh --fullscreen      # demarre en plein ecran (F11 pour quitter)
 ```
 
 `python main.py` fonctionne aussi : si Arcade manque dans l'interpreteur
@@ -81,6 +81,7 @@ que les menus se dessinent. A lancer avant chaque commit.
 | `F` | Projeter son esprit (le corps meurt sur place et laisse un cadavre) |
 | `R` | En mode fantome : retourner immediatement au corps |
 | `Tab` | Arbre de competences |
+| `F11` (ou Alt/Cmd+Entree) | Plein ecran |
 | `Echap` | Retour au menu titre |
 
 ---
@@ -94,11 +95,13 @@ que les menus se dessinent. A lancer avant chaque commit.
    piques) et touche la cle pour la saisir.
 4. Remonte et touche le cadavre pour **livrer** la cle a ton corps.
 5. Le timer expire (ou `R`) : tu reapparais au checkpoint avec la cle. Franchis
-   le puits d'un saut et ouvre la porte.
+   le puits d'un saut, puis traverse le parcours (fosses, piques, caisses) jusqu'a
+   la porte au bout du niveau. Apres le puits, un **escalier de plateformes**
+   monte hors ecran : la camera te suit aussi a la verticale.
 
-Un bonus est cache dans le niveau : une **ame** enfermee derriere un mur qui
-ressemble a de la roche ordinaire. Seul le fantome le revele, en s'en
-approchant, et peut le traverser.
+Des **checkpoints** jalonnent la course : les toucher met a jour le point de
+reapparition. Plusieurs **ames** sont cachees derriere des murs qui ressemblent
+a de la roche ordinaire : seul le fantome les revele et peut les traverser.
 
 ---
 

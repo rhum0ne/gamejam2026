@@ -39,16 +39,20 @@ class Player(arcade.SpriteSolidColor):
     # Initialisation
     # ------------------------------------------------------------------ #
 
-    def bind_world(self, platforms: Sequence[arcade.SpriteList]) -> None:
-        """Branche le moteur de physique sur les listes de plateformes.
+    def bind_world(
+        self,
+        walls: Sequence[arcade.SpriteList],
+        platforms: Sequence[arcade.SpriteList] | None = None,
+    ) -> None:
+        """Branche le moteur de physique sur le terrain et les plateformes mobiles.
 
-        Les listes sont conservees par reference : ajouter un cadavre a la
-        `SpriteList` des cadavres le rend immediatement solide, sans avoir a
-        reconstruire le moteur.
+        `walls` doit etre du terrain immobile (hash spatial). Les cadavres passent
+        dans `platforms` : Arcade les traite sans reconstruire le hash a chaque frame.
         """
         self._physics = arcade.PhysicsEnginePlatformer(
             self,
-            walls=list(platforms),
+            walls=list(walls),
+            platforms=list(platforms) if platforms else None,
             gravity_constant=settings.GRAVITY,
         )
 

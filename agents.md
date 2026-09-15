@@ -274,6 +274,9 @@ dans `_FACTORIES`, puis le symbole dans la legende de la carte.
 transition de niveau est automatique (`GameSession.advance_level`).
 
 **Contraintes de level design a respecter** (valeurs actuelles) :
+* largeur actuelle du tutoriel : **160 tuiles** (4 ecrans de 40) ;
+* hauteur actuelle du tutoriel : **48 tuiles** (1536 px, plus haut que l'ecran
+  de 720 px) pour exercer le defilement vertical ;
 * portee de saut du corps : environ **185 px**, soit 5 tuiles au maximum et
   4 tuiles confortablement ;
 * longe du fantome : **480 px** au depart (la cle du tutoriel est a 430 px du
@@ -281,6 +284,8 @@ transition de niveau est automatique (`GameSession.advance_level`).
 * un ennemi sent un cadavre a **320 px** : ne place pas d'ennemi a moins de
   cette distance d'un endroit ou le joueur doit mourir, sinon son cadavre est
   devore avant de servir.
+* le premier `C` de la carte est le spawn initial ; les suivants ne deviennent
+  le point de reapparition que lorsque le corps les touche.
 
 ---
 
@@ -327,7 +332,12 @@ transition de niveau est automatique (`GameSession.advance_level`).
   contient elle-meme (un cadavre avec `level.corpses` dans ses murs se bloque
   lui-meme) — d'ou `PlayView._static_platforms()`.
 * **Vitesses en pixels par frame**, pas par seconde (convention Arcade). La base
-  est 60 FPS ; un `delta_time` est quand meme utilise pour les timers.
+  est 60 FPS ; un `delta_time` est quand meme utilise pour les timers. La fenetre
+  est creee avec `vsync=True` et `update_rate = draw_rate = 1/60`. Le compteur
+  FPS du HUD (bas gauche) mesure le rythme de `on_draw`, pas seulement l'update.
+* **Hash spatial** sur les murs immobiles (`Level._static_sprite_list`). Sans ca,
+  le moteur de physique teste 2000+ tuiles par frame et tombe vers 25 FPS. Les
+  cadavres passent dans `platforms`, pas dans `walls`.
 * **Deux cameras** : dessine le monde avec `camera.use_world()` et le HUD avec
   `camera.use_ui()`, sinon le HUD defile avec le niveau.
 * **Jamais `arcade.draw_text` dans une boucle de rendu** : Arcade emet un
@@ -349,7 +359,7 @@ transition de niveau est automatique (`GameSession.advance_level`).
 * Cadavre : solide, gravite, dissipation, devorable.
 * Ennemi : patrouille, poursuite, festin, bille bleue.
 * Niveau 1 "Le Puits Mortel" charge depuis JSON et **terminable**.
-* Camera lissee, HUD, ecran titre, victoire, game over, arbre de competences.
+* Camera lissee (constante de temps, look-ahead proportionnel a la vitesse), HUD, ecran titre, victoire, game over, arbre de competences.
 
 ### A faire (par ordre de priorite pour la jam)
 1. **Assets** : remplacer les `SpriteSolidColor` par des sprites et des
@@ -360,9 +370,9 @@ transition de niveau est automatique (`GameSession.advance_level`).
    plateforme puis comme bouclier anti-piques.
 4. **Combat** : attaque du corps physique (pour l'instant seul l'ecrasement
    tue), varietes d'ennemis (volant, spectral visible seulement en mode fantome).
-5. **Revelation** : remplacer le voile rectangulaire par un vrai masque en
-   shader (cone de vision aux bords adoucis) — `TODO(rendu)` dans
-   `PlayView._draw_ghost_layer`.
+5. **Revelation** : le voile est un degrade radial (`src/world/fog.py`) dont
+   le rayon suit `GhostStats.vision_radius`. Un cone oriente (shader) reste
+   optionnel si le feel le demande.
 6. **Sauvegarde** de la `GameSession` (JSON) et menu pause.
 7. **Tests** : extraire des tests unitaires `pytest` de `tools/smoke_test.py`
    (les fonctions de `collisions.py` et `upgrades.py` se testent sans fenetre).
