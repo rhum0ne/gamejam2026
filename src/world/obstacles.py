@@ -14,6 +14,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 import math
+import time
 from dataclasses import dataclass
 
 import arcade
@@ -178,6 +179,33 @@ class Spike(arcade.Sprite):
         if not spec.hanging:
             offset_y = -offset_y
         sprites.apply_rect_hit_box(self, size, hit_height, offset_y=offset_y)
+
+    def draw_ghost_glow(self, *, bind_blend: bool = True) -> None:
+        """Halo rouge, visible a travers le voile du fantome."""
+        pulse = 1.0 + settings.SPIKE_GHOST_GLOW_PULSE * math.sin(
+            time.perf_counter() * settings.SPIKE_GHOST_GLOW_PULSE_SPEED
+            + self.center_x * 0.11
+            + self.center_y * 0.07
+        )
+        size = self._tile_size
+        draw_glow(
+            self.center_x,
+            self.center_y,
+            size * settings.SPIKE_GHOST_GLOW_SCALE,
+            size * settings.SPIKE_GHOST_GLOW_SCALE,
+            settings.COLOR_SPIKE_GLOW,
+            int(settings.SPIKE_GHOST_GLOW_ALPHA * pulse),
+            bind_blend=bind_blend,
+        )
+        draw_glow(
+            self.center_x,
+            self.center_y,
+            size * settings.SPIKE_GHOST_GLOW_INNER_SCALE,
+            size * settings.SPIKE_GHOST_GLOW_INNER_SCALE,
+            settings.COLOR_SPIKE_GLOW_CORE,
+            int(settings.SPIKE_GHOST_GLOW_INNER_ALPHA * pulse),
+            bind_blend=bind_blend,
+        )
 
     def start_fall(self) -> None:
         """Detache la pique du plafond : elle devient un projectile mortel."""
