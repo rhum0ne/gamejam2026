@@ -19,6 +19,7 @@ from src.entities.item import Item
 from src.systems.upgrades import GhostStats
 
 
+
 class Ghost(arcade.SpriteSolidColor):
     """Esprit desincarne, ancre sur le cadavre qui vient d'etre laisse."""
 
@@ -159,3 +160,13 @@ class Ghost(arcade.SpriteSolidColor):
         if radial > 0:
             self.change_x -= radial * offset_x / distance
             self.change_y -= radial * offset_y / distance
+
+    def set_level(self, level: int) -> None:
+        new_stats = GhostStats.for_level(level)
+        self.time_left += new_stats.duration - self.stats.duration
+        self.stats = new_stats
+
+
+
+
+
