@@ -31,6 +31,7 @@ from src.entities.ghost import Ghost
 from src.entities.item import ItemKind
 from src.entities.player import Player
 from src.systems import collisions
+from src.systems.play_events import bind_play_view, emit_ghost_end, emit_player_death, emit_player_win
 from src.systems.upgrades import SoulProgression
 from src.ui.debug import DebugOverlay, DebugSnapshot
 from src.ui.display import handle_display_key
@@ -152,6 +153,7 @@ _JUMP_KEYS = frozenset({arcade.key.SPACE}) | _UP_KEYS
 _PROJECT_KEY = arcade.key.F
 _RETURN_KEY = arcade.key.R
 _UPGRADE_KEY = arcade.key.TAB
+_DASH_KEYS = frozenset({arcade.key.LSHIFT, arcade.key.RSHIFT})
 
 
 class PlayView(arcade.View):
@@ -174,6 +176,7 @@ class PlayView(arcade.View):
         self.held_keys: set[int] = set()
         self._respawn_timer = 0.0
         self._delivered_items: list[ItemKind] = []
+        bind_play_view(self)
         self._fps = 0.0
         self._last_draw_time = 0.0
         self.setup()
@@ -197,6 +200,7 @@ class PlayView(arcade.View):
         for enemy in self.level.enemies:
             enemy.bind_world(self._static_platforms())
         self.camera.set_bounds(self.level.width, self.level.height)
+        self._enemy_spawns = [(enemy, enemy.center_x, enemy.center_y) for enemy in self.level.enemies]
         self.camera.snap_to(self.player)
         self.ghost = None
         self.anchor_corpse = None
@@ -220,6 +224,7 @@ class PlayView(arcade.View):
         self.camera.use_world()
         self.level.draw(self.camera.visible_rect())
         if self.player.alive:
+            self.player.draw_fx()
             arcade.draw_sprite(self.player)
         if self.machine.state is GameState.GHOST and self.ghost is not None:
             self._draw_ghost_layer(self.ghost)
@@ -298,6 +303,9 @@ class PlayView(arcade.View):
             ghost_duration=self.ghost.stats.duration if self.ghost is not None else settings.GHOST_DURATION,
             leash_ratio=self.ghost.leash_ratio if self.ghost is not None else 0.0,
             fps=self._fps if settings.DEBUG_SHOW_FPS and not self._debug_enabled else None,
+            dash_ratio=self.player.dash_ratio if state is GameState.PLAYING else None,
+            dash_ready=self.player.dash_ready,
+            dash_flash=self.player.dash_flash,
         )
 
     def _sample_fps(self) -> None:
@@ -386,7 +394,7 @@ class PlayView(arcade.View):
         self._resolve_ghost_collisions(ghost)
         self.camera.follow(ghost, delta_time)
         if ghost.expired:
-            self._start_respawn()
+            emit_ghost_end(self, "timer")
 
     def _update_respawning(self, delta_time: float) -> None:
         self._respawn_timer -= delta_time
@@ -396,12 +404,20 @@ class PlayView(arcade.View):
         for kind in self._delivered_items:
             self.player.give_item(kind)
         self._delivered_items.clear()
+        self._update_respawn_enemies()
         self.camera.snap_to(self.player)
         self.machine.try_to(GameState.PLAYING)
 
     def _update_enemies(self, delta_time: float) -> None:
         for enemy in list(self.level.enemies):
             enemy.update(delta_time, player=self.player, corpses=self.level.corpses)
+
+    def _update_respawn_enemies(self) -> None:
+        for enemy, spawn_x, spawn_y in self._enemy_spawns:
+            enemy.respawn(spawn_x, spawn_y)
+            if enemy not in self.level.enemies:
+                self.level.enemies.append(enemy)
+            
 
     # ------------------------------------------------------------------ #
     # Consequences des collisions
@@ -427,16 +443,15 @@ class PlayView(arcade.View):
         door = collisions.door_touched_by_player(self.player, self.level)
         if door is not None and self.player.has_item(ItemKind.KEY):
             door.unlock()
-            self._complete_level()
+            emit_player_win(self)
             return
 
-        lethal = (
-            collisions.player_hits_hazard(self.player, self.level)
-            or collisions.player_out_of_bounds(self.player, self.level)
-            or collisions.enemy_touching_player(self.player, self.level.enemies) is not None
-        )
-        if lethal:
-            self._enter_ghost_mode()
+        if collisions.player_hits_hazard(self.player, self.level):
+            emit_player_death(self, "spikes")
+        elif collisions.player_out_of_bounds(self.player, self.level):
+            emit_player_death(self, "out_of_bounds")
+        elif collisions.enemy_touching_player(self.player, self.level.enemies) is not None:
+            emit_player_death(self, "enemy")
 
     def _resolve_ghost_collisions(self, ghost: Ghost) -> None:
         for item in collisions.items_reachable_by_ghost(ghost, self.level):
@@ -464,46 +479,6 @@ class PlayView(arcade.View):
             self._delivered_items.append(kind)
         else:
             self.player.give_item(kind)
-
-    # ------------------------------------------------------------------ #
-    # Transitions
-    # ------------------------------------------------------------------ #
-
-    def _enter_ghost_mode(self) -> None:
-        """Mort du corps : depot d'un cadavre et projection de l'esprit."""
-        if not self.machine.can(GameState.GHOST):
-            return
-        self.session.deaths += 1
-        self.player.die()
-        corpse = Corpse(self.player.center_x, self.player.center_y)
-        corpse.bind_world(self._static_platforms())
-        self.level.spawn_corpse(corpse)
-        self.anchor_corpse = corpse
-        stats = self.session.progression.ghost_stats
-        self.ghost = Ghost(corpse.center_x, corpse.center_y, stats, anchor=corpse.position)
-        self.ghost.bind_world(self.level.walls)
-        self.machine.to(GameState.GHOST)
-
-    def _start_respawn(self) -> None:
-        """Fin du mode fantome : le corps revient au dernier checkpoint."""
-        if self.ghost is not None:
-            for item in self.ghost.release_all():
-                item.drop_at(item.center_x, item.center_y)
-        self.ghost = None
-        for wall in self.level.spectral_walls:
-            wall.set_revealed(False)
-        self._respawn_timer = settings.PLAYER_RESPAWN_DELAY
-        self.machine.try_to(GameState.RESPAWNING)
-
-    def _complete_level(self) -> None:
-        """Niveau reussi : niveau suivant, ou ecran de victoire finale."""
-        from src.ui.menus import VictoryView
-
-        self.machine.try_to(GameState.VICTORY)
-        if self.session.advance_level():
-            self.setup()
-            return
-        self.window.show_view(VictoryView(self.session))
 
     # ------------------------------------------------------------------ #
     # Entrees clavier
@@ -544,10 +519,15 @@ class PlayView(arcade.View):
         if state is GameState.PLAYING:
             if symbol in _JUMP_KEYS:
                 self.player.jump()
+            elif symbol in _DASH_KEYS:
+                if self.player.dash():
+                    self.camera.shake(
+                        settings.CAMERA_DASH_SHAKE, settings.CAMERA_DASH_SHAKE_TIME
+                    )
             elif symbol == _PROJECT_KEY:
-                self._enter_ghost_mode()
+                emit_player_death(self, "sacrifice")
         elif state is GameState.GHOST and symbol == _RETURN_KEY:
-            self._start_respawn()
+            emit_ghost_end(self, "manual")
 
     def on_key_release(self, symbol: int, modifiers: int) -> None:
         self.held_keys.discard(symbol)

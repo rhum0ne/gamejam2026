@@ -208,9 +208,15 @@ separation : elle permet de tester les regles sans contexte OpenGL.
 ## 6. Specification des mecaniques (etat actuel du code)
 
 ### Corps physique — `entities/player.py`
-* Vitesse `PLAYER_SPEED`, saut `PLAYER_JUMP_SPEED`, gravite `GRAVITY`.
-* `PLAYER_COYOTE_TIME` : tolerance de saut apres avoir quitte le sol.
+* Vitesse max `PLAYER_SPEED`, atteinte en `PLAYER_ACCEL_TIME` (1 s) de course continue.
+* Glissade `PLAYER_SLIDE_TIME` a l'arret (sol), controle aerien `PLAYER_AIR_CONTROL`.
+* Atterrissage : `PLAYER_LANDING_SLOW_TIME` a `PLAYER_LANDING_SPEED_SCALE`.
+* Saut `PLAYER_JUMP_SPEED`, gravite joueur `PLAYER_GRAVITY` (plus legere que
+  `GRAVITY` des cadavres / ennemis), coyote `PLAYER_COYOTE_TIME`.
 * `cut_jump()` : saut a hauteur variable quand la touche est relachee.
+* Dash `Maj` : `PLAYER_DASH_SPEED` pendant `PLAYER_DASH_DURATION`, recharge
+  `PLAYER_DASH_COOLDOWN` (jauge HUD + flash quand elle est pleine). Trainee
+  d'afterimages + secousse camera (`CAMERA_DASH_SHAKE`).
 * Meurt au contact des piques, d'un ennemi, ou en sortant du niveau.
 * `inventory` : ensemble de `ItemKind` (la cle ouvre la porte).
 
@@ -363,7 +369,7 @@ transition de niveau est automatique (`GameSession.advance_level`).
 
 ### Fait
 * Squelette complet, importable, qui demarre et tourne (`smoke_test` vert).
-* Corps physique : marche, saut, coyote time, mort, checkpoint, inventaire.
+* Corps physique : marche acceleree, glissade, dash, saut, coyote time, mort, checkpoint, inventaire.
 * Fantome : vol, murs spectraux, longe, timer, revelation, transport/livraison.
 * Cadavre : solide, gravite, dissipation, devorable.
 * Ennemi : patrouille, poursuite, festin, bille bleue.
@@ -373,8 +379,7 @@ transition de niveau est automatique (`GameSession.advance_level`).
 ### A faire (par ordre de priorite pour la jam)
 1. **Assets** : remplacer les `SpriteSolidColor` par des sprites et des
    animations (`assets/sprites/`), ajouter sons et musique (`assets/sons/`).
-2. **Feel** : acceleration/friction du joueur, coyote time affine, jump buffer,
-   particules, tremblement de camera, transitions de niveau.
+2. **Feel** : jump buffer, particules, tremblement de camera, transitions de niveau.
 3. **Niveaux** : 3 a 5 cartes apres le tutoriel, introduisant le cadavre comme
    plateforme puis comme bouclier anti-piques.
 4. **Combat** : attaque du corps physique (pour l'instant seul l'ecrasement

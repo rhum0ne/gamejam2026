@@ -5,6 +5,8 @@
       independant du FPS, et reste confinee dans les limites du niveau ;
     - `ui`    : camera fixe, en coordonnees ecran, pour le HUD.
 
+Une secousse optionnelle (`shake`) se superpose au suivi sans le deriver.
+
 Le look-ahead n'est pas un cran binaire : il est proportionnel a la vitesse et
 lui-meme lisse, pour eviter les a-coups quand `change_x` / `change_y` basculent
 (physique au sol, sommet de saut, arret).
@@ -92,6 +94,14 @@ class CameraRig:
         self.world_height = world_height
         self._look_x = 0.0
         self._look_y = 0.0
+        self._anchor_x = 0.0
+        self._anchor_y = 0.0
+        self._shake_x = 0.0
+        self._shake_y = 0.0
+        self._shake_time = 0.0
+        self._shake_duration = 0.001
+        self._shake_amp = 0.0
+        self._shake_phase = 0.0
         self._present_geometry = geometry.quad_2d_fs()
         self._present_program = self._window.ctx.program(
             vertex_shader=_PRESENT_VERTEX_SHADER,
@@ -108,7 +118,18 @@ class CameraRig:
         """Place instantanement la camera sur la cible (changement de niveau)."""
         self._look_x = 0.0
         self._look_y = 0.0
-        self.world.position = self._clamp(target.center_x, target.center_y)
+        self._shake_time = 0.0
+        self._shake_x = 0.0
+        self._shake_y = 0.0
+        self._anchor_x, self._anchor_y = self._clamp(target.center_x, target.center_y)
+        self._apply_offset()
+
+    def shake(self, amplitude: float, duration: float) -> None:
+        """Declenche une petite secousse (dash, impact)."""
+        self._shake_amp = amplitude
+        self._shake_duration = max(duration, 0.001)
+        self._shake_time = self._shake_duration
+        self._shake_phase = 0.0
 
     def follow(self, target: arcade.Sprite, delta_time: float) -> None:
         """Rapproche la camera de la cible, avec un look-ahead lisse."""
@@ -117,12 +138,11 @@ class CameraRig:
             target.center_x + self._look_x,
             target.center_y + self._look_y,
         )
-        current_x, current_y = self.world.position
         alpha = _exp_alpha(delta_time, settings.CAMERA_SMOOTH_TIME)
-        self.world.position = (
-            current_x + (desired_x - current_x) * alpha,
-            current_y + (desired_y - current_y) * alpha,
-        )
+        self._anchor_x += (desired_x - self._anchor_x) * alpha
+        self._anchor_y += (desired_y - self._anchor_y) * alpha
+        self._tick_shake(delta_time)
+        self._apply_offset()
 
     def use_world(self) -> None:
         self.world.use()
@@ -180,6 +200,20 @@ class CameraRig:
             box_width = width
             box_height = int(box_width / design_aspect)
         return ((width - box_width) // 2, (height - box_height) // 2, box_width, box_height)
+
+    def _tick_shake(self, delta_time: float) -> None:
+        if self._shake_time <= 0.0:
+            self._shake_x = 0.0
+            self._shake_y = 0.0
+            return
+        self._shake_time = max(0.0, self._shake_time - delta_time)
+        strength = (self._shake_time / self._shake_duration) ** 2
+        self._shake_phase += delta_time * 58.0
+        self._shake_x = math.sin(self._shake_phase * 1.7) * self._shake_amp * strength
+        self._shake_y = math.cos(self._shake_phase * 2.3) * self._shake_amp * 0.4 * strength
+
+    def _apply_offset(self) -> None:
+        self.world.position = (self._anchor_x + self._shake_x, self._anchor_y + self._shake_y)
 
     def _ease_look_ahead(self, target: arcade.Sprite, delta_time: float) -> None:
         max_speed = max(abs(settings.PLAYER_SPEED), abs(settings.GHOST_SPEED), 1.0)
