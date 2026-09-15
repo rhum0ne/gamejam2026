@@ -18,6 +18,7 @@ methodes, pour eviter un import circulaire.
 
 from __future__ import annotations
 
+import math
 import time
 from dataclasses import dataclass, field
 from enum import Enum, auto
@@ -33,6 +34,7 @@ from src.systems import collisions
 from src.systems.upgrades import SoulProgression
 from src.ui.hud import Hud, HudData
 from src.world.camera import CameraRig
+from src.world.fog import GhostFog
 from src.world.level import Level
 
 
@@ -159,6 +161,7 @@ class PlayView(arcade.View):
         self.session = session if session is not None else GameSession()
         self.machine = GameStateMachine(GameState.MENU)
         self.camera = CameraRig()
+        self.fog = GhostFog()
         self.hud = Hud(self.window.width, self.window.height)
         self.level: Level
         self.player: Player
@@ -217,21 +220,7 @@ class PlayView(arcade.View):
         self.hud.draw(self._hud_data())
 
     def _draw_ghost_layer(self, ghost: Ghost) -> None:
-        """Voile d'obscurite, elements reveles, longe et fantome.
-
-        TODO(rendu) : remplacer le voile par un masque en shader pour obtenir un
-        vrai cone de vision aux bords adoucis.
-        """
-        camera_x, camera_y = self.camera.world.position
-        half_width = self.camera.world.viewport_width / 2
-        half_height = self.camera.world.viewport_height / 2
-        arcade.draw_lrbt_rectangle_filled(
-            camera_x - half_width,
-            camera_x + half_width,
-            camera_y - half_height,
-            camera_y + half_height,
-            (0, 0, 0, settings.FOG_ALPHA),
-        )
+        """Voile radial, fleche vers le corps, et fantome."""
         for wall in self.level.spectral_walls:
             wall.set_revealed(ghost.reveals(wall))
             if wall.revealed:
@@ -240,11 +229,37 @@ class PlayView(arcade.View):
             for sprite in sprite_list:
                 if ghost.reveals(sprite):
                     arcade.draw_sprite(sprite)
-        arcade.draw_line(*ghost.anchor, ghost.center_x, ghost.center_y, settings.COLOR_GHOST, 1)
-        arcade.draw_circle_outline(
-            ghost.center_x, ghost.center_y, ghost.vision_radius, settings.COLOR_GHOST, 1
-        )
+        self.fog.draw(ghost, self.camera.world)
         arcade.draw_sprite(ghost)
+        self._draw_body_arrow(ghost)
+
+    def _draw_body_arrow(self, ghost: Ghost) -> None:
+        """Petite pointe vers le corps physique, seulement au-dela d'une distance minimale."""
+        delta_x = self.player.center_x - ghost.center_x
+        delta_y = self.player.center_y - ghost.center_y
+        distance = math.hypot(delta_x, delta_y)
+        if distance < settings.GHOST_HOME_ARROW_MIN_DISTANCE:
+            return
+        direction_x = delta_x / distance
+        direction_y = delta_y / distance
+        tip_x = ghost.center_x + direction_x * settings.GHOST_HOME_ARROW_OFFSET
+        tip_y = ghost.center_y + direction_y * settings.GHOST_HOME_ARROW_OFFSET
+        back_x = tip_x - direction_x * settings.GHOST_HOME_ARROW_LENGTH
+        back_y = tip_y - direction_y * settings.GHOST_HOME_ARROW_LENGTH
+        half_width = settings.GHOST_HOME_ARROW_WIDTH / 2
+        left_x = back_x - direction_y * half_width
+        left_y = back_y + direction_x * half_width
+        right_x = back_x + direction_y * half_width
+        right_y = back_y - direction_x * half_width
+        arcade.draw_triangle_filled(
+            tip_x,
+            tip_y,
+            left_x,
+            left_y,
+            right_x,
+            right_y,
+            settings.COLOR_PLAYER,
+        )
 
     def _hud_data(self) -> HudData:
         state = self.machine.state

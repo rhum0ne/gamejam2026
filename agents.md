@@ -370,9 +370,9 @@ transition de niveau est automatique (`GameSession.advance_level`).
    plateforme puis comme bouclier anti-piques.
 4. **Combat** : attaque du corps physique (pour l'instant seul l'ecrasement
    tue), varietes d'ennemis (volant, spectral visible seulement en mode fantome).
-5. **Revelation** : remplacer le voile rectangulaire par un vrai masque en
-   shader (cone de vision aux bords adoucis) — `TODO(rendu)` dans
-   `PlayView._draw_ghost_layer`.
+5. **Revelation** : le voile est un degrade radial (`src/world/fog.py`) dont
+   le rayon suit `GhostStats.vision_radius`. Un cone oriente (shader) reste
+   optionnel si le feel le demande.
 6. **Sauvegarde** de la `GameSession` (JSON) et menu pause.
 7. **Tests** : extraire des tests unitaires `pytest` de `tools/smoke_test.py`
    (les fonctions de `collisions.py` et `upgrades.py` se testent sans fenetre).
