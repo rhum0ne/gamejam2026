@@ -261,10 +261,13 @@ class PlayView(arcade.View):
             wall.set_revealed(ghost.reveals(wall))
             if wall.revealed:
                 arcade.draw_sprite(wall)
-        for sprite_list in (self.level.items, self.level.enemies):
-            for sprite in sprite_list:
-                if ghost.reveals(sprite):
-                    arcade.draw_sprite(sprite)
+        for item in self.level.items:
+            if ghost.reveals(item):
+                item.draw_fx()
+                arcade.draw_sprite(item)
+        for enemy in self.level.enemies:
+            if ghost.reveals(enemy):
+                arcade.draw_sprite(enemy)
         self.fog.draw(ghost, self.camera.world)
         ghost.draw_fx()
         arcade.draw_sprite(ghost)
@@ -384,8 +387,13 @@ class PlayView(arcade.View):
     # ------------------------------------------------------------------ #
 
     def on_update(self, delta_time: float) -> None:
-        self.level.update(delta_time)
         state = self.machine.state
+        attractor: arcade.Sprite | None = None
+        if state is GameState.PLAYING and self.player.alive:
+            attractor = self.player
+        elif state is GameState.GHOST and self.ghost is not None and not self.ghost.vanishing:
+            attractor = self.ghost
+        self.level.update(delta_time, attractor)
         if state is GameState.PLAYING:
             self._update_playing(delta_time)
         elif state is GameState.GHOST:

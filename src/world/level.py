@@ -238,6 +238,8 @@ class Level:
         self.checkpoints.draw()
         self.doors.draw()
         self.corpses.draw()
+        for item in self.items:
+            item.draw_fx()
         self.items.draw()
         self.enemies.draw()
 
@@ -341,10 +343,15 @@ class Level:
                 tiles_drawn += len(walls) + len(spectral) + len(hazards)
         return walls_drawn, tiles_drawn
 
-    def update(self, delta_time: float) -> None:
-        """Met a jour les elements dont la logique ne depend pas de l'etat de jeu."""
+    def update(self, delta_time: float, attractor: arcade.Sprite | None = None) -> None:
+        """Met a jour les elements dont la logique ne depend pas de l'etat de jeu.
+
+        `attractor` est le corps ou le fantome vers lequel les billes bleues
+        derivent quand elles sont assez proches.
+        """
         self.corpses.update(delta_time)
-        self.items.update(delta_time)
+        for item in self.items:
+            item.update(delta_time, attractor=attractor)
 
 
 # --------------------------------------------------------------------------- #

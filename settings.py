@@ -73,6 +73,7 @@ SPRITE_PLAYER_WALK = "player_walk"
 SPRITE_PLAYER_IDLE = "player_idle"
 SPRITE_GHOST_WALK = "gost_walk"
 SPRITE_GHOST_DISAPPEAR = "gost_disappears"
+SPRITE_KEY = "key"
 SPRITE_FRAME_SIZE = 32
 # Taille a l'ecran des sprites joueur / fantome (1.0 = 32 px).
 ENTITY_SCALE = 1.5
@@ -164,9 +165,16 @@ ENEMY_CORPSE_SMELL_RANGE = 320.0  # distance d'attraction vers un cadavre
 # Objets et progression
 # --------------------------------------------------------------------------- #
 
-ITEM_SIZE = 18
 ITEM_BOB_AMPLITUDE = 4.0  # amplitude du flottement vertical, en pixels
 ITEM_BOB_SPEED = 2.5
+SOUL_ORB_SIZE = 16
+SOUL_ORB_ALPHA = 170
+SOUL_ORB_GLOW_SCALE = 4.2
+SOUL_ORB_GLOW_ALPHA = 46
+SOUL_ORB_GLOW_PULSE = 0.18
+SOUL_ORB_GLOW_PULSE_SPEED = 2.8
+SOUL_ORB_MAGNET_RANGE = 96.0  # px : l'orbe derive vers le joueur dans ce rayon
+SOUL_ORB_MAGNET_SPEED = 42.0  # px / seconde
 
 SOUL_ESSENCE_PER_ORB = 1
 # Essence cumulee necessaire pour atteindre le niveau n+1 (index = niveau - 1).
