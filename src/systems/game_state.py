@@ -195,6 +195,7 @@ class PlayView(arcade.View):
         for enemy in self.level.enemies:
             enemy.bind_world(self._static_platforms())
         self.camera.set_bounds(self.level.width, self.level.height)
+        self._enemy_spawns = [(enemy, enemy.center_x, enemy.center_y) for enemy in self.level.enemies]
         self.camera.snap_to(self.player)
         self.ghost = None
         self.anchor_corpse = None
@@ -336,12 +337,20 @@ class PlayView(arcade.View):
         for kind in self._delivered_items:
             self.player.give_item(kind)
         self._delivered_items.clear()
+        self._update_respawn_enemies()
         self.camera.snap_to(self.player)
         self.machine.try_to(GameState.PLAYING)
 
     def _update_enemies(self, delta_time: float) -> None:
         for enemy in list(self.level.enemies):
             enemy.update(delta_time, player=self.player, corpses=self.level.corpses)
+
+    def _update_respawn_enemies(self) -> None:
+        for enemy, spawn_x, spawn_y in self._enemy_spawns:
+            enemy.respawn(spawn_x, spawn_y)
+            if enemy not in self.level.enemies:
+                self.level.enemies.append(enemy)
+            
 
     # ------------------------------------------------------------------ #
     # Consequences des collisions
