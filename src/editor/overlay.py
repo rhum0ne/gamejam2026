@@ -41,6 +41,7 @@ SHORTCUTS: tuple[tuple[str, str], ...] = (
     ("Ctrl+S / Ctrl+Shift+S", "enregistrer / enregistrer sous"),
     ("Ctrl+P", "essayer le niveau (Echap pour revenir)"),
     ("F2 / F3 / F4", "nom / indice / dimensions"),
+    ("F5", "theme du terrain (terre / sable / roche)"),
     ("Ctrl+G / Origine", "grille / voir toute la carte"),
     ("Ctrl+O", "revenir a la liste des cartes"),
     ("F1", "afficher / masquer cette aide"),
@@ -68,6 +69,7 @@ class StatusData:
     message_color: tuple[int, int, int]
     problems: tuple[str, ...]
     plates: str = "-"
+    theme: str = ""
 
 
 class StatusBar:
@@ -87,7 +89,7 @@ class StatusBar:
         max_width = max(80.0, window_width - margin * 2)
         self._top.draw(
             f"{marker}{data.filename}   {data.name}   {data.columns}x{data.rows}   "
-            f"zoom {data.zoom:.2f}",
+            f"theme {data.theme}   zoom {data.zoom:.2f}",
             margin,
             height - 32,
             settings.COLOR_EDITOR_WARNING if data.dirty else settings.COLOR_EDITOR_TEXT,

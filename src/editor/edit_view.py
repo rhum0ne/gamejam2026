@@ -20,6 +20,7 @@ from src.editor.panel import PalettePanel
 from src.editor.selection import Block, GridRect
 from src.ui.display import handle_display_key, use_default_camera
 from src.world.flamethrower import DIRECTION_ARROW, DIRECTION_LABEL
+from src.world.themes import next_theme, theme_label
 
 # 9/0 : rangee du haut (KEY_*) et pave (NUM_*). CCEDILLA/AGRAVE = 9/0 AZERTY sans Shift.
 _FLAME_INTERVAL_SHORTER = frozenset(
@@ -241,6 +242,7 @@ class EditView(arcade.View):
             message_color=self._message_color,
             problems=self.document.problems(),
             plates=plates,
+            theme=theme_label(self.document.theme),
         )
 
     def notify(self, text: str, color: tuple[int, int, int] = settings.COLOR_EDITOR_OK) -> None:
@@ -461,6 +463,9 @@ class EditView(arcade.View):
             return
         if symbol == arcade.key.F4:
             self._ask_size()
+            return
+        if symbol == arcade.key.F5:
+            self._cycle_theme()
             return
         if symbol == arcade.key.BRACKETLEFT:
             self._cycle_kind(-1)
@@ -741,6 +746,12 @@ class EditView(arcade.View):
             self.notify(f"taille : {self.document.columns}x{self.document.rows}")
         else:
             self.notify("taille inchangee", settings.COLOR_EDITOR_TEXT_DIM)
+
+    def _cycle_theme(self) -> None:
+        theme = next_theme(self.document.theme)
+        self.document.set_metadata(theme=theme)
+        self.canvas.sync(None)
+        self.notify(f"theme : {theme_label(theme)}")
 
     def _playtest(self) -> None:
         from src.editor.playtest import start_playtest

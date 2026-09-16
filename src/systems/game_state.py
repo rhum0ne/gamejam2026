@@ -1090,6 +1090,7 @@ class PlayView(arcade.View):
                 self.ghost.start_vanish()
 
     def on_mouse_press(self, x: float, y: float, button: int, modifiers: int) -> None:
+        """Clic gauche : menu pause, ou attaque oriente vers le curseur."""
         if self.machine.state is GameState.PAUSED:
             if button != arcade.MOUSE_BUTTON_LEFT:
                 return
