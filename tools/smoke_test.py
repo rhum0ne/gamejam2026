@@ -22,8 +22,10 @@ import arcade  # noqa: E402
 
 import settings  # noqa: E402
 from src.entities.bat import Bat, BatState  # noqa: E402
+from src.entities.boss import Boss, BossShot, BossState  # noqa: E402
 from src.entities.enemy import Enemy, EnemyState  # noqa: E402
 from src.entities.item import ItemKind  # noqa: E402
+from src.entities.particles import LaserBurst  # noqa: E402
 from src.entities.player import Player  # noqa: E402
 from src.entities.zombie import Zombie, ZombieState  # noqa: E402
 from src.systems import collisions  # noqa: E402
@@ -198,18 +200,36 @@ def check_sfx_files() -> None:
 
 
 def check_progression() -> None:
-    """Les paliers d'ames se debloquent tout seuls, sans shop."""
+    """XP + ames exponentiels ; les ameliorations sont choisies, pas automatiques."""
     progression = SoulProgression()
     assert progression.level == 1
-    assert progression.ghost_stats.max_range == settings.GHOST_MAX_RANGE
+    assert progression.essence == 0
     assert progression.ghost_stats.duration == settings.GHOST_DURATION
+    assert progression.ghost_stats.speed == settings.GHOST_SPEED
+    leveled_up = False
     for _ in range(3):
-        progression.absorb_orb()
-    assert progression.level == 2
-    assert progression.ghost_stats.max_range > settings.GHOST_MAX_RANGE
-    assert progression.ghost_stats.duration > settings.GHOST_DURATION
-    print(f"  progression -> niveau {progression.level}, "
-          f"portee fantome {progression.ghost_stats.max_range:.0f} px")
+        leveled_up = progression.absorb_orb() or leveled_up
+    assert progression.level == 2, "3 ames doivent suffire pour le niveau 2 (courbe exponentielle)"
+    assert leveled_up, "absorb_orb doit signaler la montee de niveau"
+    assert progression.essence == 3, "l'essence (monnaie) n'est jamais depensee toute seule"
+    # Les stats du fantome ne bougent pas tant qu'aucune carte n'a ete choisie.
+    assert progression.ghost_stats.duration == settings.GHOST_DURATION
+    assert progression.ghost_stats.speed == settings.GHOST_SPEED
+
+    first_cost = progression.upgrade_cost("duration")
+    progression.apply_upgrade("duration")
+    assert progression.ghost_stats.duration == settings.GHOST_DURATION + settings.GHOST_UPGRADE_DURATION_BONUS
+    assert progression.essence == 3 - first_cost
+    second_cost = progression.upgrade_cost("duration")
+    assert second_cost > first_cost, "le prix d'une amelioration doit croitre a chaque achat"
+
+    cards = progression.upgrade_cards()
+    assert {card.kind for card in cards} == {"vision", "speed", "duration"}
+    print(
+        f"  progression -> niveau {progression.level}, {progression.essence} ame(s), "
+        f"duree fantome {progression.ghost_stats.duration:.1f}s "
+        f"(prochaine carte duree : {second_cost} ame(s))"
+    )
 
 
 def check_event_manager() -> None:
@@ -645,6 +665,115 @@ def check_zombie_ai() -> None:
           f"{frames_to_search} frames, griffe a {frames_to_hit} frames, 2 PV, chute OK")
 
 
+def check_boss_ai() -> None:
+    """Le boss arme un projectile et un laser, puis meurt en plusieurs coups."""
+    boss = Boss(400.0, 300.0)
+    assert boss.state is BossState.PATROL
+    player = _player_at(boss.center_x - 180.0, boss.center_y)
+    attacked = False
+    for _ in range(90):
+        boss.update(FRAME, player=player, corpses=None)
+        if boss.state in {BossState.SHOOT, BossState.LASER}:
+            attacked = True
+            break
+    assert attacked, "le boss doit attaquer un joueur a portee"
+
+    boss._attack_cooldown = 0.0
+    boss._next_laser = False
+    boss._start_attack(player)
+    assert boss.state is BossState.SHOOT, "attaque alternee : un lancer de projectile"
+    spawned = False
+    for _ in range(int(2.5 / FRAME)):
+        boss.update(FRAME, player=player, corpses=None)
+        if boss.shots:
+            spawned = True
+            break
+    assert spawned, "le lancer doit produire un projectile"
+    shot = boss.shots[0]
+    start_x = shot.center_x
+    start_y = shot.center_y
+    boss.update(FRAME, player=player, corpses=None)
+    assert shot.center_x < start_x, "le projectile doit partir vers le joueur"
+    assert abs(shot.change_y) < abs(shot.change_x), "vise principalement le joueur a gauche"
+    # Planche oriente gauche : vol vers la gauche = pas de rotation.
+    shot_angle = shot.angle % 360.0
+    assert shot_angle < 12.0 or shot_angle > 348.0, "le sprite projectile doit rester oriente a gauche"
+
+    boss._clear_shots()
+    player.center_y = boss.center_y + 90.0
+    boss._spawn_shot(player)
+    aimed = boss.shots[0]
+    assert aimed.change_y > 0.0, "le projectile doit viser le joueur en hauteur"
+    assert aimed.change_x < 0.0, "le projectile doit rester oriente vers le joueur"
+    aimed_angle = aimed.angle % 360.0
+    assert 0.0 < aimed_angle < 90.0, "le sprite projectile doit tourner vers le joueur"
+
+    wall = arcade.SpriteSolidColor(32, 64, (80, 80, 80))
+    wall.center_x = start_x - 20.0
+    wall.center_y = start_y
+    walls = arcade.SpriteList()
+    walls.append(wall)
+    burst = LaserBurst()
+    exploding = BossShot(start_x, start_y, wall.center_x, wall.center_y, [walls], burst=burst)
+    impact = arcade.SpriteList()
+    impact.append(exploding)
+    popped = False
+    for _ in range(40):
+        impact.update(FRAME)
+        if burst.active:
+            popped = True
+            break
+    assert popped, "le projectile doit exploser en particules contre un mur"
+    player.center_y = boss.center_y
+
+    boss._attack_cooldown = 0.0
+    boss._next_laser = True
+    high = _player_at(boss.center_x - 140.0, boss.center_y + 90.0)
+    boss._start_attack(high)
+    assert boss.state is BossState.LASER
+    assert boss._laser_dir_y > 0.2, "le rayon doit viser le joueur au-dessus des yeux"
+    boss._end_attack()
+
+    boss._attack_cooldown = 0.0
+    boss._next_laser = True
+    boss._start_attack(player)
+    assert boss.state is BossState.LASER
+    assert not boss.laser_active, "les premieres frames de Laser_sheet ne sont pas encore le rayon"
+    lit = False
+    for _ in range(90):
+        boss.update(FRAME, player=player, corpses=None)
+        if boss.laser_active:
+            lit = True
+            break
+    assert lit, "le laser doit s'allumer pendant l'anim"
+    origin_x, origin_y = boss._laser_origin()
+    player.center_x = origin_x + boss._laser_dir_x * 90.0
+    player.center_y = origin_y + boss._laser_dir_y * 90.0
+    assert boss.laser_hits(player), "un joueur sur la ligne du laser doit etre touche"
+    player.center_x = origin_x + boss._laser_dir_x * 90.0 - boss._laser_dir_y * 220.0
+    player.center_y = origin_y + boss._laser_dir_y * 90.0 + boss._laser_dir_x * 220.0
+    assert not boss.laser_hits(player), "hors du rayon, le laser ne doit pas toucher"
+    linger = 0
+    while boss.laser_active:
+        linger += 1
+        boss.update(FRAME, player=player, corpses=None)
+        if linger > 400:
+            break
+    min_hold = int(
+        settings.BOSS_LASER_LINGER_FRAMES
+        * settings.ANIM_BOSS_BEAM_FRAME_TIME
+        / settings.ANIM_SPEED
+        / FRAME
+    )
+    assert linger >= min_hold, "la derniere frame du laser doit rester affichee"
+
+    orb = None
+    for _ in range(settings.BOSS_HIT_POINTS):
+        orb = boss.take_damage()
+    assert orb is not None and boss.state is BossState.DYING
+    print("  IA boss -> projectile, laser, 6 PV OK")
+
+
 def check_combat(window: arcade.Window) -> None:
     """Un clic gauche declenche une frappe frontale et vainc un ennemi."""
     view = PlayView(GameSession())
@@ -1023,7 +1152,7 @@ def check_editor_document() -> None:
     kinds = {item.kind for item in palette.PALETTE}
     for kind in gameplay_kinds():
         assert kind in kinds, f"la palette doit lister le gameplay '{kind}'"
-    assert "wall" in kinds and "enemy" in kinds and "bat" in kinds and "zombie" in kinds and "spike" in kinds
+    assert "wall" in kinds and "enemy" in kinds and "bat" in kinds and "zombie" in kinds and "boss" in kinds and "spike" in kinds
 
     document = EditorDocument.from_file("level_1_tuto.json")
     assert document.columns > 0 and document.rows > 0
@@ -1456,8 +1585,10 @@ def main() -> int:
     check_enemy_ai()
     print("[6/17] IA ennemie (chauve-souris)")
     check_bat_ai()
-    print("[7/17] IA ennemie (zombie)")
+    print("[7/18] IA ennemie (zombie)")
     check_zombie_ai()
+    print("[8/18] IA ennemie (boss)")
+    check_boss_ai()
 
     window = arcade.Window(
         width=settings.SCREEN_WIDTH,
@@ -1470,25 +1601,25 @@ def main() -> int:
     )
     assert window.vsync
     try:
-        print("[8/17] combat")
+        print("[9/18] combat")
         check_combat(window)
-        print("[9/17] boucle de jeu")
+        print("[10/18] boucle de jeu")
         check_gameplay_loop(window)
-        print("[10/17] defilement vertical de la camera")
+        print("[11/18] defilement vertical de la camera")
         check_vertical_scroll(window)
-        print("[11/17] solution du niveau tutoriel")
+        print("[12/18] solution du niveau tutoriel")
         check_tutorial_is_solvable(window)
-        print("[12/17] menus")
+        print("[13/18] menus")
         check_menus(window)
-        print("[13/17] vues de l'editeur")
+        print("[14/18] vues de l'editeur")
         check_editor_views(window)
-        print("[14/17] lance-flammes")
+        print("[15/18] lance-flammes")
         check_flamethrower(window)
-        print("[15/17] glace")
+        print("[16/18] glace")
         check_ice_block(window)
-        print("[16/17] dash contre un mur")
+        print("[17/18] dash contre un mur")
         check_dash_stops_on_wall(window)
-        print("[17/17] blocs tombants")
+        print("[18/18] blocs tombants")
         check_falling_block(window)
     finally:
         window.close()

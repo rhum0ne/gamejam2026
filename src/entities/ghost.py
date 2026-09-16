@@ -330,8 +330,8 @@ class Ghost(arcade.Sprite):
         else:
             smooth_time = settings.GHOST_COAST_TIME
         alpha = 1.0 - math.exp(-max(delta_time, 0.0) / max(smooth_time, 0.001))
-        self.change_x += (dx * settings.GHOST_SPEED - self.change_x) * alpha
-        self.change_y += (dy * settings.GHOST_SPEED - self.change_y) * alpha
+        self.change_x += (dx * self.stats.speed - self.change_x) * alpha
+        self.change_y += (dy * self.stats.speed - self.change_y) * alpha
 
     def _move_axis(self, axis: str) -> None:
         """Deplace le fantome sur un seul axe et annule le pas en cas de collision."""

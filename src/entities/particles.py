@@ -1,4 +1,4 @@
-"""Poussiere de pied, eclats d'ames, poussiere d'os et eclaboussures de sang."""
+"""Poussiere de pied, eclats d'ames, poussiere d'os, sang et etincelles de laser."""
 
 from __future__ import annotations
 
@@ -385,6 +385,77 @@ class SoulBurst:
             core_size=settings.CHECKPOINT_BURST_CORE_SIZE,
             core_alpha=settings.CHECKPOINT_BURST_CORE_ALPHA,
             core_color=settings.COLOR_CHECKPOINT_PARTICLE_CORE,
+        )
+
+
+class LaserBurst:
+    """Eclat de motes cyan a l'impact d'un projectile de boss."""
+
+    def __init__(self, rng: random.Random | None = None) -> None:
+        self._grains: list[_Grain] = []
+        self._rng = rng if rng is not None else random.Random()
+        self._quads = QuadBatch(capacity=max(8, settings.BOSS_SHOT_BURST_MAX))
+
+    def clear(self) -> None:
+        self._grains.clear()
+
+    @property
+    def active(self) -> bool:
+        return bool(self._grains)
+
+    def emit(self, x: float, y: float) -> None:
+        """Projette un nuage bleu autour de `(x, y)`."""
+        spread = settings.BOSS_SHOT_BURST_SPREAD
+        for _ in range(settings.BOSS_SHOT_BURST_COUNT):
+            angle = self._rng.uniform(0.0, math.tau)
+            speed = self._rng.uniform(0.35, 1.0) * settings.BOSS_SHOT_BURST_SPEED
+            life = settings.BOSS_SHOT_BURST_LIFE * self._rng.uniform(0.65, 1.2)
+            size = self._rng.uniform(
+                settings.BOSS_SHOT_BURST_SIZE_MIN,
+                settings.BOSS_SHOT_BURST_SIZE_MAX,
+            )
+            color = (
+                settings.COLOR_BOSS_GLOW_CORE
+                if self._rng.random() > 0.45
+                else settings.COLOR_BOSS_GLOW
+            )
+            self._grains.append(
+                _Grain(
+                    x=x + self._rng.uniform(-spread, spread),
+                    y=y + self._rng.uniform(-spread, spread),
+                    vx=math.cos(angle) * speed,
+                    vy=math.sin(angle) * speed,
+                    life=life,
+                    max_life=max(life, 0.001),
+                    size=size,
+                    gravity=settings.BOSS_SHOT_BURST_GRAVITY,
+                    color=color,
+                )
+            )
+        self._grains = self._grains[-settings.BOSS_SHOT_BURST_MAX :]
+
+    def update(self, delta_time: float = settings.FRAME_TIME) -> None:
+        dt = max(0.0, delta_time)
+        alive: list[_Grain] = []
+        for grain in self._grains:
+            grain.life -= dt
+            if grain.life <= 0.0:
+                continue
+            grain.vy -= grain.gravity * dt
+            grain.x += grain.vx * dt
+            grain.y += grain.vy * dt
+            grain.vx *= max(0.0, 1.0 - 1.8 * dt)
+            alive.append(grain)
+        self._grains = alive
+
+    def draw(self) -> None:
+        _draw_glow_motes(
+            self._grains,
+            self._quads,
+            glow_alpha=settings.BOSS_SHOT_BURST_GLOW_ALPHA,
+            core_size=settings.BOSS_SHOT_BURST_CORE_SIZE,
+            core_alpha=settings.BOSS_SHOT_BURST_CORE_ALPHA,
+            core_color=settings.COLOR_BOSS_GLOW_CORE,
         )
 
 

@@ -127,6 +127,12 @@ SPRITE_PLAYER_IDLE = "player_idle"
 SPRITE_PLAYER_ATTACK = "player_attack_1"
 SPRITE_PLAYER_DEATH = "player_death"
 SPRITE_PLAYER_BONES = "player_bones"
+SPRITE_BOSS_WALK = "boss_walk"
+SPRITE_BOSS_SHOT = "boss_shot"
+SPRITE_BOSS_LASER = "boss_laser-shot"
+SPRITE_BOSS_DEATH = "boss_death"
+SPRITE_BOSS_BEAM = "Laser_sheet"
+SPRITE_BOSS_PROJECTILE = "arm_projectile_glowing"
 SPRITE_GHOST_WALK = "gost_walk"
 SPRITE_GHOST_DISAPPEAR = "gost_disappears"
 SPRITE_KEY = "key"
@@ -887,6 +893,76 @@ COLOR_ZOMBIE_GLOW = (255, 28, 22)
 COLOR_ZOMBIE_GLOW_CORE = (255, 92, 64)
 
 # --------------------------------------------------------------------------- #
+# Ennemis - boss (golem de pierre, attaques a distance)
+# --------------------------------------------------------------------------- #
+
+BOSS_FRAME = 100
+BOSS_DEATH_FRAME = 60  # planche plus compacte que le walk
+BOSS_BEAM_FRAME_WIDTH = 300
+BOSS_BEAM_FRAME_HEIGHT = 100
+BOSS_SCALE = 3.0
+# Corps mesure sur boss_walk (golem ~48x47 dans une frame 100x100).
+BOSS_WIDTH = 40.0 * BOSS_SCALE
+BOSS_HEIGHT = 44.0 * BOSS_SCALE
+BOSS_HITBOX_OFFSET_Y = -2.0 * BOSS_SCALE
+BOSS_HIT_POINTS = 6
+BOSS_PATROL_SPEED = 0.55
+BOSS_AGGRO_RANGE = 420.0
+BOSS_AGGRO_VERTICAL_RANGE = 96.0
+BOSS_SHOT_RANGE = 400.0
+BOSS_LASER_RANGE = 360.0 * BOSS_SCALE
+BOSS_LASER_HEIGHT = 14.0 * BOSS_SCALE  # hitbox du rayon, independante de la hauteur du sprite
+BOSS_LASER_LINGER_FRAMES = 8  # alternance derniere / avant-derniere frame du rayon
+BOSS_LASER_FADE_TIME = 0.16  # fondu leger en fin de rayon, en secondes
+# Retard de visee : le rayon suit le joueur avec un leger lag.
+BOSS_LASER_TRACK_DELAY = 0.5
+# Fraction droite du sprite : le rayon s'eteint avant le vide.
+BOSS_LASER_TIP_FADE = 0.12
+# Gemme frontale : ~centre X, 17 px au-dessus du centre d'une frame 100x100.
+BOSS_LASER_ORIGIN_X = 0.0
+BOSS_LASER_ORIGIN_Y = 17.0 * BOSS_SCALE
+# Largeur de contenu au-dela de laquelle une frame est un rayon (pas une etincelle).
+BOSS_BEAM_FULL_MIN_WIDTH = 80.0
+BOSS_SHOT_ORIGIN_X = 0.0  # depart au centre du golem
+BOSS_SHOT_ORIGIN_Y = 0.0
+BOSS_SHOT_SPEED = 4.8  # px/frame
+BOSS_SHOT_LIFE = 2.4
+BOSS_SHOT_WIDTH = 16.0 * BOSS_SCALE
+BOSS_SHOT_HEIGHT = 7.0 * BOSS_SCALE
+# La planche pointe vers la gauche ; Arcade.angle est horaire.
+BOSS_SHOT_ART_ANGLE = 180.0
+BOSS_SHOT_BURST_COUNT = 26
+BOSS_SHOT_BURST_MAX = 72
+BOSS_SHOT_BURST_SPEED = 160.0
+BOSS_SHOT_BURST_LIFE = 0.42
+BOSS_SHOT_BURST_SIZE_MIN = 4.0
+BOSS_SHOT_BURST_SIZE_MAX = 11.0
+BOSS_SHOT_BURST_CORE_SIZE = 2.6
+BOSS_SHOT_BURST_GLOW_ALPHA = 170
+BOSS_SHOT_BURST_CORE_ALPHA = 230
+BOSS_SHOT_BURST_SPREAD = 5.0
+BOSS_SHOT_BURST_GRAVITY = 90.0
+BOSS_ATTACK_COOLDOWN = 1.15
+BOSS_PREFERRED_DISTANCE = 180.0
+# Frame du lancer (bras tendu, 1re ligne de boss_shot, 10 colonnes).
+BOSS_SHOT_SPAWN_FRAME = 7
+ANIM_BOSS_WALK_FRAME_TIME = 0.12
+ANIM_BOSS_SHOT_FRAME_TIME = 0.07
+ANIM_BOSS_LASER_FRAME_TIME = 0.08
+ANIM_BOSS_DEATH_FRAME_TIME = 0.06
+ANIM_BOSS_PROJECTILE_FRAME_TIME = 0.08
+ANIM_BOSS_BEAM_FRAME_TIME = 0.05
+BOSS_GHOST_GLOW_SCALE = 4.6
+BOSS_GHOST_GLOW_ALPHA = 100
+BOSS_GHOST_GLOW_INNER_SCALE = 2.0
+BOSS_GHOST_GLOW_INNER_ALPHA = 170
+BOSS_GHOST_GLOW_PULSE = 0.16
+BOSS_GHOST_GLOW_PULSE_SPEED = 2.8
+COLOR_BOSS = (120, 128, 150)
+COLOR_BOSS_GLOW = (40, 210, 255)
+COLOR_BOSS_GLOW_CORE = (180, 245, 255)
+
+# --------------------------------------------------------------------------- #
 # Objets et progression
 # --------------------------------------------------------------------------- #
 
@@ -908,9 +984,23 @@ KEY_GLOW_PULSE = 0.22
 KEY_GLOW_PULSE_SPEED = 2.4
 
 SOUL_ESSENCE_PER_ORB = 1
-# Ames cumulees pour atteindre le niveau n+1 (index = niveau - 1).
-# Niveau 1 : 0, 2 : 3, 3 : 8, 4 : 15, 5 : 25, 6 : 40. Bonus : `PALIERS`.
-SOUL_LEVEL_THRESHOLDS: tuple[int, ...] = (0, 3, 8, 15, 25, 40)
+# XP cumulee pour atteindre le niveau n (croissance exponentielle) :
+#   xp(n) = SOUL_XP_BASE * (SOUL_XP_GROWTH**(n-1) - 1) / (SOUL_XP_GROWTH - 1)
+# Avec ces valeurs : niveau 1=0, 2=3, 3=7, 4=15, 5=27, 6=47, 7=78 ames...
+SOUL_XP_BASE = 3.0
+SOUL_XP_GROWTH = 1.6
+
+# Prix en ames (monnaie depensable, `SoulProgression.essence`) du prochain
+# rang d'une amelioration fantome, croissance exponentielle avec le rang deja
+# achete de cette amelioration (rang 0 = jamais prise) :
+#   cost(rang) = SOUL_UPGRADE_BASE_COST * SOUL_UPGRADE_COST_GROWTH**rang
+SOUL_UPGRADE_BASE_COST = 2.0
+SOUL_UPGRADE_COST_GROWTH = 1.7
+
+# Bonus fixe accorde par rang achete d'une carte d'amelioration.
+GHOST_UPGRADE_VISION_BONUS = 40.0  # px de rayon de revelation
+GHOST_UPGRADE_SPEED_BONUS = 1.0  # px/frame de vitesse de deplacement fantome
+GHOST_UPGRADE_DURATION_BONUS = 3.0  # secondes de duree en mode fantome
 
 # --------------------------------------------------------------------------- #
 # Couleurs (RGB) - palette provisoire, remplacee par les sprites plus tard
@@ -994,6 +1084,20 @@ COLOR_MENU_FOCUS = (196, 132, 72)
 COLOR_MENU_VEIL = (16, 10, 8)
 COLOR_MENU_GOLD = (216, 168, 88)
 COLOR_MENU_TITLE_SHADOW = (36, 22, 14)
+
+# Cartes de choix d'amelioration fantome (montee de niveau) : accent
+# bleu-spectre plutot que le marron/torche des autres menus, pour bien les
+# distinguer visuellement d'une pause ou d'une victoire.
+COLOR_CARD_FILL = (26, 32, 52)
+COLOR_CARD_BORDER = (74, 108, 158)
+COLOR_CARD_FOCUS_FILL = (40, 54, 86)
+COLOR_CARD_ACCENT = (128, 200, 255)  # = COLOR_GHOST
+COLOR_CARD_COST = (150, 205, 255)
+
+MENU_CARD_WIDTH = 190
+MENU_CARD_HEIGHT = 220
+MENU_CARD_GAP = 24
+
 MENU_PAUSE_VEIL_ALPHA = 176
 MENU_GRID_COLUMNS = 2
 MENU_CELL_WIDTH = 220
