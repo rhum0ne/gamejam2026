@@ -744,6 +744,50 @@ def check_ice_block(window: arcade.Window) -> None:
     print(f"  glace -> {len(ices)} blocs, elan conserve ({player.change_x:.2f} px/frame)")
 
 
+def check_dash_stops_on_wall(window: arcade.Window) -> None:
+    """Un dash dans un mur coupe l'elan, au sol comme en l'air."""
+    from src.world.level import Level
+
+    data = {
+        "name": "Dash mur",
+        "tile_size": settings.TILE_SIZE,
+        "legend": {".": "vide", "#": "wall", "P": "player_spawn"},
+        "rows": [
+            "#####",
+            "#...#",
+            "#...#",
+            "#P..#",
+            "#####",
+        ],
+    }
+    level = Level.from_dict(data)
+
+    def remaining_speed(*, airborne: bool) -> float:
+        player = Player(*level.player_spawn)
+        player.bind_world(level.static_walls, platforms=[level.corpses])
+        for _ in range(6):
+            player.update(FRAME)
+        if airborne:
+            player.center_y += settings.TILE_SIZE * 2
+            player.change_y = 0.0
+            player._was_on_ground = False
+            player._time_off_ground = 1.0
+        player.walk(1)
+        assert player.dash(), "le dash doit partir"
+        for _ in range(20):
+            player.update(FRAME)
+            if not player.is_dashing:
+                player.walk(0)
+        player.walk(0)
+        player.update(FRAME)
+        return player.change_x
+
+    ground_vx = remaining_speed(airborne=False)
+    air_vx = remaining_speed(airborne=True)
+    assert abs(ground_vx) < 0.2, f"dash au sol contre un mur, vx={ground_vx:.2f}"
+    assert abs(air_vx) < 0.2, f"dash aerien contre un mur, vx={air_vx:.2f}"
+    print(f"  dash mur -> vx sol {ground_vx:.2f}, air {air_vx:.2f}")
+
 
 def check_editor_views(window: arcade.Window) -> None:
     """Le navigateur et la vue d'edition se dessinent, peignent et annulent."""
@@ -815,6 +859,8 @@ def main() -> int:
         check_flamethrower(window)
         print("[12/12] glace")
         check_ice_block(window)
+        print("[13/13] dash contre un mur")
+        check_dash_stops_on_wall(window)
     finally:
         window.close()
     print("OK : le squelette demarre et tourne.")

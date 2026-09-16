@@ -501,6 +501,7 @@ class Player(arcade.Sprite):
                 self._animator.play(self._idle_still)
             self.texture = self._animator.update(delta_time)
         sprites.apply_facing(self, self.facing)
+        carried = self.is_dashing or self._dash_jump
         self._tick_dash(delta_time)
         if self.is_dashing:
             self.change_x = self._dash_dir * settings.PLAYER_DASH_SPEED
@@ -511,7 +512,11 @@ class Player(arcade.Sprite):
         self._apply_jump_gravity()
         self._cap_fall_speed()
         fall_speed = max(0.0, -self.change_y)
+        old_x = self.center_x
+        intended_x = self.change_x
         self._physics.update()
+        if carried and self._dash_blocked_by_wall(old_x, intended_x):
+            self._stop_dash_against_wall()
         self._cap_fall_speed()
         grounded = self._physics.can_jump()
         if grounded and not self._was_on_ground:
@@ -576,6 +581,21 @@ class Player(arcade.Sprite):
             return
         behind_x = self.center_x - self.facing * (self.width * 0.55)
         self._dust.tick_run(behind_x, self.bottom, self.facing, delta_time)
+
+    def _dash_blocked_by_wall(self, old_x: float, intended_x: float) -> bool:
+        """True si le moteur a absorbe le deplacement horizontal contre un mur."""
+        if intended_x == 0.0:
+            return False
+        moved = self.center_x - old_x
+        if intended_x > 0.0:
+            return moved < 1.0
+        return moved > -1.0
+
+    def _stop_dash_against_wall(self) -> None:
+        """Coupe le dash et l'elan horizontal : plus de glissade le long du mur."""
+        self._dash_timer = 0.0
+        self._dash_jump = False
+        self.change_x = 0.0
 
     def _tick_dash(self, delta_time: float) -> None:
         if self._dash_timer > 0.0:

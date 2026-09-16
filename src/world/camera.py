@@ -203,15 +203,23 @@ class CameraRig:
         target: arcade.Sprite,
         delta_time: float,
         zoom: float = settings.CAMERA_ZOOM_PLAYER,
+        zoom_time: float | None = None,
     ) -> None:
         """Rapproche la camera d'une cible mouvante, avec un look-ahead lisse.
 
         `zoom` est la cible vers laquelle le niveau de zoom est lisse : passer
         `CAMERA_ZOOM_GHOST` (plus petit que `CAMERA_ZOOM_PLAYER`) donne l'effet
         de recul/projection hors du corps au passage humain -> fantome.
+        `zoom_time` ecrase `CAMERA_ZOOM_SMOOTH_TIME` (dash plus vif, par ex.).
         """
         self._ease_look_ahead(target.change_x, target.change_y, delta_time)
-        self._advance(target.center_x + self._look_x, target.center_y + self._look_y, delta_time, zoom)
+        self._advance(
+            target.center_x + self._look_x,
+            target.center_y + self._look_y,
+            delta_time,
+            zoom,
+            zoom_time,
+        )
 
     def drift_to(
         self,
@@ -230,8 +238,18 @@ class CameraRig:
         self._ease_look_ahead(0.0, 0.0, delta_time)
         self._advance(x + self._look_x, y + self._look_y, delta_time, zoom)
 
-    def _advance(self, target_x: float, target_y: float, delta_time: float, zoom: float) -> None:
-        zoom_alpha = _exp_alpha(delta_time, settings.CAMERA_ZOOM_SMOOTH_TIME)
+    def _advance(
+        self,
+        target_x: float,
+        target_y: float,
+        delta_time: float,
+        zoom: float,
+        zoom_time: float | None = None,
+    ) -> None:
+        zoom_alpha = _exp_alpha(
+            delta_time,
+            settings.CAMERA_ZOOM_SMOOTH_TIME if zoom_time is None else zoom_time,
+        )
         self._zoom += (zoom - self._zoom) * zoom_alpha
         self.world.zoom = self._zoom
         desired_x, desired_y = self._clamp(target_x, target_y)

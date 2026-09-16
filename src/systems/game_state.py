@@ -748,7 +748,15 @@ class PlayView(arcade.View):
         self._update_enemies(delta_time)
         self._resolve_player_collisions()
         if self.machine.state is GameState.PLAYING:
-            self.camera.follow(self.player, delta_time, zoom=settings.CAMERA_ZOOM_PLAYER)
+            if self.player.is_dashing:
+                self.camera.follow(
+                    self.player,
+                    delta_time,
+                    zoom=settings.CAMERA_ZOOM_DASH,
+                    zoom_time=settings.CAMERA_DASH_ZOOM_TIME,
+                )
+            else:
+                self.camera.follow(self.player, delta_time, zoom=settings.CAMERA_ZOOM_PLAYER)
 
     def _block_hazard_sides(self) -> None:
         """Une pique bloque comme un mur si on la touche par le cote (cf Mario)."""
