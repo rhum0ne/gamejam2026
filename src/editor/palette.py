@@ -67,6 +67,7 @@ class PaletteItem:
 _TERRAIN_META: dict[str, tuple[str, str]] = {
     "wall": ("Terre", "#"),
     "bedrock": ("Socle", "B"),
+    settings.TILE_KIND_ICE: ("Glace", "~"),
     "spike": ("Piques (sol)", "^"),
     "spike_up": ("Piques (plafond)", "v"),
 }
@@ -74,7 +75,7 @@ _TERRAIN_META: dict[str, tuple[str, str]] = {
 # kind -> (libelle, categorie, symbole habituel, couleur)
 _GAMEPLAY_META: dict[str, tuple[str, str, str, tuple[int, int, int]]] = {
     "player_spawn": ("Depart du joueur", CATEGORY_GAMEPLAY, "P", settings.COLOR_PLAYER),
-    "checkpoint": ("Checkpoint", CATEGORY_GAMEPLAY, "C", settings.COLOR_CHECKPOINT),
+    "checkpoint": ("Statue de respawn", CATEGORY_GAMEPLAY, "C", settings.COLOR_CHECKPOINT),
     "door": ("Porte de sortie", CATEGORY_GAMEPLAY, "D", settings.COLOR_DOOR_LOCKED),
     "key": ("Cle", CATEGORY_GAMEPLAY, "K", settings.COLOR_KEY),
     "soul_orb": ("Ame (bille bleue)", CATEGORY_GAMEPLAY, "o", settings.COLOR_SOUL_ORB),
@@ -112,13 +113,19 @@ def _terrain_items(taken: set[str]) -> list[PaletteItem]:
         symbol = free_symbol(taken, wanted or kind.upper())
         taken.add(symbol)
         hazard = spec.role == "spike"
+        if spec.role == "spike":
+            color = settings.COLOR_SPIKE
+        elif spec.role == "ice":
+            color = settings.COLOR_ICE
+        else:
+            color = settings.COLOR_WALL
         items.append(
             PaletteItem(
                 kind=kind,
                 label=label,
                 category=CATEGORY_HAZARD if hazard else CATEGORY_TERRAIN,
                 symbol=symbol,
-                color=settings.COLOR_SPIKE if hazard else settings.COLOR_WALL,
+                color=color,
                 spec=spec,
             )
         )

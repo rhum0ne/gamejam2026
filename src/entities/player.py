@@ -22,12 +22,21 @@ from src.entities.trail import PointTrail
 from src.ui import sprites
 
 
-def _idle_animation() -> sprites.StripAnimation:
-    frames = sprites.load_strip(
+def _idle_frames() -> tuple[arcade.Texture, ...]:
+    return sprites.load_strip(
         settings.SPRITE_PLAYER_IDLE,
         settings.SPRITE_FRAME_SIZE,
         scale=settings.ENTITY_SCALE,
     )
+
+
+def _idle_still_animation(frames: tuple[arcade.Texture, ...]) -> sprites.StripAnimation:
+    """Pose figee : premiere frame, sans respiration."""
+    return sprites.StripAnimation((frames[0],), settings.ANIM_IDLE_FRAME_TIME, loop=True)
+
+
+def _idle_breathe_animation(frames: tuple[arcade.Texture, ...]) -> sprites.StripAnimation:
+    """Idle qui respire, reserve au cooldown du dash."""
     return sprites.StripAnimation(frames, settings.ANIM_IDLE_FRAME_TIME, loop=True)
 
 
@@ -56,20 +65,23 @@ class Player(arcade.Sprite):
     """Corps physique controle au clavier."""
 
     def __init__(self, center_x: float, center_y: float) -> None:
-        self._idle = _idle_animation()
+        idle_frames = _idle_frames()
+        self._idle_still = _idle_still_animation(idle_frames)
+        self._idle_breathe = _idle_breathe_animation(idle_frames)
         self._walk = _walk_animation()
-        super().__init__(self._idle.textures[0], center_x=center_x, center_y=center_y)
+        super().__init__(self._idle_still.textures[0], center_x=center_x, center_y=center_y)
         sprites.apply_rect_hit_box(
             self,
             settings.PLAYER_HITBOX_WIDTH * settings.ENTITY_SCALE,
             settings.PLAYER_HEIGHT * settings.ENTITY_SCALE,
         )
-        self._animator = sprites.Animator(self._idle)
+        self._animator = sprites.Animator(self._idle_still)
         self.alive = True
         self.facing = 1
         self.inventory: set[ItemKind] = set()
         self.respawn_point: tuple[float, float] = (center_x, center_y)
         self._physics: arcade.PhysicsEnginePlatformer | None = None
+        self._solids: list[arcade.SpriteList] = []
         self._time_off_ground = 0.0
         self._place_on_tile(center_x, center_y)
         self._was_on_ground = True
@@ -109,6 +121,9 @@ class Player(arcade.Sprite):
             platforms=list(platforms) if platforms else None,
             gravity_constant=settings.PLAYER_GRAVITY,
         )
+        self._solids = list(walls)
+        if platforms:
+            self._solids.extend(platforms)
 
     def _place_on_tile(self, center_x: float, center_y: float) -> None:
         """Pose les pieds sur le bas de la tuile dont `center` est le milieu."""
@@ -300,8 +315,10 @@ class Player(arcade.Sprite):
             return
         if abs(self.change_x) > 0.05:
             self._animator.play(self._walk)
+        elif self._dash_cooldown > 0.0:
+            self._animator.play(self._idle_breathe)
         else:
-            self._animator.play(self._idle)
+            self._animator.play(self._idle_still)
         self.texture = self._animator.update(delta_time)
         sprites.apply_facing(self, self.facing)
         self._tick_dash(delta_time)
@@ -318,7 +335,8 @@ class Player(arcade.Sprite):
         self._cap_fall_speed()
         grounded = self._physics.can_jump()
         if grounded and not self._was_on_ground:
-            self._landing_timer = settings.PLAYER_LANDING_SLOW_TIME
+            if not self._standing_on_ice():
+                self._landing_timer = settings.PLAYER_LANDING_SLOW_TIME
             self._dust.emit_landing(
                 self.center_x,
                 self.bottom,
@@ -373,7 +391,7 @@ class Player(arcade.Sprite):
 
     def _tick_run_dust(self, delta_time: float) -> None:
         full_speed = abs(self.change_x) >= settings.PLAYER_SPEED * settings.PARTICLE_RUN_SPEED_RATIO
-        if not full_speed:
+        if not full_speed or self._standing_on_ice():
             self._dust.stop_run()
             return
         behind_x = self.center_x - self.facing * (self.width * 0.55)
@@ -394,18 +412,25 @@ class Player(arcade.Sprite):
 
     def _apply_horizontal(self, delta_time: float) -> None:
         grounded = self._was_on_ground
-        landing = grounded and self._landing_timer > 0.0
+        on_ice = grounded and self._standing_on_ice()
+        landing = grounded and self._landing_timer > 0.0 and not on_ice
         max_speed = settings.PLAYER_SPEED * (
             settings.PLAYER_LANDING_SPEED_SCALE if landing else 1.0
         )
         accel = max_speed / max(settings.PLAYER_ACCEL_TIME, 0.001)
+        if on_ice:
+            accel *= settings.PLAYER_ICE_ACCEL_SCALE
         direction = self._move_dir
         if grounded:
             if direction == 0:
-                self.change_x += (0.0 - self.change_x) * _exp_alpha(
-                    delta_time, settings.PLAYER_SLIDE_TIME
+                slide = (
+                    settings.PLAYER_ICE_SLIDE_TIME if on_ice else settings.PLAYER_SLIDE_TIME
                 )
-                if abs(self.change_x) < 0.18:
+                self.change_x += (0.0 - self.change_x) * _exp_alpha(delta_time, slide)
+                stop = (
+                    settings.PLAYER_ICE_STOP_SPEED if on_ice else 0.18
+                )
+                if abs(self.change_x) < stop:
                     self.change_x = 0.0
                 return
             if self.change_x * direction < 0.0:
@@ -427,3 +452,19 @@ class Player(arcade.Sprite):
         self.change_x = _approach(
             self.change_x, direction * air_cap, air_accel * delta_time
         )
+
+    def _standing_on_ice(self) -> bool:
+        """True si un pied repose sur un bloc `slippery`."""
+        if not self._solids:
+            return False
+        probes = (
+            (self.center_x, self.bottom - 2),
+            (self.center_x - self.width * 0.28, self.bottom - 2),
+            (self.center_x + self.width * 0.28, self.bottom - 2),
+        )
+        for group in self._solids:
+            for probe_x, probe_y in probes:
+                for sprite in arcade.get_sprites_at_point((probe_x, probe_y), group):
+                    if getattr(sprite, "slippery", False):
+                        return True
+        return False

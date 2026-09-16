@@ -2,7 +2,7 @@
 
 Le terrain reutilise les textures du jeu (`obstacles.terrain_texture`) : ce que
 le level designer voit dans l'editeur est exactement ce que le joueur verra.
-Les elements sans sprite (porte, checkpoint, ennemi, ...) recoivent un carre
+Les elements sans sprite (porte, ennemi, ...) recoivent un carre
 colore avec leur symbole de legende grave dedans : c'est lisible, et surtout
 c'est une texture, donc le rendu reste un seul batch de `SpriteList`.
 """
@@ -23,6 +23,7 @@ _GLYPH_CANVAS = (12, 14)  # taille de rendu de la police bitmap par defaut
 
 _SPRITE_KINDS = {
     "flamethrower": settings.SPRITE_FLAMETHROWER,
+    "checkpoint": settings.SPRITE_CHECKPOINT,
 }
 
 

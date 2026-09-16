@@ -74,6 +74,10 @@ RENDER_CHUNK_TILES = 16
 # chunk de 512 px apparait d'un coup au bord de l'ecran.
 RENDER_CULL_PAD = 120.0
 
+# Identifiants de TYPE de tuile (legende JSON / TILE_SPECS). Ce ne sont PAS
+# des noms de fichiers sprite : les confondre cassait le chargeur.
+TILE_KIND_ICE = "ice_block"
+
 # Noms de fichiers dans SPRITES_DIR, sans extension. Le chargeur ajoute `.png`.
 # Le terrain (dirt/grass/...) vient desormais de `SHEET_GROUND` plus bas
 # (planche "new_textures") : les anciens PNG individuels (dirt_1.png,
@@ -86,11 +90,11 @@ SPRITE_PLAYER_IDLE = "player_idle"
 SPRITE_GHOST_WALK = "gost_walk"
 SPRITE_GHOST_DISAPPEAR = "gost_disappears"
 SPRITE_KEY = "key"
-SPRITE_CHECKPOINT = "Check_Point"
-SPRITE_CHECKPOINT_ACTIVE = "Check_Point_actif"
+SPRITE_CHECKPOINT = "phoenix_resurrection-desactive"
+SPRITE_CHECKPOINT_ACTIVE = "phoenix_resurrection-active"
 SPRITE_FLAMETHROWER = "Lance_flamme"
-# PNG natif 32 px, agrandi x2 en nearest-neighbor (pas de flou).
-CHECKPOINT_SIZE = TILE_SIZE * 2
+# Art natif 125 px ; affiche ~3 tuiles, pieds cales sur la case.
+CHECKPOINT_SIZE = TILE_SIZE * 3
 SPRITE_FRAME_SIZE = 32
 # Taille a l'ecran des sprites joueur / fantome (1.0 = 32 px).
 # L'agrandissement est fait en nearest-neighbor dans `load_strip`.
@@ -298,7 +302,7 @@ PLAYER_JUMP_BUFFER = 0.12
 PLAYER_AIR_BRAKE_TIME = 0.90
 PLAYER_AIR_TURN_BOOST = 1.35
 # PLAYER_RESPAWN_DELAY est la somme des phases REBIRTH_* (plus bas).
-# Eclat d'ames bleues sur le totem au moment du respawn.
+# Eclat d'ames bleues sur la statue au moment du respawn.
 CHECKPOINT_BURST_COUNT = 22
 CHECKPOINT_BURST_LIFE = 0.9
 CHECKPOINT_BURST_SPEED_X = 70.0
@@ -311,9 +315,9 @@ CHECKPOINT_BURST_GLOW_ALPHA = 150
 CHECKPOINT_BURST_CORE_ALPHA = 220
 CHECKPOINT_BURST_SPREAD = 10.0
 CHECKPOINT_BURST_MAX = 48
-# Halo du totem : eteint au repos, flash a l'activation, pulse tant qu'il est actif.
-CHECKPOINT_GLOW_LIFT = 0.22  # fraction de la hauteur, vers le crane
-CHECKPOINT_GLOW_WASH = 340.0  # nappe large, derriere le totem
+# Halo de la statue : eteint au repos, flash a l'activation, pulse tant qu'elle est active.
+CHECKPOINT_GLOW_LIFT = 0.10  # fraction de la hauteur, vers le phenix
+CHECKPOINT_GLOW_WASH = 340.0  # nappe large, derriere la statue
 CHECKPOINT_GLOW_OUTER = 240.0
 CHECKPOINT_GLOW_MID = 118.0
 CHECKPOINT_GLOW_INNER = 44.0
@@ -334,6 +338,10 @@ CHECKPOINT_IGNITE_RISE = 0.18  # part du flash consacree a la montee
 PLAYER_ACCEL_TIME = 0.25
 # Glissade a l'arret (sol) : 2-3 frames, quelques pixels tout au plus.
 PLAYER_SLIDE_TIME = 0.01
+# Glace : le corps conserve son elan, acceleration et demi-tour sont mous.
+PLAYER_ICE_SLIDE_TIME = 1.7
+PLAYER_ICE_ACCEL_SCALE = 0.38
+PLAYER_ICE_STOP_SPEED = 0.06
 # Fraction de l'acceleration au sol quand le joueur est en l'air (1 = aussi vif qu'au sol).
 PLAYER_AIR_CONTROL = 1.15
 # Ralentissement juste apres l'atterrissage.
@@ -553,6 +561,8 @@ SOUL_LEVEL_THRESHOLDS: tuple[int, ...] = (0, 3, 8, 15, 25, 40)
 
 COLOR_BACKGROUND = (18, 18, 28)
 COLOR_WALL = (72, 76, 96)
+COLOR_ICE = (118, 196, 220)
+COLOR_ICE_INNER = (186, 232, 244)
 COLOR_SPECTRAL_WALL = (96, 84, 140)
 COLOR_SPIKE = (196, 84, 84)
 COLOR_FLAMETHROWER = (232, 96, 36)
@@ -586,7 +596,7 @@ COLOR_HUD_TEXT = (228, 228, 236)
 COLOR_HUD_BAR_BACKGROUND = (48, 48, 62)
 COLOR_HUD_BAR_FILL = (128, 200, 255)
 COLOR_HUD_GHOST_GAUGE = (110, 196, 255)
-COLOR_HUD_KEY_EMPTY = (36, 36, 42)  # cle absente : sombre, pas transparente
+COLOR_HUD_GHOST_GAUGE_IDLE = (92, 96, 112)  # jauge fantome hors mode, grisee
 COLOR_DASH = (255, 214, 120)
 COLOR_DASH_GLOW = (255, 224, 150)
 COLOR_TRAIL_DASH = (255, 214, 96)
@@ -724,15 +734,14 @@ UI_KEY_CELL = 16  # taille native d'une touche-lettre
 UI_KEY_ICON_HEIGHT = 40  # hauteur a l'ecran (nearest-neighbor)
 UI_KEY_CAPTION_SIZE = 16  # libelles a cote des icones
 
-# Stats haut-droit, une ligne par item : icone + valeur, jauge en dessous.
+# Stats haut-droit : jauge fantome en haut, puis une ligne par item.
 HUD_STAT_ICON = 40
 HUD_STAT_GAP = 8  # espace vertical entre deux lignes
 HUD_STAT_VALUE_GAP = 10  # espace icone -> valeur
-# Jauge du timer fantome, sous les stats.
 HUD_GAUGE_WIDTH = 168
-HUD_GAUGE_HEIGHT = 10
-HUD_GAUGE_ICON = 22
-HUD_GAUGE_GAP = 8
+HUD_GAUGE_HEIGHT = 12
+HUD_GAUGE_GAP = 8  # espace libelle "Lvl. X" -> jauge
+HUD_GAUGE_LABEL_SIZE = 14
 HUD_GAUGE_LOW = 0.22  # le timer fantome pulse sous ce ratio
 
 # --------------------------------------------------------------------------- #

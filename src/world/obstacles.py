@@ -85,6 +85,7 @@ TILE_SPECS: dict[str, TileSpec] = {
     "bedrock": _wall(sheet=settings.SHEET_GROUND, cell=settings.GROUND_BEDROCK, tint=settings.COLOR_BEDROCK_TINT),
     "spike": _spike(settings.SPRITE_SPIKE),
     "spike_up": _spike(settings.SPRITE_SPIKE_HANGING, hanging=True),
+    settings.TILE_KIND_ICE: TileSpec(sprite="", role="ice"),
 }
 
 # Kinds qui occupent une case pleine et solide (bloquent la vue d'un cote pour
@@ -374,6 +375,10 @@ def terrain_texture(
     auto-tilee (`spec.autotile`) : sans lui, l'apercu par defaut (crete
     d'herbe) sert pour la palette de l'editeur ou une tuile hors niveau.
     """
+    if spec.role == "ice":
+        return sprites.placeholder_tile(
+            settings.COLOR_ICE, size, accent=settings.COLOR_ICE_INNER
+        )
     if spec.role != "wall":
         raise ValueError(f"terrain_texture attend un mur, pas '{spec.role}'")
     if spec.autotile:
@@ -391,6 +396,7 @@ class Wall(arcade.Sprite):
     """Bloc de terrain plein, infranchissable pour tout le monde."""
 
     ghost_passable = False
+    slippery = False
 
     def __init__(
         self,
@@ -401,7 +407,7 @@ class Wall(arcade.Sprite):
         cell: GroundCell | None = None,
     ) -> None:
         spec = tile_spec(tile)
-        if spec.role != "wall":
+        if spec.role not in ("wall", "ice"):
             raise ValueError(f"'{tile}' n'est pas une tuile de mur")
         texture = terrain_texture(spec, size, cell=cell)
         super().__init__(
@@ -413,6 +419,21 @@ class Wall(arcade.Sprite):
         if spec.tint is not None:
             self.color = spec.tint
         sprites.apply_rect_hit_box(self, size, size)
+
+
+class IceBlock(Wall):
+    """Bloc de glace : solide, mais le corps physique glisse dessus."""
+
+    slippery = True
+
+    def __init__(
+        self,
+        center_x: float,
+        center_y: float,
+        size: int = settings.TILE_SIZE,
+        tile: str = settings.TILE_KIND_ICE,
+    ) -> None:
+        super().__init__(center_x, center_y, size=size, tile=tile)
 
 
 class SpectralWall(Wall):
@@ -600,11 +621,12 @@ class Checkpoint(arcade.Sprite):
 
     def __init__(self, center_x: float, center_y: float, size: int = settings.TILE_SIZE) -> None:
         display = settings.CHECKPOINT_SIZE
-        self._idle = sprites.load_texture(settings.SPRITE_CHECKPOINT, size=display)
-        self._lit = sprites.load_texture(settings.SPRITE_CHECKPOINT_ACTIVE, size=display)
+        self._idle = sprites.load_texture(settings.SPRITE_CHECKPOINT)
+        self._lit = sprites.load_texture(settings.SPRITE_CHECKPOINT_ACTIVE)
+        scale = sprites.scale_for_size(self._idle, display)
         lift = (display - size) / 2
         self._spawn = (center_x, center_y)
-        super().__init__(self._idle, center_x=center_x, center_y=center_y + lift)
+        super().__init__(self._idle, scale=scale, center_x=center_x, center_y=center_y + lift)
         sprites.apply_rect_hit_box(self, size, size, offset_y=-lift)
         self.active = False
         self._ignite = 0.0
@@ -612,7 +634,7 @@ class Checkpoint(arcade.Sprite):
 
     @property
     def spawn_point(self) -> tuple[float, float]:
-        """Centre de la tuile, pas du sprite (le totem est plus haut que la case)."""
+        """Centre de la tuile, pas du sprite (la statue est plus haute que la case)."""
         return self._spawn
 
     def activate(self, *, ignite: bool = True) -> None:
@@ -645,7 +667,7 @@ class Checkpoint(arcade.Sprite):
             self._ignite = max(0.0, self._ignite - delta_time)
 
     def draw_glow(self, *, layer: str = "all") -> None:
-        """Halo du crane : flash d'allumage, puis respiration tant qu'il est actif."""
+        """Halo du phenix : flash d'allumage, puis respiration tant qu'il est actif."""
         if layer not in ("all", "bloom", "core"):
             raise ValueError(f"layer inconnu : {layer!r}")
         idle, flash = self._glow_mix()

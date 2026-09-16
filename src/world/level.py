@@ -85,7 +85,7 @@ from src.world.obstacles import (
     TILE_SPECS,
     Checkpoint,
     Door,
-    GroundCell,
+    IceBlock,
     SpectralWall,
     Spike,
     TileSpec,
@@ -290,7 +290,7 @@ class Level:
         self.checkpoint_spawn = self.player_spawn
 
     def activate_checkpoint(self, checkpoint: Checkpoint, *, ignite: bool = True) -> None:
-        """Allume `checkpoint` et eteint les autres totems.
+        """Allume `checkpoint` et eteint les autres statues.
 
         `ignite=False` pose le halo de repos sans le flash d'allumage
         (spawn initial du niveau).
@@ -468,7 +468,7 @@ class Level:
         with glow_pass():
             for checkpoint in self.checkpoints:
                 checkpoint.draw_glow()
-        self.checkpoints.draw(pixelated=True)
+        self.checkpoints.draw()
         self.doors.draw()
         self.decorations.draw()
         with glow_pass():
@@ -691,6 +691,9 @@ def _add_terrain(
     spec: TileSpec = tile_spec(kind)
     if spec.role == "spike":
         level.hazards.append(Spike(x, y, size=level.tile_size, tile=kind))
+        return
+    if spec.role == "ice":
+        level.walls.append(IceBlock(x, y, size=level.tile_size, tile=kind))
         return
     level.walls.append(Wall(x, y, size=level.tile_size, tile=kind, cell=cell))
 
