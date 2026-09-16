@@ -24,21 +24,82 @@ from src.entities.enemy_base import EnemyBase
 from src.entities.ghost import Ghost
 from src.entities.item import Item
 from src.entities.player import Player
+from src.world.flamethrower import Flamethrower
 from src.world.level import Level
 from src.world.obstacles import Checkpoint, Door
 
 
-def player_hits_hazard(player: Player, level: Level) -> bool:
-    """Le corps physique touche-t-il un piege mortel (piques) ?"""
+def player_hits_flame(player: Player, throwers: arcade.SpriteList) -> bool:
+    """Le corps physique est-il dans un jet de lance-flammes allume ?"""
     if not player.alive:
         return False
-    for hazard_list in (level.hazards, level.falling_spikes):
-        if any(
-            getattr(hazard, "lethal_for_body", True)
-            for hazard in arcade.check_for_collision_with_list(player, hazard_list)
-        ):
+    for thrower in throwers:
+        if isinstance(thrower, Flamethrower) and thrower.overlaps(player):
             return True
     return False
+
+
+def enemies_hit_by_flame(
+    enemies: arcade.SpriteList,
+    throwers: arcade.SpriteList,
+) -> list[EnemyBase]:
+    """Ennemis (non mourants) touches par un jet allume."""
+    hit: list[EnemyBase] = []
+    seen: set[int] = set()
+    for thrower in throwers:
+        if not isinstance(thrower, Flamethrower) or not thrower.is_lethal:
+            continue
+        for enemy in enemies:
+            ident = id(enemy)
+            if ident in seen or enemy.is_dying:
+                continue
+            if thrower.overlaps(enemy):
+                seen.add(ident)
+                hit.append(enemy)
+    return hit
+
+
+def _vertical_contact(player: Player, hazard: arcade.Sprite) -> bool:
+    """True si le contact se fait par le haut/bas (on tombe/saute dessus).
+
+    On compare le recouvrement horizontal et vertical des hitbox : si le
+    recouvrement vertical est le plus petit, le contact vient d'un
+    atterrissage sur la pique plutot que d'un frolement lateral.
+    """
+    overlap_x = min(player.right, hazard.right) - max(player.left, hazard.left)
+    overlap_y = min(player.top, hazard.top) - max(player.bottom, hazard.bottom)
+    if overlap_x <= 0 or overlap_y <= 0:
+        return False
+    return overlap_y <= overlap_x
+
+
+def player_hits_hazard(player: Player, level: Level) -> bool:
+    """Le corps physique touche-t-il un piege mortel (piques) ?
+
+    Seul un contact vertical est mortel : sauter sur une pique au sol, se
+    cogner la tete contre une pique de plafond, ou se faire tomber dessus une
+    pique en chute. Frôler une pique par le côté en marchant ne tue pas.
+    """
+    if not player.alive:
+        return False
+    for hazard in arcade.check_for_collision_with_list(player, level.hazards):
+        if getattr(hazard, "lethal_for_body", True) and _vertical_contact(player, hazard):
+            return True
+    for hazard in arcade.check_for_collision_with_list(player, level.falling_spikes):
+        if getattr(hazard, "lethal_for_body", True):
+            return True
+    return False
+
+
+def hazard_side_contacts(player: Player, level: Level) -> list[arcade.Sprite]:
+    """Piques (fixes) touchees par le cote : bloquent comme un mur, ne tuent pas."""
+    if not player.alive:
+        return []
+    return [
+        hazard
+        for hazard in arcade.check_for_collision_with_list(player, level.hazards)
+        if not _vertical_contact(player, hazard)
+    ]
 
 
 def player_out_of_bounds(player: Player, level: Level) -> bool:
@@ -102,21 +163,22 @@ def enemy_striking_player(player: Player, enemies: Iterable[EnemyBase]) -> Enemy
     return None
 
 
-def enemy_stomped_by_player(player: Player, enemies: arcade.SpriteList) -> EnemyBase | None:
-    """Ennemi ecrase par le joueur en retombant dessus (attaque de base).
-
-    Le seuil utilise `enemy.body_height` (hauteur du corps visible, propre a
-    chaque archetype) plutot que `enemy.height` : ce dernier reflete la frame
-    d'animation entiere, generalement bien plus haute/large que le corps.
-    """
-    if not player.alive or player.change_y >= 0:
-        return None
-    for enemy in arcade.check_for_collision_with_list(player, enemies):
-        if enemy.is_dying:
-            continue
-        if player.center_y > enemy.center_y + enemy.body_height / 4:
-            return enemy
-    return None
+def enemies_hit_by_player_attack(player: Player, enemies: arcade.SpriteList) -> list[EnemyBase]:
+    """Retourne les ennemis recouverts par la hitbox de la frappe frontale."""
+    bounds = player.attack_bounds
+    if bounds is None:
+        return []
+    left, bottom, right, top = bounds
+    return [
+        enemy
+        for enemy in enemies
+        if not enemy.is_dying
+        and not player.attack_has_hit(enemy)
+        and enemy.right >= left
+        and enemy.left <= right
+        and enemy.top >= bottom
+        and enemy.bottom <= top
+    ]
 
 
 def plate_is_weighted(plate: arcade.Sprite, weights: Sequence[arcade.Sprite]) -> bool:

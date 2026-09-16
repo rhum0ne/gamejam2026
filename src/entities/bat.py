@@ -153,8 +153,13 @@ class Bat(EnemyBase):
     # Initialisation
     # ------------------------------------------------------------------ #
 
-    def bind_world(self, platforms: Sequence[arcade.SpriteList]) -> None:
+    def bind_world(
+        self,
+        platforms: Sequence[arcade.SpriteList],
+        hazards: arcade.SpriteList | None = None,
+    ) -> None:
         """Murs opaques au vol (murs normaux + murs spectraux, comme le squelette)."""
+        del hazards  # meme signature que `Enemy.bind_world` (piques ignorees en vol)
         self._walls = list(platforms)
 
     # ------------------------------------------------------------------ #
@@ -275,6 +280,7 @@ class Bat(EnemyBase):
         **kwargs,
     ) -> None:
         self._attack_cooldown = max(0.0, self._attack_cooldown - delta_time)
+        self._tick_hit_feedback(delta_time)
         self._update_ai(player)
         if self.state is BatState.ATTACK:
             self._advance_attack_lurch(delta_time)

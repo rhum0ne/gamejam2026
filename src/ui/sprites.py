@@ -17,7 +17,7 @@ from pathlib import Path
 
 import arcade
 from arcade.hitbox import HitBox
-from PIL import Image
+from PIL import Image, ImageDraw
 
 import settings
 
@@ -61,6 +61,40 @@ def load_texture(name: str, *, size: int | None = None) -> arcade.Texture:
     return texture
 
 
+def placeholder_tile(
+    color: tuple[int, int, int],
+    size: int,
+    *,
+    accent: tuple[int, int, int] | None = None,
+) -> arcade.Texture:
+    """Tuile procedurale (placeholder) : fond + cadre clair, mise en cache."""
+    if size <= 0:
+        raise ValueError("size doit etre strictement positif")
+    shine = accent if accent is not None else tuple(
+        min(255, channel + 48) for channel in color
+    )
+    key = f"placeholder|{color}|{shine}|{size}"
+    cached = _TEXTURE_CACHE.get(key)
+    if cached is not None:
+        return cached
+    image = Image.new("RGBA", (size, size), (*color, 255))
+    draw = ImageDraw.Draw(image)
+    inset = max(1, size // 8)
+    draw.rectangle(
+        (inset, inset, size - inset - 1, size - inset - 1),
+        outline=(*shine, 255),
+        width=max(1, size // 16),
+    )
+    draw.line(
+        (inset + 1, inset + 1, size - inset - 2, inset + 1),
+        fill=(*shine, 255),
+        width=max(1, size // 16),
+    )
+    texture = arcade.Texture(image, hash=key)
+    _TEXTURE_CACHE[key] = texture
+    return texture
+
+
 def soul_orb_texture(size: int = 32) -> arcade.Texture:
     """Boule translucide (degrade radial), a teinter via `sprite.color`."""
     if size <= 0:
@@ -95,6 +129,60 @@ def soul_orb_texture(size: int = 32) -> arcade.Texture:
     texture = arcade.Texture(image, hash=cache_key)
     _TEXTURE_CACHE[cache_key] = texture
     return texture
+
+
+def load_sheet_region(
+    sheet: str | Path,
+    box: tuple[int, int, int, int],
+    *,
+    size: int | None = None,
+    flip: bool = False,
+) -> arcade.Texture:
+    """Decoupe un rectangle `box` (left, top, right, bottom, en pixels) d'une
+    planche contenant plusieurs sprites, avec cache.
+
+    Contrairement a `load_texture`, `sheet` designe l'image entiere de la
+    planche : `box` isole la zone voulue. `size` redimensionne le resultat en
+    carre (nearest-neighbor, comme les tuiles de terrain) ; sans `size`, le
+    sprite garde ses proportions d'origine (utile pour un decor non carre).
+    """
+    left, top, right, bottom = box
+    if right <= left or bottom <= top:
+        raise ValueError("box invalide : right/bottom doivent depasser left/top")
+    if size is not None and size <= 0:
+        raise ValueError("size doit etre strictement positif")
+    key = f"region:{sheet}|{box}|{int(flip)}|{size or 0}"
+    cached = _TEXTURE_CACHE.get(key)
+    if cached is not None:
+        return cached
+    region = _open_image(sheet).crop(box)
+    if flip:
+        region = region.transpose(Image.Transpose.FLIP_LEFT_RIGHT)
+    if size is not None and region.size != (size, size):
+        region = region.resize((size, size), Image.Resampling.NEAREST)
+    texture = arcade.Texture(region, hash=key)
+    _TEXTURE_CACHE[key] = texture
+    return texture
+
+
+def load_sheet_cell(
+    sheet: str | Path,
+    column: int,
+    row: int,
+    cell: int,
+    *,
+    size: int | None = None,
+    flip: bool = False,
+) -> arcade.Texture:
+    """Decoupe la case (`column`, `row`) d'une planche a grille reguliere de
+    `cell` px (0,0 = case en haut a gauche). Sucre pour `load_sheet_region`."""
+    if cell <= 0:
+        raise ValueError("cell doit etre strictement positif")
+    if column < 0 or row < 0:
+        raise ValueError("column et row doivent etre positifs ou nuls")
+    left = column * cell
+    top = row * cell
+    return load_sheet_region(sheet, (left, top, left + cell, top + cell), size=size, flip=flip)
 
 
 def tile_texture(

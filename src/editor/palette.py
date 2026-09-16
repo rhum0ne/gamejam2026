@@ -9,8 +9,8 @@ La palette n'est pas ecrite a la main : elle est deduite des registres du jeu.
 **Ajouter une tuile ou un element ne demande donc aucune modification ici** :
 il apparait automatiquement dans la palette, avec un libelle deduit de son nom
 et un symbole de legende pioche dans `_SYMBOL_POOL`. Les tables `_TERRAIN_META`
-et `_GAMEPLAY_META` ne servent qu'a soigner l'affichage (libelle francais,
-categorie, symbole habituel, couleur du placeholder).
+et `_GAMEPLAY_META` soignent l'affichage du terrain / gameplay ; les decors
+prennent libelle et symbole dans `decorations.decoration_palette_meta`.
 """
 
 from __future__ import annotations
@@ -18,6 +18,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 import settings
+from src.world.decorations import decoration_palette_meta
 from src.world.level import gameplay_kinds
 from src.world.obstacles import TILE_SPECS, TileSpec
 
@@ -31,10 +32,16 @@ CATEGORY_DECOR = "Decor"
 CATEGORY_UNKNOWN = "Inconnu"
 
 # Symboles disponibles pour un type sans symbole habituel. Ni le point (vide),
-# ni l'espace : le premier est reserve, le second est illisible dans le JSON.
+# ni l'espace, ni les quotes (le JSON de carte les echappe mal). L'alphabet
+# grec puis cyrillique servent de rab quand les ASCII sont pris (beaucoup de
+# decors, plus les archetypes d'ennemis).
+_GREEK = "αβγδεζηθικλμνξοπρστυφχψωΑΒΓΔΕΖΗΘΙΚΛΜΝΞΟΠΡΣΤΥΦΧΨΩ"
+_CYRILLIC = "абвгдежзийклмнопрстуфхцчшщъыьэюяАБВГДЕЖЗИЙКЛМНОПРСТУФХЦЧШЩЪЫЬЭЮЯ"
 _SYMBOL_POOL = (
-    "#TBG=^voPCDKEijklmnpqrstuwxyzabcefhABFHJLMNOQRSUVWXYZ0123456789"
-    "()[]{}<>-+*/\\|!$%&@;:?~"
+    "dI#TBG=^voPCDKEijklmnpqrstuwxyzabcefhABFHJLMNOQRSUVWXYZ0123456789"
+    "()[]{}<>-+*/\\|!$%&@;:?~,_'`"
+    + _GREEK
+    + _CYRILLIC
 )
 
 
@@ -55,19 +62,15 @@ class PaletteItem:
 
 
 # kind -> (libelle, symbole habituel)
+#
+# "wall" est la seule matiere terre/roche a poser : son apparence (herbe,
+# coin, terre enterree, bloc isole...) est deduite automatiquement des tuiles
+# voisines a chaque chargement (auto-tiling, cf. `world/obstacles.py`), donc
+# aucune variante n'apparait ici en tant que type separe a choisir a la main.
 _TERRAIN_META: dict[str, tuple[str, str]] = {
-    "wall": ("Terre", "T"),
-    "rock": ("Roche", "#"),
-    "rock_2": ("Roche fissuree", "%"),
+    "wall": ("Terre", "#"),
     "bedrock": ("Socle", "B"),
-    "grass": ("Herbe", "G"),
-    "grass_1": ("Herbe fleurie", "g"),
-    "grass_corner": ("Herbe coin gauche", "("),
-    "grass_corner_right": ("Herbe coin droit", ")"),
-    "dirt_top": ("Terre sommet", "-"),
-    "dirt_corner": ("Terre coin gauche", "["),
-    "dirt_corner_right": ("Terre coin droit", "]"),
-    "dirt_floating_block": ("Bloc flottant", "F"),
+    settings.TILE_KIND_ICE: ("Glace", "~"),
     "spike": ("Piques (sol)", "^"),
     "spike_up": ("Piques (plafond)", "v"),
 }
@@ -75,7 +78,7 @@ _TERRAIN_META: dict[str, tuple[str, str]] = {
 # kind -> (libelle, categorie, symbole habituel, couleur)
 _GAMEPLAY_META: dict[str, tuple[str, str, str, tuple[int, int, int]]] = {
     "player_spawn": ("Depart du joueur", CATEGORY_GAMEPLAY, "P", settings.COLOR_PLAYER),
-    "checkpoint": ("Checkpoint", CATEGORY_GAMEPLAY, "C", settings.COLOR_CHECKPOINT),
+    "checkpoint": ("Statue de respawn", CATEGORY_GAMEPLAY, "C", settings.COLOR_CHECKPOINT),
     "door": ("Porte de sortie", CATEGORY_GAMEPLAY, "D", settings.COLOR_DOOR_LOCKED),
     "key": ("Cle", CATEGORY_GAMEPLAY, "K", settings.COLOR_KEY),
     "soul_orb": ("Ame (bille bleue)", CATEGORY_GAMEPLAY, "o", settings.COLOR_SOUL_ORB),
@@ -84,6 +87,8 @@ _GAMEPLAY_META: dict[str, tuple[str, str, str, tuple[int, int, int]]] = {
     "zombie": ("Zombie", CATEGORY_GAMEPLAY, "z", settings.COLOR_ZOMBIE),
     "spectral_wall": ("Mur spectral", CATEGORY_GAMEPLAY, "=", settings.COLOR_SPECTRAL_WALL),
     "torch": ("Torche", CATEGORY_DECOR, "i", settings.COLOR_TORCH_FLAME),
+    "flamethrower": ("Lance-flammes", CATEGORY_HAZARD, "f", settings.COLOR_FLAMETHROWER),
+    settings.TILE_KIND_FALLING: ("Bloc tombant", CATEGORY_HAZARD, "F", settings.COLOR_FALLING_BLOCK),
 }
 
 _CATEGORY_ORDER = (
@@ -114,13 +119,19 @@ def _terrain_items(taken: set[str]) -> list[PaletteItem]:
         symbol = free_symbol(taken, wanted or kind.upper())
         taken.add(symbol)
         hazard = spec.role == "spike"
+        if spec.role == "spike":
+            color = settings.COLOR_SPIKE
+        elif spec.role == "ice":
+            color = settings.COLOR_ICE
+        else:
+            color = settings.COLOR_WALL
         items.append(
             PaletteItem(
                 kind=kind,
                 label=label,
                 category=CATEGORY_HAZARD if hazard else CATEGORY_TERRAIN,
                 symbol=symbol,
-                color=settings.COLOR_SPIKE if hazard else settings.COLOR_WALL,
+                color=color,
                 spec=spec,
             )
         )
@@ -129,11 +140,16 @@ def _terrain_items(taken: set[str]) -> list[PaletteItem]:
 
 def _gameplay_items(taken: set[str]) -> list[PaletteItem]:
     items: list[PaletteItem] = []
+    decor_meta = decoration_palette_meta()
     for kind in gameplay_kinds():
-        label, category, wanted, color = _GAMEPLAY_META.get(
-            kind,
-            (kind.replace("_", " "), CATEGORY_GAMEPLAY, "", settings.COLOR_EDITOR_UNKNOWN),
-        )
+        if kind in decor_meta:
+            label, wanted, color = decor_meta[kind]
+            category = CATEGORY_DECOR
+        else:
+            label, category, wanted, color = _GAMEPLAY_META.get(
+                kind,
+                (kind.replace("_", " "), CATEGORY_GAMEPLAY, "", settings.COLOR_EDITOR_UNKNOWN),
+            )
         symbol = free_symbol(taken, wanted or kind.upper())
         taken.add(symbol)
         items.append(

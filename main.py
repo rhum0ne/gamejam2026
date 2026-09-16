@@ -14,10 +14,19 @@ activation manuelle de `.venv` n'est necessaire.
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+# Sous WSL/WSLg, ALSA n'a pas de vraie carte son et openal-soft spamme la
+# console d'erreurs "ALSA lib ... cannot find card '0'" au demarrage. Un
+# serveur PulseAudio est fourni par WSLg (PULSE_SERVER) : on le priorise pour
+# eviter la sonde ALSA foireuse. Ne s'applique pas quand le systeme n'expose
+# pas PULSE_SERVER (Linux "nature", macOS), pour ne rien changer ailleurs.
+if os.environ.get("PULSE_SERVER") and not os.environ.get("ALSOFT_DRIVERS"):
+    os.environ["ALSOFT_DRIVERS"] = "pulse"
 
 try:
     import arcade
@@ -27,9 +36,9 @@ except ModuleNotFoundError:
     raise SystemExit(bootstrap_and_relaunch(__file__, sys.argv[1:]))
 
 import settings  # noqa: E402
-from src.systems.game_state import GameSession, PlayView  # noqa: E402
+from src.systems.game_state import GameSession  # noqa: E402
 from src.ui.display import center_on_primary_screen  # noqa: E402
-from src.ui.menus import TitleView  # noqa: E402
+from src.ui.menus import TitleView, open_play_view  # noqa: E402
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -83,7 +92,10 @@ def main(argv: list[str] | None = None) -> None:
 
     session = GameSession(level_index=args.level)
     window = create_window(fullscreen=args.fullscreen)
-    window.show_view(PlayView(session) if args.play else TitleView(session))
+    if args.play:
+        open_play_view(window, session)
+    else:
+        window.show_view(TitleView(session))
     arcade.run()
 
 

@@ -30,6 +30,7 @@ import math
 
 import arcade
 
+import settings
 from src.entities.glow import draw_glow
 from src.entities.item import Item, make_soul_orb
 
@@ -60,6 +61,9 @@ class EnemyBase(arcade.Sprite):
         self.attack_vertical_range = 0.0
         self.facing = -1
         self._is_dying = False
+        self._knockback_x = 0.0
+        self._hit_flash_left = 0.0
+        self._base_color = self.color
         self._glow_time = (center_x * 0.13 + center_y * 0.07) % math.tau
         # Regle par `_configure_glow` ; des zeros par defaut donnent un halo invisible
         # plutot qu'une erreur si une sous-classe oublie de le configurer.
@@ -102,25 +106,41 @@ class EnemyBase(arcade.Sprite):
     def is_dying(self) -> bool:
         return self._is_dying
 
-    def take_damage(self, amount: int = 1) -> Item | None:
+    def take_damage(self, amount: int = 1, knockback: float = 0.0) -> Item | None:
         """Applique des degats. Retourne la bille bleue si l'ennemi meurt.
 
         Un ennemi deja en train de mourir ignore tout nouveau coup : sans ca,
         un joueur qui reste sur sa tete pendant l'animation de mort ferait
         apparaitre plusieurs billes bleues pour un seul ennemi.
+        `knockback` est un elan horizontal (frappe du joueur) : applique ici
+        puis conserve par `_on_death` via `change_x` pour que le cadavre
+        anime parte dans le sens du coup.
         """
         if amount <= 0:
             raise ValueError("amount doit etre strictement positif")
         if self._is_dying:
             return None
         self.hit_points -= amount
+        self._apply_hit_feedback(knockback)
         if self.hit_points > 0:
             self._on_hurt()
             return None
         orb = make_soul_orb(self.center_x, self.center_y)
         self._is_dying = True
         self._on_death()
+        self.change_x = knockback
         return orb
+
+    def _apply_hit_feedback(self, knockback: float) -> None:
+        self._knockback_x = knockback
+        self.change_x = knockback
+        self._hit_flash_left = settings.ENEMY_HIT_FLASH_DURATION
+        self.color = settings.COLOR_ENEMY_HIT
+
+    def _tick_hit_feedback(self, delta_time: float) -> None:
+        """Fait disparaitre le flash blanc du coup (a appeler dans `update`)."""
+        self._hit_flash_left = max(0.0, self._hit_flash_left - delta_time)
+        self.color = settings.COLOR_ENEMY_HIT if self._hit_flash_left > 0.0 else self._base_color
 
     def _on_hurt(self) -> None:
         """Coup encaisse sans mourir (ennemi a plusieurs PV, ex. `Zombie`).
@@ -146,6 +166,9 @@ class EnemyBase(arcade.Sprite):
         self.change_y = 0.0
         self.hit_points = self.max_hit_points
         self._is_dying = False
+        self._knockback_x = 0.0
+        self._hit_flash_left = 0.0
+        self.color = self._base_color
         self._on_respawn()
 
     def _on_respawn(self) -> None:

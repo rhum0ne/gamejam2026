@@ -6,14 +6,21 @@ Format attendu (voir `assets/maps/level_1_tuto.json`) :
       "name": "Le Puits Mortel",
       "hint": "texte affiche dans le HUD",
       "tile_size": 32,
-      "legend": {"#": "rock", "G": "grass", "^": "spike", ...},
-      "rows": ["####...", "#.P..G#", ...]
+      "legend": {"#": "wall", "^": "spike", "B": "bedrock", ...},
+      "rows": ["####...", "#.P....#", ...]
     }
 
 `rows` se lit de haut en bas : la premiere chaine est la ligne la plus haute de
 l'ecran. Chaque caractere est traduit via `legend` :
     - un type de gameplay (`door`, `key`, `player_spawn`, `spectral_wall`, ...) ;
-    - ou le nom d'un sprite de terrain (`rock`, `grass`, `spike`, `bedrock`, ...).
+    - ou le nom d'un sprite de terrain (`wall`, `spike`, `bedrock`, ...).
+
+`wall` est la seule matiere terre/roche : il suffit de dessiner sa forme dans
+`rows`, l'apparence (herbe en surface, coin, terre enterree, pilier, coin
+interieur...) est deduite de la grille entiere a chaque chargement
+(auto-tiling, cf. `world/obstacles.py` :: `compute_ground_cells`). Pas de
+symbole dedie a l'herbe : ne jamais en ajouter un, ce serait de nouveau au
+level designer de la placer a la main.
 
 Les plaques d'activation sont declarees a part, en coordonnees de grille
 (x = colonne, y = ligne depuis le haut, comme `rows`) :
@@ -33,8 +40,9 @@ Les plaques d'activation sont declarees a part, en coordonnees de grille
 
 `setBlock type=void` retire le bloc existant tant qu'un poids (joueur, cadavre,
 ennemi au sol ; un ennemi volant comme la chauve-souris ne pese pas, voir
-`EnemyBase.weighs_on_plates`) reste sur la plaque. `width` est optionnel (1
-tuile par defaut).
+`EnemyBase.weighs_on_plates`) reste sur la plaque. `"invert": true` inverse
+le sens : les blocs sont caches au chargement et n'apparaissent que tant que
+la plaque est enfoncee. `width` est optionnel (1 tuile par defaut).
 Une pique de plafond (`spike_up`) tombe si le bloc au-dessus d'elle disparait :
 elle tue au contact puis se brise au sol.
 
@@ -43,6 +51,17 @@ l'enregistrer dans `TILE_SPECS` (`src/world/obstacles.py`), puis l'utiliser
 dans la legende de la carte.
 
 `torch` (symbole `i`) est un decor sans collision : placeholder + halo.
+Les autres decors (`chest`, `sign`, `crate`, `tombstone`, ...) viennent de
+`world/decorations.py` : chaque entree du catalogue a une fabrique generee
+automatiquement ci-dessous.
+`flamethrower` (symbole `f`) est un piege : buse sprite + jet shader. Les
+reglages (`range` en tuiles, `interval` en secondes, `dir` right/down/left/up)
+vivent dans le champ JSON `flamethrowers`, comme les plaques. L'ancien champ
+`facing` 1/-1 est encore lu.
+
+`falling_block` est une plateforme qui s'effondre : delay puis chute sans
+collision avec le terrain, puis respawn. Les delais vivent dans le champ
+JSON `falling_blocks` (`delay` et `respawn`, en secondes).
 """
 
 from __future__ import annotations
@@ -61,6 +80,9 @@ from src.entities.enemy import Enemy
 from src.entities.glow import glow_pass
 from src.entities.item import Item, ItemKind
 from src.entities.zombie import Zombie
+from src.world.decorations import Decoration, decoration_kinds
+from src.world.falling_block import FallingBlock, FallingSpec, parse_falling_specs
+from src.world.flamethrower import FlameSpec, Flamethrower, parse_flame_specs
 from src.world.mechanisms import (
     GatedTile,
     Mechanism,
@@ -69,14 +91,17 @@ from src.world.mechanisms import (
     plate_geometry,
 )
 from src.world.obstacles import (
+    SOLID_GROUND_KINDS,
     TILE_SPECS,
     Checkpoint,
     Door,
+    IceBlock,
     SpectralWall,
     Spike,
     TileSpec,
     Torch,
     Wall,
+    compute_ground_cells,
     tile_spec,
 )
 
@@ -103,6 +128,26 @@ def _render_chunk_list() -> arcade.SpriteList:
     )
 
 
+def _resolve_map_path(path: str | Path) -> Path:
+    map_path = Path(path)
+    if not map_path.is_absolute():
+        map_path = settings.MAPS_DIR / map_path
+    if not map_path.exists():
+        raise FileNotFoundError(f"carte introuvable : {map_path}")
+    return map_path
+
+
+def peek_level_info(path: str | Path) -> tuple[str, str]:
+    """Lit juste le nom et le sous-titre d'une carte (ecran de transition).
+
+    Evite de construire tout le niveau (sprites, collisions...) uniquement
+    pour afficher son titre avant le chargement reel.
+    """
+    with _resolve_map_path(path).open(encoding="utf-8") as stream:
+        data = json.load(stream)
+    return data.get("name", "Niveau sans nom"), data.get("subtitle", "")
+
+
 class LevelFormatError(ValueError):
     """Carte invalide : symbole inconnu, lignes de longueurs differentes, etc."""
 
@@ -116,6 +161,9 @@ class Level:
     tile_size: int
     columns: int
     rows: int
+    # Nom court affiche en plus du titre sur l'ecran de transition (ex: le nom
+    # d'ambiance du niveau, une fois que `name` se limitera a "Niveau N").
+    subtitle: str = ""
     walls: arcade.SpriteList = field(default_factory=_static_sprite_list)
     spectral_walls: arcade.SpriteList = field(default_factory=_static_sprite_list)
     hazards: arcade.SpriteList = field(default_factory=_static_sprite_list)
@@ -128,7 +176,10 @@ class Level:
     falling_spikes: arcade.SpriteList = field(default_factory=_dynamic_sprite_list)
     mechanisms: list[Mechanism] = field(default_factory=list)
     torches: arcade.SpriteList = field(default_factory=_dynamic_sprite_list)
+    decorations: arcade.SpriteList = field(default_factory=_dynamic_sprite_list)
     torch_stems: arcade.SpriteList = field(default_factory=_dynamic_sprite_list)
+    flamethrowers: arcade.SpriteList = field(default_factory=_dynamic_sprite_list)
+    falling_blocks: arcade.SpriteList = field(default_factory=_dynamic_sprite_list)
     player_spawn: tuple[float, float] = (0.0, 0.0)
     checkpoint_spawn: tuple[float, float] = (0.0, 0.0)
     tiles_drawn: int = 0
@@ -141,6 +192,9 @@ class Level:
     _wall_chunks: list[arcade.SpriteList] = field(default_factory=list)
     _spectral_chunks: list[arcade.SpriteList] = field(default_factory=list)
     _hazard_chunks: list[arcade.SpriteList] = field(default_factory=list)
+    _flame_specs: dict[tuple[int, int], FlameSpec] = field(default_factory=dict)
+    _falling_specs: dict[tuple[int, int], FallingSpec] = field(default_factory=dict)
+    _falling_gone: list[FallingBlock] = field(default_factory=list)
 
     # ------------------------------------------------------------------ #
     # Chargement
@@ -153,10 +207,19 @@ class Level:
         if not map_path.is_absolute():
             map_path = settings.MAPS_DIR / map_path
         if not map_path.exists():
-            raise FileNotFoundError(f"carte introuvable : {map_path}")
-        with map_path.open(encoding="utf-8") as stream:
-            data = json.load(stream)
-        return cls.from_dict(data)
+            raise LevelFormatError(f"carte introuvable : {map_path.name}")
+        try:
+            with map_path.open(encoding="utf-8") as stream:
+                data = json.load(stream)
+        except json.JSONDecodeError as error:
+            raise LevelFormatError(
+                f"JSON invalide dans {map_path.name} : {error.msg} "
+                f"(ligne {error.lineno}, colonne {error.colno})"
+            ) from error
+        try:
+            return cls.from_dict(data)
+        except LevelFormatError as error:
+            raise LevelFormatError(f"{map_path.name} : {error}") from error
 
     @classmethod
     def from_dict(cls, data: dict) -> "Level":
@@ -176,12 +239,22 @@ class Level:
             tile_size=tile_size,
             columns=widths.pop(),
             rows=len(grid),
+            subtitle=data.get("subtitle", ""),
         )
+        try:
+            level._flame_specs = parse_flame_specs(data.get("flamethrowers"))
+        except ValueError as error:
+            raise LevelFormatError(str(error)) from error
+        try:
+            level._falling_specs = parse_falling_specs(data.get("falling_blocks"))
+        except ValueError as error:
+            raise LevelFormatError(str(error)) from error
         level._build(grid, legend)
         level._bind_activators(data.get("activators", []))
         return level
 
     def _build(self, grid: list[str], legend: dict[str, str]) -> None:
+        ground_cells = _compute_ground_cells(grid, legend)
         for row_index, row in enumerate(grid):
             for column_index, symbol in enumerate(row):
                 kind = legend.get(symbol, "vide" if symbol == "." else None)
@@ -192,6 +265,13 @@ class Level:
                     )
                 if kind == "vide":
                     continue
+                if kind == "spectral_wall":
+                    # Seule fabrique qui a besoin de sa case d'auto-tiling :
+                    # le mur spectral se peint comme un mur normal.
+                    center = self.tile_center(column_index, row_index, len(grid))
+                    cell = ground_cells.get((column_index, row_index))
+                    _add_spectral_wall(self, *center, cell)
+                    continue
                 factory = _FACTORIES.get(kind)
                 if factory is not None:
                     center = self.tile_center(column_index, row_index, len(grid))
@@ -199,7 +279,8 @@ class Level:
                     continue
                 if kind in TILE_SPECS:
                     center = self.tile_center(column_index, row_index, len(grid))
-                    _add_terrain(self, *center, kind)
+                    cell = ground_cells.get((column_index, row_index))
+                    _add_terrain(self, *center, kind, cell)
                     continue
                 raise LevelFormatError(f"type de tuile inconnu : '{kind}'")
         self._bind_initial_checkpoint()
@@ -225,13 +306,17 @@ class Level:
             return
         self.checkpoint_spawn = self.player_spawn
 
-    def activate_checkpoint(self, checkpoint: Checkpoint) -> None:
-        """Allume `checkpoint` et eteint les autres totems."""
+    def activate_checkpoint(self, checkpoint: Checkpoint, *, ignite: bool = True) -> None:
+        """Allume `checkpoint` et eteint les autres statues.
+
+        `ignite=False` pose le halo de repos sans le flash d'allumage
+        (spawn initial du niveau).
+        """
         if checkpoint.active:
             return
         for other in self.checkpoints:
             if other is checkpoint:
-                other.activate()
+                other.activate(ignite=ignite)
             else:
                 other.deactivate()
 
@@ -282,14 +367,22 @@ class Level:
             plate=plate,
             targets=targets,
             chunks=group_gated_chunks(targets, self.tile_size),
+            inverted=_parse_invert(raw),
         )
 
     def _gated_tile_at(self, column: int, row: int) -> GatedTile:
         self._ensure_in_bounds(column, row)
         sprite = self._terrain_at(column, row)
         if sprite is None:
+            occupant = self._non_gated_occupant(column, row)
+            detail = (
+                f"occupe par {occupant}"
+                if occupant is not None
+                else "case vide"
+            )
             raise LevelFormatError(
-                f"setBlock void : aucun bloc a ({column}, {row})"
+                f"setBlock void : aucun bloc a ({column}, {row}) "
+                f"({detail} ; la plaque ne retire que murs, murs spectraux et piques)"
             )
         lists = tuple(sprite.sprite_lists)
         if not lists:
@@ -304,6 +397,25 @@ class Level:
             for sprite in sprite_list:
                 if abs(sprite.center_x - x) < 1 and abs(sprite.center_y - y) < 1:
                     return sprite
+        return None
+
+    def _non_gated_occupant(self, column: int, row: int) -> str | None:
+        """Nom de ce qui occupe la case, si ce n'est pas un bloc void-able."""
+        x, y = self.tile_center(column, row, self.rows)
+        named = (
+            ("un decor", self.decorations),
+            ("une torche", self.torches),
+            ("un lance-flammes", self.flamethrowers),
+            ("un bloc tombant", self.falling_blocks),
+            ("une porte", self.doors),
+            ("un checkpoint", self.checkpoints),
+            ("un objet", self.items),
+            ("un ennemi", self.enemies),
+        )
+        for label, sprites in named:
+            for sprite in sprites:
+                if abs(sprite.center_x - x) < 1 and abs(sprite.center_y - y) < 1:
+                    return label
         return None
 
     def _ensure_in_bounds(self, column: int, row: int) -> None:
@@ -339,7 +451,7 @@ class Level:
     @property
     def solid_platforms(self) -> list[arcade.SpriteList]:
         """Listes solides pour le corps physique (murs + murs spectraux + cadavres)."""
-        return [self.walls, self.spectral_walls, self.corpses]
+        return [self.walls, self.spectral_walls, self.corpses, self.falling_blocks]
 
     def spawn_corpse(self, corpse: arcade.Sprite) -> None:
         """Ajoute un cadavre au niveau (il devient solide immediatement)."""
@@ -359,9 +471,9 @@ class Level:
         if tight_cull and view_rect is not None and self._wall_chunks:
             self.walls_drawn, self.tiles_drawn = self._draw_visible_terrain(view_rect)
         else:
-            self.walls.draw()
-            self.spectral_walls.draw()
-            self.hazards.draw()
+            self.walls.draw(pixelated=True)
+            self.spectral_walls.draw(pixelated=True)
+            self.hazards.draw(pixelated=True)
             if view_rect is not None and self._wall_chunks:
                 self.walls_drawn, self.tiles_drawn = self._count_visible_terrain(view_rect)
             else:
@@ -370,23 +482,31 @@ class Level:
                     len(self.walls) + len(self.spectral_walls) + len(self.hazards)
                 )
                 self.chunks_drawn = self.chunks_total
-        self.plates.draw()
-        self.falling_spikes.draw()
+        self.plates.draw(pixelated=True)
+        self.falling_spikes.draw(pixelated=True)
+        with glow_pass():
+            for checkpoint in self.checkpoints:
+                checkpoint.draw_glow()
         self.checkpoints.draw(pixelated=True)
-        for checkpoint in self.checkpoints:
-            checkpoint.draw_fx()
-        self.doors.draw()
+        self.doors.draw(pixelated=True)
+        self.decorations.draw(pixelated=True)
         with glow_pass():
             self._queue_torch_glows(view_rect, layer="bloom")
-        self.torch_stems.draw()
-        self.torches.draw()
+        self.torch_stems.draw(pixelated=True)
+        self.torches.draw(pixelated=True)
         with glow_pass():
             self._queue_torch_glows(view_rect, layer="core")
             for item in self.items:
                 item.draw_fx()
-        self.corpses.draw()
-        self.items.draw()
-        self.enemies.draw()
+        for checkpoint in self.checkpoints:
+            checkpoint.draw_fx()
+        for thrower in self.flamethrowers:
+            thrower.draw_flame()
+        self.flamethrowers.draw(pixelated=True)
+        self.falling_blocks.draw(pixelated=True)
+        self.corpses.draw(pixelated=True)
+        self.items.draw(pixelated=True)
+        self.enemies.draw(pixelated=True)
 
     def draw_static_hit_boxes(self, color, view_rect=None) -> None:
         """Contours de collision du terrain, culles comme le rendu."""
@@ -440,6 +560,8 @@ class Level:
             self.falling_spikes,
             self.torches,
             self.torch_stems,
+            self.flamethrowers,
+            self.falling_blocks,
         ):
             sprite_list.initialize()
         for chunks in (self._wall_chunks, self._spectral_chunks, self._hazard_chunks):
@@ -515,12 +637,12 @@ class Level:
         for walls, spectral, hazards in self._iter_visible_chunk_triple(view_rect):
             self.chunks_drawn += 1
             if walls:
-                walls.draw()
+                walls.draw(pixelated=True)
                 walls_drawn += len(walls)
             if spectral:
-                spectral.draw()
+                spectral.draw(pixelated=True)
             if hazards:
-                hazards.draw()
+                hazards.draw(pixelated=True)
             tiles_drawn += len(walls) + len(spectral) + len(hazards)
         return walls_drawn, tiles_drawn
 
@@ -546,6 +668,8 @@ class Level:
         """
         self.corpses.update(delta_time)
         self.checkpoints.update(delta_time)
+        self.flamethrowers.update(delta_time)
+        self._update_falling_blocks(delta_time)
         for item in self.items:
             item.update(delta_time, attractor=attractor)
 
@@ -577,22 +701,85 @@ class Level:
             if spike.fall(ground):
                 spike.remove_from_sprite_lists()
 
+    def _update_falling_blocks(self, delta_time: float) -> None:
+        """Delay, chute libre (sans collision terrain), puis respawn a l'origine."""
+        for block in list(self.falling_blocks):
+            block.tick(delta_time)
+            if block.went_off_screen():
+                block.hide_for_respawn()
+                self._falling_gone.append(block)
+        still_gone: list[FallingBlock] = []
+        for block in self._falling_gone:
+            block.tick(delta_time)
+            if not block.ready_to_respawn():
+                still_gone.append(block)
+                continue
+            block.respawn_now()
+            self.falling_blocks.append(block)
+        self._falling_gone = still_gone
+
 
 # --------------------------------------------------------------------------- #
 # Fabriques de tuiles
 # --------------------------------------------------------------------------- #
 
 
-def _add_terrain(level: Level, x: float, y: float, kind: str) -> None:
+def _add_terrain(
+    level: Level, x: float, y: float, kind: str, cell: GroundCell | None = None
+) -> None:
     spec: TileSpec = tile_spec(kind)
     if spec.role == "spike":
         level.hazards.append(Spike(x, y, size=level.tile_size, tile=kind))
         return
-    level.walls.append(Wall(x, y, size=level.tile_size, tile=kind))
+    if spec.role == "ice":
+        level.walls.append(IceBlock(x, y, size=level.tile_size, tile=kind))
+        return
+    level.walls.append(Wall(x, y, size=level.tile_size, tile=kind, cell=cell))
 
 
-def _add_spectral_wall(level: Level, x: float, y: float) -> None:
-    level.spectral_walls.append(SpectralWall(x, y, size=level.tile_size))
+def _compute_ground_cells(
+    grid: list[str], legend: dict[str, str]
+) -> dict[tuple[int, int], GroundCell]:
+    """Resout la case `SHEET_GROUND` des tuiles auto-tilees de `grid` (cf. `compute_ground_cells`).
+
+    Une case hors carte compte comme solide : les tuiles de bordure se peignent
+    comme du terrain enterre (pas d'herbe au plafond du monde ni de pilier
+    flottant sur les bords), la camera ne montrant jamais l'exterieur.
+    Les murs spectraux sont auto-tiles comme des murs normaux : c'est ce qui
+    les rend indetectables pour le corps physique.
+    """
+
+    def out_of_bounds(column: int, row: int) -> bool:
+        return row < 0 or row >= len(grid) or column < 0 or column >= len(grid[row])
+
+    def kind_at(column: int, row: int) -> str | None:
+        if out_of_bounds(column, row):
+            return None
+        symbol = grid[row][column]
+        return legend.get(symbol, "vide" if symbol == "." else None)
+
+    def is_solid(column: int, row: int) -> bool:
+        if out_of_bounds(column, row):
+            return True
+        return kind_at(column, row) in SOLID_GROUND_KINDS
+
+    def is_autotile(column: int, row: int) -> bool:
+        kind = kind_at(column, row)
+        if kind == "spectral_wall":
+            return True
+        spec = TILE_SPECS.get(kind) if kind is not None else None
+        return spec is not None and spec.autotile
+
+    return compute_ground_cells(
+        len(grid[0]) if grid else 0,
+        len(grid),
+        is_solid=is_solid,
+        is_autotile=is_autotile,
+    )
+
+
+def _add_spectral_wall(level: Level, x: float, y: float, cell: GroundCell | None = None) -> None:
+    level.spectral_walls.append(SpectralWall(x, y, size=level.tile_size, cell=cell))
 
 
 def _add_door(level: Level, x: float, y: float) -> None:
@@ -642,6 +829,16 @@ def _as_int(value: object, name: str) -> int:
     return value
 
 
+def _parse_invert(raw: dict) -> bool:
+    """Lit `invert` (defaut False). Absent = plaque qui cache a l'activation."""
+    if "invert" not in raw:
+        return False
+    value = raw["invert"]
+    if not isinstance(value, bool):
+        raise LevelFormatError("invert doit etre un booleen")
+    return value
+
+
 def _parse_set_blocks(activate: object) -> list[tuple[int, int]]:
     """Extrait les tuiles `setBlock type=void` d'un objet `activate`."""
     if activate is None:
@@ -668,10 +865,50 @@ def _parse_set_blocks(activate: object) -> list[tuple[int, int]]:
             )
         tiles.append((_coord(entry, "x"), _coord(entry, "y")))
     return tiles
+
+
 def _add_torch(level: Level, x: float, y: float) -> None:
     torch = Torch(x, y)
     level.torches.append(torch)
     level.torch_stems.append(torch.stem)
+
+
+def _add_flamethrower(level: Level, x: float, y: float) -> None:
+    column = int(x // level.tile_size)
+    row = level.rows - 1 - int(y // level.tile_size)
+    spec = level._flame_specs.get((column, row))
+    thrower = Flamethrower(
+        x,
+        y,
+        size=level.tile_size,
+        range_tiles=spec.range_tiles if spec is not None else settings.FLAMETHROWER_RANGE,
+        interval=spec.interval if spec is not None else settings.FLAMETHROWER_INTERVAL,
+        direction=spec.direction if spec is not None else "right",
+    )
+    level.flamethrowers.append(thrower)
+
+
+def _add_falling_block(level: Level, x: float, y: float) -> None:
+    column = int(x // level.tile_size)
+    row = level.rows - 1 - int(y // level.tile_size)
+    spec = level._falling_specs.get((column, row))
+    block = FallingBlock(
+        x,
+        y,
+        size=level.tile_size,
+        delay=spec.delay if spec is not None else settings.FALLING_BLOCK_DELAY,
+        respawn=spec.respawn if spec is not None else settings.FALLING_BLOCK_RESPAWN,
+    )
+    level.falling_blocks.append(block)
+
+
+def _decoration_factory(kind: str) -> Callable[[Level, float, float], None]:
+    """Fabrique une fonction `_add_xxx` pour un type de `decorations.DECORATION_SPECS`."""
+
+    def _add_decoration(level: Level, x: float, y: float) -> None:
+        level.decorations.append(Decoration(kind, x, y))
+
+    return _add_decoration
 
 
 _FACTORIES: dict[str, Callable[[Level, float, float], None]] = {
@@ -685,6 +922,9 @@ _FACTORIES: dict[str, Callable[[Level, float, float], None]] = {
     "bat": _add_bat,
     "zombie": _add_zombie,
     "torch": _add_torch,
+    **{kind: _decoration_factory(kind) for kind in decoration_kinds()},
+    "flamethrower": _add_flamethrower,
+    settings.TILE_KIND_FALLING: _add_falling_block,
 }
 
 

@@ -140,8 +140,13 @@ class Zombie(EnemyBase):
     # Initialisation
     # ------------------------------------------------------------------ #
 
-    def bind_world(self, platforms: Sequence[arcade.SpriteList]) -> None:
+    def bind_world(
+        self,
+        platforms: Sequence[arcade.SpriteList],
+        hazards: arcade.SpriteList | None = None,
+    ) -> None:
         """Branche la physique sur les plateformes ; elles bloquent aussi la vue."""
+        del hazards  # meme signature que `Enemy.bind_world` (le zombie contourne les piques autrement)
         self._platforms = list(platforms)
         self._physics = arcade.PhysicsEnginePlatformer(
             self,
@@ -239,6 +244,7 @@ class Zombie(EnemyBase):
         **kwargs,
     ) -> None:
         delta_time = max(0.0, delta_time)
+        self._tick_hit_feedback(delta_time)
         self._attack_cooldown = max(0.0, self._attack_cooldown - delta_time)
         self._sight_timer = max(0.0, self._sight_timer - delta_time)
         self._grounded = self._physics is None or self._physics.can_jump()

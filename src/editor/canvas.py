@@ -6,6 +6,12 @@ vivent dans une seule `SpriteList` (donc un seul appel GPU) mise a jour
 cellule par cellule quand le document change : peindre ne reconstruit jamais
 la grille entiere, seul un redimensionnement le fait.
 
+Le terrain auto-tile ("wall", cf. `world/obstacles.py`) est recalcule avec la
+meme fonction que le jeu (`compute_ground_cells`), sur la carte entiere a
+chaque modification, pour que l'apercu dans l'editeur soit exactement ce que
+le joueur verra (y compris les coins interieurs, qui peuvent changer
+l'apparence d'une case a 2 cases de distance de celle qu'on vient de peindre).
+
 La camera a son propre viewport (la zone hors panneau lateral et barre d'etat)
 et son propre `scissor`, pour que le decor ne bave pas sous l'interface.
 """
@@ -20,8 +26,13 @@ from arcade.types import LBWH, Rect
 
 import settings
 from src.editor import icons, palette
+from src.editor.activators import Activator, cluster_targets
 from src.editor.document import CellState, EditorDocument
 from src.editor.selection import Block, GridRect
+from src.world.decorations import DECORATION_SPECS, Decoration
+from src.world.obstacles import SOLID_GROUND_KINDS, GroundCell, compute_ground_cells, terrain_texture
+from src.world.flamethrower import aim_sprite, flame_aabb, flame_start
+from src.world.mechanisms import plate_geometry
 
 
 class GridCanvas:
@@ -35,6 +46,7 @@ class GridCanvas:
         self._camera.scissor = self._viewport
         self._sprites = arcade.SpriteList()
         self._by_cell: dict[tuple[int, int], arcade.Sprite] = {}
+        self._ground_cells: dict[tuple[int, int], GroundCell] = {}
         self._layout_version = document.layout_version
         self.rebuild()
         self._camera.zoom = settings.EDITOR_ZOOM_DEFAULT
@@ -114,11 +126,15 @@ class GridCanvas:
     # ------------------------------------------------------------------ #
 
     def pan_by(self, dx: float, dy: float) -> None:
-        """Deplace la camera de `dx`, `dy` pixels ecran."""
+        """Deplace la carte avec la souris : le decor suit le curseur."""
         zoom = self._camera.zoom
         position_x, position_y = self._camera.position
         self._camera.position = (position_x - dx / zoom, position_y - dy / zoom)
         self._clamp_position()
+
+    def nudge(self, dx: float, dy: float) -> None:
+        """Deplace la camera dans le sens des touches (Z haut, D droite)."""
+        self.pan_by(-dx, -dy)
 
     def zoom_by(self, factor: float, screen_x: float, screen_y: float) -> None:
         """Zoome en gardant le point ecran donne sur la meme cellule."""
@@ -169,13 +185,25 @@ class GridCanvas:
             return
         if not states:
             return
+        changed = {(column, row) for column, row, _ in states}
+        previous_ground_cells = self._ground_cells
+        self._ground_cells = self._compute_ground_cells()
         for column, row, kind in states:
             self._set_cell(column, row, kind)
+        moved = previous_ground_cells.keys() ^ self._ground_cells.keys()
+        moved.update(
+            key
+            for key in previous_ground_cells.keys() & self._ground_cells.keys()
+            if previous_ground_cells[key] != self._ground_cells[key]
+        )
+        for column, row in moved - changed:
+            self._set_cell(column, row, self.document.cell(column, row))
 
     def rebuild(self) -> None:
         """Reconstruit toute la grille (chargement, redimensionnement, undo de forme)."""
         self._sprites.clear()
         self._by_cell.clear()
+        self._ground_cells = self._compute_ground_cells()
         document = self.document
         for row in range(document.rows):
             for column in range(document.columns):
@@ -190,11 +218,58 @@ class GridCanvas:
             existing.remove_from_sprite_lists()
         if not kind:
             return
-        texture = icons.cell_texture(palette.item(kind), self.document.tile_size)
+        item = palette.item(kind)
         center_x, center_y = self.cell_center(column, row)
-        sprite = arcade.Sprite(texture, center_x=center_x, center_y=center_y)
+        if kind in DECORATION_SPECS:
+            sprite = Decoration(kind, center_x, center_y)
+        elif item.spec is not None and item.spec.autotile:
+            texture = terrain_texture(
+                item.spec,
+                self.document.tile_size,
+                cell=self._ground_cells.get((column, row)),
+            )
+            sprite = arcade.Sprite(texture, center_x=center_x, center_y=center_y)
+            if item.spec.tint is not None:
+                sprite.color = item.spec.tint
+        else:
+            texture = icons.cell_texture(item, self.document.tile_size)
+            sprite = arcade.Sprite(texture, center_x=center_x, center_y=center_y)
+            if item.spec is not None and item.spec.tint is not None:
+                sprite.color = item.spec.tint
+        if kind == "flamethrower":
+            spec = self.document.flame_at(column, row)
+            if spec is not None:
+                aim_sprite(sprite, spec.direction)
         self._sprites.append(sprite)
         self._by_cell[(column, row)] = sprite
+
+    def _compute_ground_cells(self) -> dict[tuple[int, int], GroundCell]:
+        """Resout la case `SHEET_GROUND` de toute la grille (cf. `obstacles.compute_ground_cells`).
+
+        Recalculee sur toute la carte a chaque modification (pas seulement les
+        4 voisines directes) : les coins interieurs regardent jusqu'a 2 cases
+        plus loin (la voisine de leur propre voisine), donc une seule tuile
+        modifiee peut changer l'apparence de cases non adjacentes.
+        """
+        document = self.document
+
+        def is_solid(column: int, row: int) -> bool:
+            # Hors carte = solide, comme en jeu (`level._compute_ground_cells`) :
+            # pas d'herbe ni de pilier sur les tuiles de bordure.
+            if not document.inside(column, row):
+                return True
+            return document.cell(column, row) in SOLID_GROUND_KINDS
+
+        def is_autotile(column: int, row: int) -> bool:
+            kind = document.cell(column, row)
+            if not kind:
+                return False
+            spec = palette.item(kind).spec
+            return spec is not None and spec.autotile
+
+        return compute_ground_cells(
+            document.columns, document.rows, is_solid=is_solid, is_autotile=is_autotile
+        )
 
     # ------------------------------------------------------------------ #
     # Dessin
@@ -207,6 +282,9 @@ class GridCanvas:
         hover: tuple[int, int] | None = None,
         preview: GridRect | None = None,
         clipboard: Block | None = None,
+        activators: tuple[Activator, ...] = (),
+        selected_activator: int | None = None,
+        preview_plate: Activator | None = None,
     ) -> None:
         """Dessine le fond de carte, les cellules, la grille et les reperes."""
         self._camera.use()
@@ -219,6 +297,7 @@ class GridCanvas:
         arcade.draw_lrbt_rectangle_outline(
             0, self.world_width, 0, self.world_height, settings.COLOR_EDITOR_BOUNDS, 2
         )
+        self._draw_activators(activators, selected_activator, preview_plate)
         if selection is not None:
             self._draw_rect(selection, settings.COLOR_EDITOR_SELECTION, settings.COLOR_EDITOR_SELECTION_BORDER)
         if preview is not None:
@@ -226,10 +305,113 @@ class GridCanvas:
         if hover is not None and self.document.inside(*hover):
             cell = GridRect(hover[0], hover[1], hover[0], hover[1])
             self._draw_rect(cell, settings.COLOR_EDITOR_HOVER, settings.COLOR_EDITOR_ACCENT)
+            self._draw_flame_preview(*hover)
         if clipboard is not None and hover is not None:
             self._draw_rect(
                 clipboard.rect_at(*hover), settings.COLOR_EDITOR_PASTE, settings.COLOR_EDITOR_WARNING
             )
+
+    def _draw_activators(
+        self,
+        activators: tuple[Activator, ...],
+        selected_index: int | None,
+        preview: Activator | None,
+    ) -> None:
+        drawn = list(activators)
+        if preview is not None:
+            drawn.append(preview)
+        for index, activator in enumerate(drawn):
+            selected = index == selected_index or activator is preview
+            self._draw_plate(activator, selected)
+            self._draw_links(activator, selected)
+
+    def _draw_plate(self, activator: Activator, selected: bool) -> None:
+        if activator.inverted:
+            fill = settings.COLOR_EDITOR_PLATE_SELECTED if selected else settings.COLOR_EDITOR_PLATE_INVERT
+            border = (
+                settings.COLOR_EDITOR_WARNING if selected else settings.COLOR_EDITOR_PLATE_INVERT_BORDER
+            )
+            lamp = settings.COLOR_EDITOR_PLATE_INVERT_BORDER
+        else:
+            fill = settings.COLOR_EDITOR_PLATE_SELECTED if selected else settings.COLOR_EDITOR_PLATE
+            border = (
+                settings.COLOR_EDITOR_WARNING if selected else settings.COLOR_EDITOR_PLATE_BORDER
+            )
+            lamp = (
+                settings.COLOR_PRESSURE_PLATE_PRESSED if selected else settings.COLOR_PRESSURE_PLATE
+            )
+        rect = GridRect(
+            activator.column,
+            activator.row,
+            activator.last_column,
+            activator.row,
+        )
+        self._draw_rect(rect, fill, border)
+        center_x, center_y, width, height = plate_geometry(
+            activator.column,
+            activator.row,
+            activator.width,
+            self.document.tile_size,
+            self.document.rows,
+        )
+        arcade.draw_lrbt_rectangle_filled(
+            center_x - width / 2,
+            center_x + width / 2,
+            center_y - height / 2,
+            center_y + height / 2,
+            lamp,
+        )
+
+    def _draw_links(self, activator: Activator, selected: bool) -> None:
+        if not activator.targets:
+            return
+        tile = self.document.tile_size
+        start_x, start_y, _width, _height = plate_geometry(
+            activator.column,
+            activator.row,
+            activator.width,
+            tile,
+            self.document.rows,
+        )
+        color = (
+            settings.COLOR_EDITOR_WARNING if selected else settings.COLOR_EDITOR_LINK
+        )
+        if activator.inverted:
+            gated_fill = settings.COLOR_EDITOR_GATED_INVERT
+            gated_border = settings.COLOR_EDITOR_GATED_INVERT_BORDER
+            if not selected:
+                color = settings.COLOR_EDITOR_LINK_INVERT
+        else:
+            gated_fill = settings.COLOR_EDITOR_GATED
+            gated_border = settings.COLOR_EDITOR_GATED_BORDER
+        for column, row in activator.targets:
+            self._draw_rect(GridRect(column, row, column, row), gated_fill, gated_border)
+        for center_column, center_row in cluster_targets(activator.targets):
+            target_x = center_column * tile + tile / 2
+            target_y = (self.document.rows - 1 - center_row) * tile + tile / 2
+            arcade.draw_line(start_x, start_y, target_x, target_y, color, 2)
+
+    def _draw_flame_preview(self, column: int, row: int) -> None:
+        """Montre la portee du lance-flammes sous le curseur."""
+        spec = self.document.flame_at(column, row)
+        if spec is None:
+            return
+        tile = self.document.tile_size
+        center_x, center_y = self.cell_center(column, row)
+        origin_x, origin_y = flame_start(center_x, center_y, spec.direction, tile)
+        left, right, bottom, top = flame_aabb(
+            origin_x,
+            origin_y,
+            spec.direction,
+            spec.range_tiles * tile,
+            settings.FLAMETHROWER_HEIGHT,
+        )
+        arcade.draw_lrbt_rectangle_filled(
+            left, right, bottom, top, settings.COLOR_FLAME_PREVIEW
+        )
+        arcade.draw_lrbt_rectangle_outline(
+            left, right, bottom, top, settings.COLOR_FLAMETHROWER, 1
+        )
 
     def _draw_rect(
         self,

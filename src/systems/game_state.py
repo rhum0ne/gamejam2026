@@ -30,7 +30,7 @@ import settings
 from src.entities.batch_draw import SpriteOverlay
 from src.entities.corpse import Corpse
 from src.entities.ghost import Ghost
-from src.entities.glow import glow_pass
+from src.entities.glow import draw_glow, glow_pass
 from src.entities.item import ItemKind
 from src.entities.player import Player
 from src.systems import collisions
@@ -194,6 +194,7 @@ _JUMP_KEYS = frozenset({arcade.key.SPACE}) | _UP_KEYS
 _PROJECT_KEY = arcade.key.F
 _RETURN_KEY = arcade.key.R
 _DASH_KEYS = frozenset({arcade.key.LSHIFT, arcade.key.RSHIFT})
+_ATTACK_BUTTON = arcade.MOUSE_BUTTON_LEFT
 
 
 class PlayView(arcade.View):
@@ -219,6 +220,8 @@ class PlayView(arcade.View):
         self._emergence: GhostEmergence | None = None
         self._rebirth: PlayerRebirth | None = None
         self.held_keys: set[int] = set()
+        self._hitstop_timer = 0.0
+        self._attack_sound = self._load_attack_sound()
         self._delivered_items: list[ItemKind] = []
         bind_play_view(self)
         self._fps = 0.0
@@ -239,11 +242,14 @@ class PlayView(arcade.View):
         self.player.respawn_point = self.level.checkpoint_spawn
         for checkpoint in self.level.checkpoints:
             if checkpoint.spawn_point == self.level.checkpoint_spawn:
-                self.level.activate_checkpoint(checkpoint)
+                self.level.activate_checkpoint(checkpoint, ignite=False)
                 break
-        self.player.bind_world(self.level.static_walls, platforms=[self.level.corpses])
+        self.player.bind_world(
+            self.level.static_walls,
+            platforms=[self.level.corpses, self.level.falling_blocks],
+        )
         for enemy in self.level.enemies:
-            enemy.bind_world(self._static_platforms())
+            enemy.bind_world(self._static_platforms(), hazards=self.level.hazards)
         self.level.prepare_draw()
         self.camera.set_bounds(self.level.width, self.level.height)
         self._enemy_spawns = [(enemy, enemy.center_x, enemy.center_y) for enemy in self.level.enemies]
@@ -253,9 +259,31 @@ class PlayView(arcade.View):
         self._emergence = None
         self._rebirth = None
         self.held_keys.clear()
+        self._hitstop_timer = 0.0
         self._delivered_items.clear()
         self.machine = GameStateMachine(GameState.MENU)
         self.machine.to(GameState.PLAYING)
+
+    @staticmethod
+    def _load_attack_sound() -> arcade.Sound | None:
+        """Charge le son du coup, avec un son Arcade de secours si besoin."""
+        custom_path = settings.SOUNDS_DIR / settings.ATTACK_SOUND_FILENAME
+        sound_path = custom_path if custom_path.exists() else settings.DEFAULT_ATTACK_SOUND
+        try:
+            return arcade.load_sound(sound_path)
+        except (FileNotFoundError, OSError):
+            return None
+
+    def _play_attack_sound_events(self) -> None:
+        """Joue le son au moment d'impact visuel, combo compris."""
+        if self._attack_sound is None:
+            self.player.consume_attack_sound_events()
+            return
+        for stage in self.player.consume_attack_sound_events():
+            # Le finisher est legerement plus present, tout en reutilisant le
+            # son fourni par le projet plutot que de forcer un nouvel asset.
+            volume = settings.ATTACK_SOUND_VOLUME * (1.0 + 0.06 * (stage - 1))
+            arcade.play_sound(self._attack_sound, volume=min(1.0, volume))
 
     @property
     def ghost_emerging(self) -> bool:
@@ -350,6 +378,78 @@ class PlayView(arcade.View):
                 warp *= emergence.fog_strength
         self.camera.present(warp)
 
+    def _draw_player_attack(self) -> None:
+        """Ajoute les effets autour de la frame d'attaque du joueur."""
+        if self.player.attack_bounds is None:
+            return
+        stage = self.player.attack_stage
+        stage_index = max(
+            0,
+            min(
+                stage - 1,
+                len(settings.PLAYER_ATTACK_DRAW_WIDTHS) - 1,
+                len(settings.PLAYER_ATTACK_SWEEP_ANGLES) - 1,
+            ),
+        )
+        progress = min(1.0, self.player.attack_progress * 1.18)
+        direction = 1 if self.player.facing >= 0 else -1
+        body_width = abs(self.player.width)
+        draw_width = settings.PLAYER_ATTACK_DRAW_WIDTHS[stage_index]
+        effect_x = self.player.center_x + direction * (body_width * 0.25 + draw_width * 0.36)
+        effect_y = self.player.center_y + math.sin(progress * math.pi) * (3.0 + stage_index * 1.5)
+        start_angle, end_angle = settings.PLAYER_ATTACK_SWEEP_ANGLES[stage_index]
+
+        # L'arme elle-meme vient maintenant de player_attack_1.png, dessinee
+        # avec le corps. Ces halos et streaks soulignent son mouvement.
+        with glow_pass():
+            glow_alpha = 46 + stage_index * 12
+            draw_glow(
+                effect_x,
+                effect_y,
+                draw_width * 1.15,
+                body_width * 0.85,
+                settings.COLOR_SWORD_GLOW,
+                glow_alpha,
+            )
+            if stage_index == settings.PLAYER_ATTACK_COMBO_COUNT - 1:
+                draw_glow(
+                    effect_x,
+                    effect_y,
+                    draw_width * 1.55,
+                    body_width * 1.35,
+                    settings.COLOR_ATTACK_GLOW,
+                    int(34 * math.sin(progress * math.pi)),
+                )
+
+        # Trois streaks retardes donnent une vraie sensation de balayage sans
+        # redessiner une deuxieme epee par-dessus le sprite du joueur.
+        for trail_index in range(settings.PLAYER_ATTACK_TRAIL_COUNT):
+            trail_progress = max(
+                0.0,
+                progress - settings.PLAYER_ATTACK_TRAIL_DELAY * (trail_index + 1),
+            )
+            trail_eased = trail_progress * trail_progress * (3.0 - 2.0 * trail_progress)
+            trail_angle = direction * (
+                start_angle + (end_angle - start_angle) * trail_eased
+            )
+            trail_radians = math.radians(trail_angle)
+            trail_center_x = effect_x - direction * trail_index * 4.0
+            trail_center_y = self.player.center_y + math.sin(
+                trail_progress * math.pi
+            ) * (3.0 + stage_index * 1.5)
+            trail_half_length = draw_width * (0.34 - trail_index * 0.045)
+            delta_x = math.cos(trail_radians) * trail_half_length
+            delta_y = math.sin(trail_radians) * trail_half_length
+            trail_alpha = max(18, 100 - trail_index * 28 + stage_index * 10)
+            arcade.draw_line(
+                trail_center_x - delta_x,
+                trail_center_y - delta_y,
+                trail_center_x + delta_x,
+                trail_center_y + delta_y,
+                (*settings.COLOR_ATTACK_GLOW, trail_alpha),
+                2 if stage_index < 2 else 3,
+            )
+
     def _draw_hud_layer(self, fade: float = 1.0) -> None:
         self.hud.draw(self._hud_data(), fade=fade)
         if self._debug_enabled and fade > 0.05:
@@ -386,6 +486,11 @@ class PlayView(arcade.View):
         self.level.corpses.draw_hit_boxes(color)
         self.level.plates.draw_hit_boxes(color)
         self.level.falling_spikes.draw_hit_boxes(color)
+        for thrower in self.level.flamethrowers:
+            if thrower.is_lethal:
+                left, right, bottom, top = thrower.flame_bounds()
+                arcade.draw_lrbt_rectangle_outline(left, right, bottom, top, color, 1)
+        self.level.falling_blocks.draw_hit_boxes(color)
         if self.player.alive:
             self.player.draw_hit_box(color)
         if self.ghost is not None:
@@ -411,13 +516,7 @@ class PlayView(arcade.View):
         emergence.draw_fx()
 
     def _draw_ghost_layer(self, ghost: Ghost) -> None:
-        """Voile radial, auras toujours visibles, secrets dans le champ, fantome.
-
-        Les piques restent dans le rendu terrain, sous le voile : les redessiner
-        apres `ghost.reveals` les faisait popper opaques au bord du rayon.
-        """
-        with glow_pass():
-            self._draw_spike_glows()
+        """Voile radial, menaces rouges hors champ, secrets dans le champ, fantome."""
         revealed_walls: list[arcade.Sprite] = []
         for wall in self.level.spectral_walls:
             wall.set_revealed(ghost.reveals(wall))
@@ -429,7 +528,7 @@ class PlayView(arcade.View):
             for item in self.level.items:
                 if ghost.reveals(item):
                     item.draw_fx()
-            self._draw_enemy_glows()
+            self._draw_threat_glows()
             self._draw_mechanism_hints()
             ghost.draw_fx()
         revealed_actors: list[arcade.Sprite] = []
@@ -443,26 +542,25 @@ class PlayView(arcade.View):
         draw_pixel_sprite(ghost)
         self._draw_body_arrow(ghost)
 
-    def _draw_spike_glows(self) -> None:
-        """Halos de piques, sous le voile pour suivre le degrade de vision."""
-        view = self._terrain_cull_rect()
-        pad = settings.TILE_SIZE * settings.SPIKE_GHOST_GLOW_SCALE
+    def _draw_threat_glows(self) -> None:
+        """Piques et ennemis : meme halo rouge, au-dessus du voile, tout l'ecran."""
+        view = self.camera.cull_rect()
+        pad = settings.HAZARD_GHOST_GLOW_SIZE
         for spike in self.level.hazards:
             if _in_view(spike, view, pad):
                 spike.draw_ghost_glow(bind_blend=False)
         for spike in self.level.falling_spikes:
             if _in_view(spike, view, pad):
                 spike.draw_ghost_glow(bind_blend=False)
-
-    def _draw_enemy_glows(self) -> None:
-        """Halos d'ennemis, au-dessus du voile (lisibles hors du champ)."""
-        view = self.camera.cull_rect()
+        for thrower in self.level.flamethrowers:
+            if _in_view(thrower, view, pad):
+                thrower.draw_ghost_glow(bind_blend=False)
         for enemy in self.level.enemies:
             if _in_view(enemy, view, enemy.glow_radius):
                 enemy.draw_ghost_glow(bind_blend=False)
 
     def _draw_mechanism_hints(self) -> None:
-        """Auras silhouette et vrilles d'ame, visibles en projection."""
+        """Plaque lumineuse et vrille fantome vers les paquets, hors du voile."""
         now = time.perf_counter()
         view = self.camera.cull_rect()
         pad = settings.RENDER_CULL_PAD
@@ -522,9 +620,6 @@ class PlayView(arcade.View):
             ghost_duration=self.ghost.stats.duration if self.ghost is not None else settings.GHOST_DURATION,
             leash_ratio=self.ghost.leash_ratio if self.ghost is not None else 0.0,
             fps=self._fps if settings.DEBUG_SHOW_FPS and not self._debug_enabled else None,
-            dash_ratio=self.player.dash_ratio if show_body_hud else None,
-            dash_ready=self.player.dash_ready,
-            dash_flash=self.player.dash_flash,
             controls=(
                 "ghost"
                 if state is GameState.GHOST and not self.ghost_emerging
@@ -532,6 +627,11 @@ class PlayView(arcade.View):
             ),
             pressed_keys=frozenset(self.held_keys),
             show_esprit=self.session.knows_esprit,
+            attack_cooldown_left=self.player.attack_cooldown_left
+            if state is GameState.PLAYING
+            else None,
+            attack_stage=self.player.attack_stage if state is GameState.PLAYING else 0,
+            attack_queued=self.player.attack_queued if state is GameState.PLAYING else False,
         )
 
     def _hint_for(self, state: GameState) -> str:
@@ -600,6 +700,9 @@ class PlayView(arcade.View):
     # ------------------------------------------------------------------ #
 
     def on_update(self, delta_time: float) -> None:
+        if self._hitstop_timer > 0.0:
+            self._hitstop_timer = max(0.0, self._hitstop_timer - delta_time)
+            return
         state = self.machine.state
         attractor: arcade.Sprite | None = None
         if state is GameState.PLAYING and self.player.alive:
@@ -621,6 +724,7 @@ class PlayView(arcade.View):
         elif state is GameState.RESPAWNING:
             self._update_respawning(delta_time)
         self._resolve_falling_spike_kills()
+        self._resolve_flame_kills()
         self.atmosphere.update(delta_time)
 
     def _mechanism_weights(self) -> list[arcade.Sprite]:
@@ -643,11 +747,57 @@ class PlayView(arcade.View):
 
     def _update_playing(self, delta_time: float) -> None:
         self.player.walk(self._horizontal_input())
+        self._eject_from_respawned_blocks()
         self.player.update(delta_time)
+        self._play_attack_sound_events()
+        self._resolve_falling_blocks()
+        self._block_hazard_sides()
         self._update_enemies(delta_time)
         self._resolve_player_collisions()
         if self.machine.state is GameState.PLAYING:
-            self.camera.follow(self.player, delta_time, zoom=settings.CAMERA_ZOOM_PLAYER)
+            if self.player.is_dashing:
+                self.camera.follow(
+                    self.player,
+                    delta_time,
+                    zoom=settings.CAMERA_ZOOM_DASH,
+                    zoom_time=settings.CAMERA_DASH_ZOOM_TIME,
+                )
+            else:
+                self.camera.follow(self.player, delta_time, zoom=settings.CAMERA_ZOOM_PLAYER)
+
+    def _eject_from_respawned_blocks(self) -> None:
+        """Avant la physique : un bloc qui reapparait dans le joueur le pousse vers le haut."""
+        player = self.player
+        if not player.alive:
+            return
+        for block in self.level.falling_blocks:
+            if not block.just_respawned:
+                continue
+            block.just_respawned = False
+            block.eject_upward(player)
+
+    def _resolve_falling_blocks(self) -> None:
+        """Arme le bloc sous les pieds et colle le joueur pendant la chute."""
+        player = self.player
+        if not player.alive:
+            return
+        for block in self.level.falling_blocks:
+            if block.supports(player):
+                block.arm()
+            block.stick_rider(player)
+
+    def _block_hazard_sides(self) -> None:
+        """Une pique bloque comme un mur si on la touche par le cote (cf Mario)."""
+        player = self.player
+        for hazard in collisions.hazard_side_contacts(player, self.level):
+            overlap = min(player.right, hazard.right) - max(player.left, hazard.left)
+            if overlap <= 0:
+                continue
+            if player.center_x < hazard.center_x:
+                player.center_x -= overlap
+            else:
+                player.center_x += overlap
+            player.change_x = 0.0
 
     def _update_ghost(self, delta_time: float) -> None:
         ghost = self.ghost
@@ -737,12 +887,25 @@ class PlayView(arcade.View):
     # ------------------------------------------------------------------ #
 
     def _resolve_player_collisions(self) -> None:
-        stomped = collisions.enemy_stomped_by_player(self.player, self.level.enemies)
-        if stomped is not None:
-            orb = stomped.take_damage()
+        for enemy in collisions.enemies_hit_by_player_attack(self.player, self.level.enemies):
+            self.player.mark_attack_hit(enemy)
+            orb = enemy.take_damage(
+                self.player.attack_damage,
+                knockback=(
+                    settings.ENEMY_KNOCKBACK_SPEED
+                    * self.player.facing
+                    * self.player.attack_knockback_scale
+                ),
+            )
             if orb is not None:
                 self.level.spawn_item(orb)
-            self.player.change_y = settings.PLAYER_JUMP_SPEED * 0.6
+            stage = max(1, self.player.attack_stage)
+            hitstop = settings.COMBAT_HITSTOP_DURATION * (1.0 + 0.25 * (stage - 1))
+            self._hitstop_timer = max(self._hitstop_timer, hitstop)
+            self.camera.shake(
+                settings.COMBAT_HIT_SHAKE_AMPLITUDE * (1.0 + 0.35 * (stage - 1)),
+                settings.COMBAT_HIT_SHAKE_DURATION,
+            )
 
         for item in collisions.items_reachable_by_body(self.player, self.level):
             self._collect(item.kind)
@@ -761,6 +924,8 @@ class PlayView(arcade.View):
 
         if collisions.player_hits_hazard(self.player, self.level):
             emit_player_death(self, "spikes")
+        elif collisions.player_hits_flame(self.player, self.level.flamethrowers):
+            emit_player_death(self, "flame")
         elif collisions.player_out_of_bounds(self.player, self.level):
             emit_player_death(self, "out_of_bounds")
         elif collisions.enemy_striking_player(self.player, self.level.enemies) is not None:
@@ -770,6 +935,15 @@ class PlayView(arcade.View):
         """Une pique en chute tue les ennemis (le joueur est deja gere via les hazards)."""
         for enemy in collisions.enemies_hit_by_falling_spikes(
             self.level.enemies, self.level.falling_spikes
+        ):
+            orb = enemy.take_damage()
+            if orb is not None:
+                self.level.spawn_item(orb)
+
+    def _resolve_flame_kills(self) -> None:
+        """Le jet tue les ennemis (le joueur est gere dans les collisions corps)."""
+        for enemy in collisions.enemies_hit_by_flame(
+            self.level.enemies, self.level.flamethrowers
         ):
             orb = enemy.take_damage()
             if orb is not None:
@@ -853,6 +1027,16 @@ class PlayView(arcade.View):
                 return
             if self.ghost is not None:
                 self.ghost.start_vanish()
+
+    def on_mouse_press(self, x: float, y: float, button: int, modifiers: int) -> None:
+        """Oriente le corps vers le curseur et lance une attaque au clic gauche."""
+        if button != _ATTACK_BUTTON or self.machine.state is not GameState.PLAYING:
+            return
+        camera_x, _ = self.camera.world.position
+        world_x = x + camera_x - self.camera.world.viewport_width / 2
+        if abs(world_x - self.player.center_x) > 2:
+            self.player.facing = 1 if world_x > self.player.center_x else -1
+        self.player.attack()
 
     def on_key_release(self, symbol: int, modifiers: int) -> None:
         self.held_keys.discard(symbol)

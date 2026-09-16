@@ -108,8 +108,12 @@ class Enemy(EnemyBase):
         self.attack_reach = settings.ENEMY_ATTACK_REACH
         self.attack_vertical_range = settings.ENEMY_ATTACK_VERTICAL_RANGE
         self._attack_cooldown = 0.0
+        self._base_color = self.color
+        self._hit_flash_left = 0.0
+        self._knockback_x = 0.0
         self._physics: arcade.PhysicsEnginePlatformer | None = None
         self._ground: arcade.SpriteList | None = None
+        self._hazards: arcade.SpriteList | None = None
         self._configure_glow(
             scale=settings.ENEMY_GHOST_GLOW_SCALE,
             alpha=settings.ENEMY_GHOST_GLOW_ALPHA,
@@ -125,14 +129,25 @@ class Enemy(EnemyBase):
     # Initialisation
     # ------------------------------------------------------------------ #
 
-    def bind_world(self, platforms: Sequence[arcade.SpriteList]) -> None:
-        """Branche la physique de l'ennemi sur les plateformes du niveau."""
+    def bind_world(
+        self,
+        platforms: Sequence[arcade.SpriteList],
+        hazards: arcade.SpriteList | None = None,
+    ) -> None:
+        """Branche la physique de l'ennemi sur les plateformes du niveau.
+
+        `hazards` (piques au sol) ne fait pas partie des murs de collision :
+        un ennemi doit marcher dessus sans etre repousse comme par un mur,
+        mais ne doit pas non plus les traverser en marchant (voir
+        `_hazard_ahead`) - seul un joueur (ou une pique en chute) en meurt.
+        """
         self._physics = arcade.PhysicsEnginePlatformer(
             self,
             walls=list(platforms),
             gravity_constant=settings.GRAVITY,
         )
         self._ground = platforms[0] if platforms else None
+        self._hazards = hazards
 
     # ------------------------------------------------------------------ #
     # Attaque
@@ -163,6 +178,9 @@ class Enemy(EnemyBase):
     def _on_respawn(self) -> None:
         self.state = EnemyState.PATROL
         self._attack_cooldown = 0.0
+        self._hit_flash_left = 0.0
+        self._knockback_x = 0.0
+        self.color = self._base_color
         self.facing = -1
         self._animator.play(self._idle)
         self.texture = self._animator.animation.textures[0]
@@ -180,10 +198,17 @@ class Enemy(EnemyBase):
         corpses: arcade.SpriteList | None = None,
         **kwargs,
     ) -> None:
+        self._tick_hit_feedback(delta_time)
         self._attack_cooldown = max(0.0, self._attack_cooldown - delta_time)
         if self.state is EnemyState.ATTACK and self._animator.finished:
             self._end_swing()
-        if self.state is EnemyState.ATTACK:
+        if self.state is EnemyState.DYING:
+            self.change_x = self._knockback_x
+            self._knockback_x *= settings.ENEMY_KNOCKBACK_FRICTION
+        elif self._hit_flash_left > 0.0:
+            self.change_x = self._knockback_x
+            self._knockback_x *= settings.ENEMY_KNOCKBACK_FRICTION
+        elif self.state is EnemyState.ATTACK:
             # Coup engage : l'ennemi reste immobile et ne se retourne pas tant
             # que l'animation n'est pas finie, ce qui laisse le joueur esquiver.
             self.change_x = 0.0
@@ -196,7 +221,6 @@ class Enemy(EnemyBase):
             else:
                 self._patrol()
         self._advance_animation(delta_time)
-        self._glow_time += max(0.0, delta_time)
         if self._physics is not None:
             self._physics.update()
         if self.state is EnemyState.DYING and self._animator.finished:
@@ -256,7 +280,7 @@ class Enemy(EnemyBase):
 
     def _patrol(self) -> None:
         self.state = EnemyState.PATROL
-        if self._blocked_ahead() or not self._floor_ahead():
+        if self._blocked_ahead() or self._hazard_ahead() or not self._floor_ahead():
             self.facing = -self.facing
         self.change_x = self.facing * settings.ENEMY_SPEED
 
@@ -277,7 +301,7 @@ class Enemy(EnemyBase):
         """
         direction = 1 if target_x > self.center_x else -1
         self.facing = direction
-        if self._blocked_ahead() or not self._floor_ahead():
+        if self._blocked_ahead() or self._hazard_ahead() or not self._floor_ahead():
             self.change_x = 0.0
             return
         self.change_x = direction * settings.ENEMY_SPEED
@@ -287,6 +311,18 @@ class Enemy(EnemyBase):
             return False
         probe = (self.center_x + self.facing * (settings.ENEMY_WIDTH / 2 + 4), self.center_y)
         return bool(arcade.get_sprites_at_point(probe, self._ground))
+
+    def _hazard_ahead(self) -> bool:
+        """Une pique au sol juste devant ? Un ennemi n'y marche pas dessus.
+
+        Ne tue pas l'ennemi (seule une pique en chute le fait, voir
+        `enemies_hit_by_falling_spikes`) : il fait juste demi-tour, comme
+        devant un mur ou le bord d'une plateforme.
+        """
+        if not self._hazards:
+            return False
+        probe = (self.center_x + self.facing * (settings.ENEMY_WIDTH / 2 + 4), self.bottom + 4)
+        return bool(arcade.get_sprites_at_point(probe, self._hazards))
 
     def _floor_ahead(self) -> bool:
         if self._ground is None:
