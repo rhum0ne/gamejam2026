@@ -92,6 +92,7 @@ SPRITE_GHOST_DISAPPEAR = "gost_disappears"
 SPRITE_KEY = "key"
 SPRITE_CHECKPOINT = "Check_Point"
 SPRITE_CHECKPOINT_ACTIVE = "Check_Point_actif"
+SPRITE_FLAMETHROWER = "Lance_flamme"
 # PNG natif 32 px, agrandi x2 en nearest-neighbor (pas de flou).
 CHECKPOINT_SIZE = TILE_SIZE * 2
 SPRITE_FRAME_SIZE = 32
@@ -118,6 +119,22 @@ TORCH_GLOW_INNER_ALPHA = 245
 TORCH_FLICKER = 0.16
 TORCH_FLICKER_SPEED = 8.4
 TORCH_FLICKER_SPEED_FAST = 19.0
+
+# Lance-flammes : le jet est un quad shader, pas des particules.
+FLAMETHROWER_RANGE = 4  # portee par defaut, en tuiles
+FLAMETHROWER_RANGE_MIN = 1
+FLAMETHROWER_RANGE_MAX = 12
+FLAMETHROWER_INTERVAL = 2.0  # periode complete allume/eteint, en secondes
+FLAMETHROWER_INTERVAL_MIN = 0.4
+FLAMETHROWER_INTERVAL_MAX = 8.0
+FLAMETHROWER_INTERVAL_STEP = 0.2
+FLAMETHROWER_ON_RATIO = 0.42  # fraction de la periode ou le jet est allume
+FLAMETHROWER_RAMP = 0.14  # fondu d'allumage / extinction
+FLAMETHROWER_LETHAL_INTENSITY = 0.28
+FLAMETHROWER_HEIGHT = 42.0  # epaisseur du jet, en pixels (braises, pas un laser)
+FLAMETHROWER_NOZZLE = 0.5  # depart du jet, en fraction de tuile depuis le centre (face avant)
+FLAMETHROWER_VISUAL_PAD = 32.0  # marge du quad (pointe et cotes) pour la calotte et le halo
+FLAMETHROWER_ALWAYS_ON = 0.0  # intervalle 0 = jet permanent
 
 
 # --------------------------------------------------------------------------- #
@@ -429,6 +446,8 @@ COLOR_BACKGROUND = (18, 18, 28)
 COLOR_WALL = (72, 76, 96)
 COLOR_SPECTRAL_WALL = (96, 84, 140)
 COLOR_SPIKE = (196, 84, 84)
+COLOR_FLAMETHROWER = (232, 96, 36)
+COLOR_FLAME_PREVIEW = (255, 120, 40, 55)
 COLOR_HAZARD_GLOW = (255, 12, 4)
 COLOR_HAZARD_GLOW_CORE = (255, 72, 36)
 COLOR_DOOR_LOCKED = (150, 110, 46)

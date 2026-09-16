@@ -24,8 +24,39 @@ from src.entities.enemy import Enemy, EnemyState
 from src.entities.ghost import Ghost
 from src.entities.item import Item
 from src.entities.player import Player
+from src.world.flamethrower import Flamethrower
 from src.world.level import Level
 from src.world.obstacles import Checkpoint, Door
+
+
+def player_hits_flame(player: Player, throwers: arcade.SpriteList) -> bool:
+    """Le corps physique est-il dans un jet de lance-flammes allume ?"""
+    if not player.alive:
+        return False
+    for thrower in throwers:
+        if isinstance(thrower, Flamethrower) and thrower.overlaps(player):
+            return True
+    return False
+
+
+def enemies_hit_by_flame(
+    enemies: arcade.SpriteList,
+    throwers: arcade.SpriteList,
+) -> list[Enemy]:
+    """Ennemis (non mourants) touches par un jet allume."""
+    hit: list[Enemy] = []
+    seen: set[int] = set()
+    for thrower in throwers:
+        if not isinstance(thrower, Flamethrower) or not thrower.is_lethal:
+            continue
+        for enemy in enemies:
+            ident = id(enemy)
+            if ident in seen or enemy.state is EnemyState.DYING:
+                continue
+            if thrower.overlaps(enemy):
+                seen.add(ident)
+                hit.append(enemy)
+    return hit
 
 
 def _vertical_contact(player: Player, hazard: arcade.Sprite) -> bool:

@@ -386,6 +386,10 @@ class PlayView(arcade.View):
         self.level.corpses.draw_hit_boxes(color)
         self.level.plates.draw_hit_boxes(color)
         self.level.falling_spikes.draw_hit_boxes(color)
+        for thrower in self.level.flamethrowers:
+            if thrower.is_lethal:
+                left, right, bottom, top = thrower.flame_bounds()
+                arcade.draw_lrbt_rectangle_outline(left, right, bottom, top, color, 1)
         if self.player.alive:
             self.player.draw_hit_box(color)
         if self.ghost is not None:
@@ -447,6 +451,9 @@ class PlayView(arcade.View):
         for spike in self.level.falling_spikes:
             if _in_view(spike, view, pad):
                 spike.draw_ghost_glow(bind_blend=False)
+        for thrower in self.level.flamethrowers:
+            if _in_view(thrower, view, pad):
+                thrower.draw_ghost_glow(bind_blend=False)
         for enemy in self.level.enemies:
             if _in_view(enemy, view, pad):
                 enemy.draw_ghost_glow(bind_blend=False)
@@ -608,6 +615,7 @@ class PlayView(arcade.View):
         elif state is GameState.RESPAWNING:
             self._update_respawning(delta_time)
         self._resolve_falling_spike_kills()
+        self._resolve_flame_kills()
         self.atmosphere.update(delta_time)
 
     def _mechanism_weights(self) -> list[arcade.Sprite]:
@@ -761,6 +769,8 @@ class PlayView(arcade.View):
 
         if collisions.player_hits_hazard(self.player, self.level):
             emit_player_death(self, "spikes")
+        elif collisions.player_hits_flame(self.player, self.level.flamethrowers):
+            emit_player_death(self, "flame")
         elif collisions.player_out_of_bounds(self.player, self.level):
             emit_player_death(self, "out_of_bounds")
         elif collisions.enemy_striking_player(self.player, self.level.enemies) is not None:
@@ -770,6 +780,15 @@ class PlayView(arcade.View):
         """Une pique en chute tue les ennemis (le joueur est deja gere via les hazards)."""
         for enemy in collisions.enemies_hit_by_falling_spikes(
             self.level.enemies, self.level.falling_spikes
+        ):
+            orb = enemy.take_damage()
+            if orb is not None:
+                self.level.spawn_item(orb)
+
+    def _resolve_flame_kills(self) -> None:
+        """Le jet tue les ennemis (le joueur est gere dans les collisions corps)."""
+        for enemy in collisions.enemies_hit_by_flame(
+            self.level.enemies, self.level.flamethrowers
         ):
             orb = enemy.take_damage()
             if orb is not None:

@@ -82,6 +82,7 @@ _GAMEPLAY_META: dict[str, tuple[str, str, str, tuple[int, int, int]]] = {
     "enemy": ("Ennemi", CATEGORY_GAMEPLAY, "E", settings.COLOR_ENEMY),
     "spectral_wall": ("Mur spectral", CATEGORY_GAMEPLAY, "=", settings.COLOR_SPECTRAL_WALL),
     "torch": ("Torche", CATEGORY_DECOR, "i", settings.COLOR_TORCH_FLAME),
+    "flamethrower": ("Lance-flammes", CATEGORY_HAZARD, "f", settings.COLOR_FLAMETHROWER),
 }
 
 _CATEGORY_ORDER = (

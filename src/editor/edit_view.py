@@ -19,6 +19,15 @@ from src.editor.overlay import HelpOverlay, StatusBar, StatusData, TextPrompt
 from src.editor.panel import PalettePanel
 from src.editor.selection import Block, GridRect
 from src.ui.display import handle_display_key, use_default_camera
+from src.world.flamethrower import DIRECTION_ARROW, DIRECTION_LABEL
+
+# 9/0 : rangee du haut (KEY_*) et pave (NUM_*). CCEDILLA/AGRAVE = 9/0 AZERTY sans Shift.
+_FLAME_INTERVAL_SHORTER = frozenset(
+    {arcade.key.KEY_9, arcade.key.NUM_9, getattr(arcade.key, "CCEDILLA", 231)}
+)
+_FLAME_INTERVAL_LONGER = frozenset(
+    {arcade.key.KEY_0, arcade.key.NUM_0, getattr(arcade.key, "AGRAVE", 224)}
+)
 
 
 class Tool(Enum):
@@ -191,6 +200,14 @@ class EditView(arcade.View):
         if self.clipboard is not None:
             clipboard = f"{self.clipboard.width}x{self.clipboard.height}"
         element = palette.item(self.kind).label if self.kind else "vide"
+        if self.hover is not None and self.document.inside(*self.hover):
+            flame = self.document.flame_at(*self.hover)
+            if flame is not None:
+                arrow = DIRECTION_ARROW[flame.direction]
+                element = (
+                    f"Lance-flammes {arrow} portee {flame.range_tiles} "
+                    f"int {flame.interval:.1f}s"
+                )
         plates = f"{len(self.document.activators)}"
         if self._link_index is not None and 0 <= self._link_index < len(self.document.activators):
             chosen = self.document.activators[self._link_index]
@@ -444,6 +461,8 @@ class EditView(arcade.View):
         if symbol == arcade.key.BRACKETRIGHT:
             self._cycle_kind(1)
             return
+        if self._tune_flamethrower(symbol):
+            return
         if symbol in (arcade.key.EQUAL, arcade.key.PLUS, arcade.key.NUM_ADD):
             self.canvas.zoom_by(settings.EDITOR_ZOOM_STEP, *self._mouse)
             return
@@ -480,6 +499,43 @@ class EditView(arcade.View):
             return
         index = (kinds.index(self.kind) + step) % len(kinds)
         self._select_kind(kinds[index])
+
+    def _tune_flamethrower(self, symbol: int) -> bool:
+        """Regle portee / intervalle / orientation du lance-flammes sous le curseur."""
+        if self.hover is None or not self.document.inside(*self.hover):
+            return False
+        if self.document.cell(*self.hover) != "flamethrower":
+            return False
+        range_delta = 0
+        interval_delta = 0.0
+        rotate = False
+        if symbol == arcade.key.PERIOD:
+            range_delta = 1
+        elif symbol == arcade.key.COMMA:
+            range_delta = -1
+        elif symbol in _FLAME_INTERVAL_LONGER:
+            interval_delta = settings.FLAMETHROWER_INTERVAL_STEP
+        elif symbol in _FLAME_INTERVAL_SHORTER:
+            interval_delta = -settings.FLAMETHROWER_INTERVAL_STEP
+        elif symbol == arcade.key.H:
+            rotate = True
+        else:
+            return False
+        spec = self.document.adjust_flame(
+            *self.hover,
+            range_delta=range_delta,
+            interval_delta=interval_delta,
+            rotate=rotate,
+        )
+        if spec is None:
+            return True
+        self.canvas.sync(((*self.hover, "flamethrower"),))
+        facing = DIRECTION_LABEL[spec.direction]
+        self.notify(
+            f"lance-flammes : portee {spec.range_tiles}  "
+            f"intervalle {spec.interval:.1f}s  {facing}"
+        )
+        return True
 
     # ------------------------------------------------------------------ #
     # Actions
