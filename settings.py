@@ -127,6 +127,12 @@ TORCH_FLICKER_SPEED_FAST = 19.0
 GRAVITY = 1.0
 SPIKE_FALL_GRAVITY = GRAVITY
 SPIKE_FALL_MAX_SPEED = 14.0
+# Largeur de la hitbox des piques, en fraction de la tuile. Le sprite est un
+# triangle : plein a la base, tres etroit pres de la pointe. Une hitbox pleine
+# largeur tue au moindre effleurement lateral, la ou le sprite est encore
+# presque vide (cote du triangle). Reste un rectangle (cf. commentaire de
+# module) mais plus etroit, centre sur la tuile.
+SPIKE_HITBOX_WIDTH_RATIO = 0.6
 # Halo des piques en mode fantome (visible a travers le voile).
 SPIKE_GHOST_GLOW_SCALE = 3.4
 SPIKE_GHOST_GLOW_ALPHA = 110
@@ -136,6 +142,14 @@ SPIKE_GHOST_GLOW_PULSE = 0.14
 SPIKE_GHOST_GLOW_PULSE_SPEED = 3.2
 PLAYER_WIDTH = SPRITE_FRAME_SIZE
 PLAYER_HEIGHT = SPRITE_FRAME_SIZE
+# Largeur de hitbox (physique), plus etroite que PLAYER_WIDTH : le moteur ne
+# fait tomber le joueur qu'une fois la hitbox entiere passee du bord (les 2
+# "pieds" dans le vide) ; la caler sur toute la largeur des epaules (~18 px)
+# laisse pendre la moitie du sprite au-dessus du vide avant de tomber. Mesure
+# des pieds au sol sur player_idle/walk.png (dernieres lignes de la frame,
+# pose de repos) : x=[10,22] sur 32 (largeur ~13 px).
+# La hauteur reste PLAYER_HEIGHT (le saut/la gravite n'y touchent pas).
+PLAYER_HITBOX_WIDTH = 14
 PLAYER_GRAVITY = 0.40  # gravite de montee maintenue (le moteur l'applique toujours)
 PLAYER_SPEED = 5.5
 # NSMB DS : impulsion nette, puis arc lent (~0.45 s au pic, ~4.5 tuiles).
