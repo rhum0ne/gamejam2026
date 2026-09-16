@@ -9,8 +9,8 @@ La palette n'est pas ecrite a la main : elle est deduite des registres du jeu.
 **Ajouter une tuile ou un element ne demande donc aucune modification ici** :
 il apparait automatiquement dans la palette, avec un libelle deduit de son nom
 et un symbole de legende pioche dans `_SYMBOL_POOL`. Les tables `_TERRAIN_META`
-et `_GAMEPLAY_META` ne servent qu'a soigner l'affichage (libelle francais,
-categorie, symbole habituel, couleur du placeholder).
+et `_GAMEPLAY_META` soignent l'affichage du terrain / gameplay ; les decors
+prennent libelle et symbole dans `decorations.decoration_palette_meta`.
 """
 
 from __future__ import annotations
@@ -18,6 +18,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 import settings
+from src.world.decorations import decoration_palette_meta
 from src.world.level import gameplay_kinds
 from src.world.obstacles import TILE_SPECS, TileSpec
 
@@ -31,10 +32,13 @@ CATEGORY_DECOR = "Decor"
 CATEGORY_UNKNOWN = "Inconnu"
 
 # Symboles disponibles pour un type sans symbole habituel. Ni le point (vide),
-# ni l'espace : le premier est reserve, le second est illisible dans le JSON.
+# ni l'espace, ni les quotes (le JSON de carte les echappe mal). L'alphabet
+# grec sert de rab quand les ASCII sont pris (beaucoup de decors).
+_GREEK = "αβγδεζηθικλμνξοπρστυφχψωΑΒΓΔΕΖΗΘΙΚΛΜΝΞΟΠΡΣΤΥΦΧΨΩ"
 _SYMBOL_POOL = (
-    "#TBG=^voPCDKEijklmnpqrstuwxyzabcefhABFHJLMNOQRSUVWXYZ0123456789"
-    "()[]{}<>-+*/\\|!$%&@;:?~"
+    "dI#TBG=^voPCDKEijklmnpqrstuwxyzabcefhABFHJLMNOQRSUVWXYZ0123456789"
+    "()[]{}<>-+*/\\|!$%&@;:?~,_'`"
+    + _GREEK
 )
 
 
@@ -77,9 +81,6 @@ _GAMEPLAY_META: dict[str, tuple[str, str, str, tuple[int, int, int]]] = {
     "enemy": ("Ennemi", CATEGORY_GAMEPLAY, "E", settings.COLOR_ENEMY),
     "spectral_wall": ("Mur spectral", CATEGORY_GAMEPLAY, "=", settings.COLOR_SPECTRAL_WALL),
     "torch": ("Torche", CATEGORY_DECOR, "i", settings.COLOR_TORCH_FLAME),
-    "chest": ("Coffre", CATEGORY_DECOR, "c", (150, 110, 60)),
-    "sign": ("Panneau", CATEGORY_DECOR, "p", (120, 96, 64)),
-    "lamp": ("Lampe", CATEGORY_DECOR, "l", (255, 196, 96)),
 }
 
 _CATEGORY_ORDER = (
@@ -125,11 +126,16 @@ def _terrain_items(taken: set[str]) -> list[PaletteItem]:
 
 def _gameplay_items(taken: set[str]) -> list[PaletteItem]:
     items: list[PaletteItem] = []
+    decor_meta = decoration_palette_meta()
     for kind in gameplay_kinds():
-        label, category, wanted, color = _GAMEPLAY_META.get(
-            kind,
-            (kind.replace("_", " "), CATEGORY_GAMEPLAY, "", settings.COLOR_EDITOR_UNKNOWN),
-        )
+        if kind in decor_meta:
+            label, wanted, color = decor_meta[kind]
+            category = CATEGORY_DECOR
+        else:
+            label, category, wanted, color = _GAMEPLAY_META.get(
+                kind,
+                (kind.replace("_", " "), CATEGORY_GAMEPLAY, "", settings.COLOR_EDITOR_UNKNOWN),
+            )
         symbol = free_symbol(taken, wanted or kind.upper())
         taken.add(symbol)
         items.append(

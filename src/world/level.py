@@ -48,8 +48,9 @@ l'enregistrer dans `TILE_SPECS` (`src/world/obstacles.py`), puis l'utiliser
 dans la legende de la carte.
 
 `torch` (symbole `i`) est un decor sans collision : placeholder + halo.
-`chest`, `sign`, `lamp` sont des decors sans collision du meme genre, mais
-avec un vrai sprite (planche "new_textures") : voir `world/decorations.py`.
+Les autres decors (`chest`, `sign`, `crate`, `tombstone`, ...) viennent de
+`world/decorations.py` : chaque entree du catalogue a une fabrique generee
+automatiquement ci-dessous.
 """
 
 from __future__ import annotations

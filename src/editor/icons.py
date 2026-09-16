@@ -14,6 +14,7 @@ from PIL import Image, ImageDraw, ImageFont
 
 from src.editor.palette import PaletteItem
 from src.ui import sprites
+from src.world.decorations import DECORATION_SPECS, decoration_spec
 from src.world.obstacles import terrain_texture
 
 _CACHE: dict[tuple[str, int], arcade.Texture] = {}
@@ -30,13 +31,29 @@ def cell_texture(item: PaletteItem, size: int) -> arcade.Texture:
         return cached
     spec = item.spec
     if spec is None:
-        texture = _placeholder(item, size)
+        if item.kind in DECORATION_SPECS:
+            texture = _decoration_swatch(item.kind, size)
+        else:
+            texture = _placeholder(item, size)
     elif spec.role == "spike":
         texture = sprites.load_texture(spec.sprite, size=size)
     else:
         texture = terrain_texture(spec, size)
     _CACHE[key] = texture
     return texture
+
+
+def _decoration_swatch(kind: str, size: int) -> arcade.Texture:
+    """Vignette carree : le prop garde son ratio, pose en bas de la case."""
+    spec = decoration_spec(kind)
+    source = sprites.load_sheet_region(spec.sheet, spec.box).image
+    scale = min(size / source.width, size / source.height)
+    width = max(1, round(source.width * scale))
+    height = max(1, round(source.height * scale))
+    fitted = source.resize((width, height), Image.Resampling.NEAREST)
+    canvas = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+    canvas.paste(fitted, ((size - width) // 2, size - height), fitted)
+    return arcade.Texture(canvas, hash=f"editor-decor-{kind}-{size}")
 
 
 def _placeholder(item: PaletteItem, size: int) -> arcade.Texture:

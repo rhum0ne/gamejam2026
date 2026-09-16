@@ -28,6 +28,7 @@ import settings
 from src.editor import icons, palette
 from src.editor.document import CellState, EditorDocument
 from src.editor.selection import Block, GridRect
+from src.world.decorations import DECORATION_SPECS, Decoration
 from src.world.obstacles import SOLID_GROUND_KINDS, GroundCell, compute_ground_cells, terrain_texture
 
 
@@ -212,17 +213,22 @@ class GridCanvas:
             return
         item = palette.item(kind)
         center_x, center_y = self.cell_center(column, row)
-        if item.spec is not None and item.spec.autotile:
+        if kind in DECORATION_SPECS:
+            sprite = Decoration(kind, center_x, center_y)
+        elif item.spec is not None and item.spec.autotile:
             texture = terrain_texture(
                 item.spec,
                 self.document.tile_size,
                 cell=self._ground_cells.get((column, row)),
             )
+            sprite = arcade.Sprite(texture, center_x=center_x, center_y=center_y)
+            if item.spec.tint is not None:
+                sprite.color = item.spec.tint
         else:
             texture = icons.cell_texture(item, self.document.tile_size)
-        sprite = arcade.Sprite(texture, center_x=center_x, center_y=center_y)
-        if item.spec is not None and item.spec.tint is not None:
-            sprite.color = item.spec.tint
+            sprite = arcade.Sprite(texture, center_x=center_x, center_y=center_y)
+            if item.spec is not None and item.spec.tint is not None:
+                sprite.color = item.spec.tint
         self._sprites.append(sprite)
         self._by_cell[(column, row)] = sprite
 

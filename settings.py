@@ -218,19 +218,9 @@ GROUND_BEDROCK = (11, 8)
 # du mur normal, sans nouvel asset.
 COLOR_BEDROCK_TINT = (176, 176, 184)
 
-# Decorations sans collision (coffres, panneaux, lampes...), cf.
-# `world/decorations.py`. `_BOX` est un rectangle (left, top, right, bottom)
-# en pixels dans la planche ; `_SIZE` est la largeur affichee en jeu (px),
-# la hauteur suit le ratio d'origine du sprite.
-DECORATION_CHEST_SHEET = SHEET_CHEST
-DECORATION_CHEST_BOX = (0, 0, 64, 64)
-DECORATION_CHEST_SIZE = 40
-DECORATION_SIGN_SHEET = SHEET_PROPS
-DECORATION_SIGN_BOX = (480, 0, 512, 64)
-DECORATION_SIGN_SIZE = 26
-DECORATION_LAMP_SHEET = SHEET_PROPS
-DECORATION_LAMP_BOX = (960, 0, 992, 32)
-DECORATION_LAMP_SIZE = 22
+# Les decoupages des props vivent dans `world/decorations.py`. Un pixel de
+# `SHEET_PROPS` vaut un pixel de `SHEET_GROUND` ; le jeu les affiche via
+# `TILE_SIZE / GROUND_CELL` (1.0 tant que les tuiles font 32 px).
 
 
 # --------------------------------------------------------------------------- #
