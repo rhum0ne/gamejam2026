@@ -452,6 +452,117 @@ COLOR_BAT_GLOW = (255, 28, 22)
 COLOR_BAT_GLOW_CORE = (255, 92, 64)
 
 # --------------------------------------------------------------------------- #
+# Ennemis - zombie (traqueur au sol)
+# --------------------------------------------------------------------------- #
+
+# Planches "Zombie_Default" : 6 frames 64x64 chacune. Pas de planche de course :
+# la course rejoue Walk en accelere (ANIM_ZOMBIE_RUN_FRAME_TIME).
+ZOMBIE_DIR = ANIMATIONS_DIR / "Enemies" / "Zombie"
+ZOMBIE_SPRITE_IDLE = ZOMBIE_DIR / "Zombie_Default_Idle.png"
+ZOMBIE_SPRITE_WALK = ZOMBIE_DIR / "Zombie_Default_Walk.png"
+ZOMBIE_SPRITE_ATTACK = ZOMBIE_DIR / "Zombie_Default_Attack1.png"
+ZOMBIE_SPRITE_HURT = ZOMBIE_DIR / "Zombie_Default_Hurt.png"
+ZOMBIE_SPRITE_DIE = ZOMBIE_DIR / "Zombie_Default_Dead.png"
+ZOMBIE_FRAME_SIZE = 64
+# Planches agrandies au chargement (nearest-neighbor, cf. ENTITY_SCALE du
+# joueur) : a 1.0, le zombie (~31 px de haut) paraissait minuscule a cote du
+# squelette (~46 px) et du joueur. A 1.5, il fait ~46 px, comme le squelette.
+ZOMBIE_SCALE = 1.5
+# Corps mesure sur les planches natives : x 20-44, y 17-48 (pieds a 16 px du
+# bas de la frame, pas tout en bas comme le squelette) -> hitbox 22x30
+# centree, abaissee d'1 px pour que son bas tombe pile sous les pieds.
+# Valeurs en pixels finaux (apres ZOMBIE_SCALE), comme `apply_rect_hit_box` l'attend.
+ZOMBIE_WIDTH = 22 * ZOMBIE_SCALE
+ZOMBIE_HEIGHT = 30 * ZOMBIE_SCALE
+ZOMBIE_HITBOX_OFFSET_X = 0.0
+ZOMBIE_HITBOX_OFFSET_Y = -1.0 * ZOMBIE_SCALE
+# Les planches dessinent le zombie tourne vers la gauche (cf. BAT_SPRITE_FACES_LEFT).
+ZOMBIE_SPRITE_FACES_LEFT = True
+# 2 PV : le premier stomp le sonne (HURT) et l'enrage, le second le tue.
+ZOMBIE_HIT_POINTS = 2
+
+# Deplacement : traine les pieds en patrouille, sprinte une fois qu'il a vu le
+# joueur. Le joueur (PLAYER_SPEED 5.5) le distance, mais doit s'engager.
+ZOMBIE_PATROL_SPEED = 0.8  # px/frame
+ZOMBIE_RUN_SPEED = 3.4  # px/frame
+ZOMBIE_ACCEL_TIME = 0.30  # secondes (lissage exponentiel de change_x)
+# Demi-tour en course : il freine et met ce temps a se retourner. Sauter
+# par-dessus lui fait donc gagner un vrai temps d'avance.
+ZOMBIE_TURN_TIME = 0.25
+
+# Vision : cone avant (demi-plan du cote ou il regarde) + ligne de vue (les
+# murs bloquent). Dans son dos, il ne "sent" le joueur qu'au contact.
+ZOMBIE_SIGHT_RANGE = 280.0
+ZOMBIE_BACK_SENSE_RANGE = 48.0
+# Asymetrique : il ne peut pas grimper (pas de vision vers le haut au-dela d'un
+# petit ecart, comme ENEMY_AGGRO_VERTICAL_RANGE), mais il peut se laisser
+# tomber jusqu'a ZOMBIE_MAX_DROP_TILES : il voit donc aussi loin vers le bas.
+ZOMBIE_SIGHT_UP_RANGE = 48.0
+ZOMBIE_MAX_DROP_TILES = 4
+ZOMBIE_SIGHT_DOWN_RANGE = (ZOMBIE_MAX_DROP_TILES + 0.5) * TILE_SIZE
+ZOMBIE_EYE_OFFSET_Y = 12.0  # px au-dessus du centre : point de depart de la ligne de vue
+ZOMBIE_SIGHT_CHECK_INTERVAL = 0.1  # secondes entre deux tests de ligne de vue (perf)
+ZOMBIE_SIGHT_CHECK_RESOLUTION = 8  # px entre deux echantillons du rayon
+# Cri d'alerte (PATROL -> CHASE) : laisse au joueur le temps de reagir.
+# Duree reelle = frames x FRAME_TIME / ANIM_SPEED : 5 x 0.04 / 0.5 = 0.4 s.
+ANIM_ZOMBIE_ALERT_FRAME_TIME = 0.04
+
+# Memoire : une fois la vue perdue, il court au dernier point ou il a vu le
+# joueur pendant ZOMBIE_MEMORY_TIME, puis cherche (regarde a gauche/droite)
+# pendant ZOMBIE_SEARCH_TIME avant de reprendre sa patrouille.
+ZOMBIE_MEMORY_TIME = 1.5
+ZOMBIE_SEARCH_TIME = 1.5
+ZOMBIE_SEARCH_LOOK_TIME = 0.5  # secondes entre deux changements de regard
+ZOMBIE_ARRIVE_DISTANCE = 8.0  # px : assez pres du dernier point vu
+
+# Chute : en course, il se laisse tomber d'une plateforme si sa cible est plus
+# bas et qu'un sol existe a au plus ZOMBIE_MAX_DROP_TILES tuiles sous le bord
+# (les puits a piques du tutoriel sont bien plus profonds : il ne s'y jette pas).
+# La cible doit etre au moins ce peu sous le centre du zombie : un joueur au
+# meme etage a son centre a la meme hauteur (a quelques px pres), un joueur une
+# seule tuile plus bas l'a deja ~32 px en dessous.
+ZOMBIE_DROP_MIN_TARGET_DROP = 12.0
+# Pendant la chute, l'elan de course porte le zombie ~1 tuile plus loin que le
+# bord : le sol d'arrivee est aussi cherche une colonne plus loin.
+ZOMBIE_DROP_PROBE_COLUMNS = 2
+
+# Griffe bondissante : il garde son elan pendant l'armement (frames 0-3), puis
+# reste penche (frames 4-5) -> fenetre pour le punir. RANGE > REACH ici, a
+# l'inverse du squelette : c'est le bond qui comble la difference.
+ZOMBIE_ATTACK_RANGE = 64.0
+ZOMBIE_ATTACK_REACH = 60.0
+ZOMBIE_ATTACK_VERTICAL_RANGE = 40.0
+# Frames d'Attack1 (0-5) : 0-1 = armement (bras leve), 2-3 = griffe, 4-5 = penche.
+ZOMBIE_ATTACK_HIT_FRAMES: tuple[int, int] = (2, 3)
+ZOMBIE_ATTACK_LUNGE_LAST_FRAME = 3
+ZOMBIE_ATTACK_LUNGE_SPEED = 2.6  # px/frame au depart du bond (ou la vitesse de course si plus grande)
+ZOMBIE_ATTACK_LUNGE_DECAY = 0.12  # secondes (constante de temps du ralentissement)
+ZOMBIE_ATTACK_COOLDOWN = 1.0
+# Plus gourmand que le squelette : sent de plus loin et y va en courant.
+ZOMBIE_CORPSE_SMELL_RANGE = 400.0
+
+# Temps par frame AVANT ANIM_SPEED (0.5 : les durees reelles sont doublees).
+ANIM_ZOMBIE_IDLE_FRAME_TIME = 0.12
+ANIM_ZOMBIE_WALK_FRAME_TIME = 0.12
+ANIM_ZOMBIE_RUN_FRAME_TIME = 0.035
+# Griffe a 2 x 0.08 / 0.5 = 0.32 s du declenchement ; attaque entiere ~1 s,
+# dont la fin penchee (frames 4-5) est la fenetre pour le punir.
+ANIM_ZOMBIE_ATTACK_FRAME_TIME = 0.08
+ANIM_ZOMBIE_EAT_FRAME_TIME = 0.15  # Attack1 frames 3-4 en boucle (penche, mastique)
+ANIM_ZOMBIE_HURT_FRAME_TIME = 0.035  # sonne ~0.42 s
+ANIM_ZOMBIE_DIE_FRAME_TIME = 0.07
+
+ZOMBIE_GHOST_GLOW_SCALE = 5.2
+ZOMBIE_GHOST_GLOW_ALPHA = 92
+ZOMBIE_GHOST_GLOW_INNER_SCALE = 2.3
+ZOMBIE_GHOST_GLOW_INNER_ALPHA = 165
+ZOMBIE_GHOST_GLOW_PULSE = 0.14
+ZOMBIE_GHOST_GLOW_PULSE_SPEED = 2.6  # plus lent : un zombie "respire" moins vite
+COLOR_ZOMBIE = (84, 170, 132)
+COLOR_ZOMBIE_GLOW = (255, 28, 22)
+COLOR_ZOMBIE_GLOW_CORE = (255, 92, 64)
+
+# --------------------------------------------------------------------------- #
 # Objets et progression
 # --------------------------------------------------------------------------- #
 

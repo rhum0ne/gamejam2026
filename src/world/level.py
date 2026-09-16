@@ -60,6 +60,7 @@ from src.entities.bat import Bat
 from src.entities.enemy import Enemy
 from src.entities.glow import glow_pass
 from src.entities.item import Item, ItemKind
+from src.entities.zombie import Zombie
 from src.world.mechanisms import (
     GatedTile,
     Mechanism,
@@ -624,6 +625,10 @@ def _add_bat(level: Level, x: float, y: float) -> None:
     level.enemies.append(Bat(x, y))
 
 
+def _add_zombie(level: Level, x: float, y: float) -> None:
+    level.enemies.append(Zombie(x, y))
+
+
 def _coord(raw: dict, *keys: str) -> int:
     for key in keys:
         if key in raw:
@@ -678,6 +683,7 @@ _FACTORIES: dict[str, Callable[[Level, float, float], None]] = {
     "soul_orb": _add_soul_orb,
     "enemy": _add_enemy,
     "bat": _add_bat,
+    "zombie": _add_zombie,
     "torch": _add_torch,
 }
 

@@ -19,7 +19,9 @@ Contrat pour une sous-classe :
     - implementer `_on_death()` (figer l'ennemi, lancer l'animation de mort)
       et `_on_respawn()` (reinitialiser etat/animation/orientation) ;
     - implementer `strike_active` (depend de l'animation et de l'etat en
-      cours, propres a chaque sous-classe).
+      cours, propres a chaque sous-classe) ;
+    - optionnel : surcharger `_on_hurt()` pour reagir a un coup non mortel
+      (ennemi a plusieurs PV, voir `Zombie`).
 """
 
 from __future__ import annotations
@@ -113,11 +115,18 @@ class EnemyBase(arcade.Sprite):
             return None
         self.hit_points -= amount
         if self.hit_points > 0:
+            self._on_hurt()
             return None
         orb = make_soul_orb(self.center_x, self.center_y)
         self._is_dying = True
         self._on_death()
         return orb
+
+    def _on_hurt(self) -> None:
+        """Coup encaisse sans mourir (ennemi a plusieurs PV, ex. `Zombie`).
+
+        Ne fait rien par defaut : un ennemi a 1 PV n'y passe jamais.
+        """
 
     def _on_death(self) -> None:
         """Fige l'ennemi et lance son animation de mort. A implementer."""
