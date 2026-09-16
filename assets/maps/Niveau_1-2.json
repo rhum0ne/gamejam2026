@@ -10,7 +10,6 @@
     "K": "key",
     "P": "player_spawn",
     "k": "pumpkin",
-    "T": "target",
     "W": "wall"
   },
   "rows": [
@@ -23,7 +22,7 @@
     "W......WKW....W",
     "W......WWW....W",
     "W.............W",
-    "W.P........T.DW",
+    "W.P.........D.W",
     "WWWWWWWWWWWWWWW"
   ],
   "activators": [
