@@ -85,6 +85,7 @@ RENDER_CULL_PAD = 120.0
 # Identifiants de TYPE de tuile (legende JSON / TILE_SPECS). Ce ne sont PAS
 # des noms de fichiers sprite : les confondre cassait le chargeur.
 TILE_KIND_ICE = "ice_block"
+TILE_KIND_FALLING = "falling_block"
 
 # Noms de fichiers dans SPRITES_DIR, sans extension. Le chargeur ajoute `.png`.
 # Le terrain (dirt/grass/...) vient desormais de `SHEET_GROUND` plus bas
@@ -275,6 +276,20 @@ SPIKE_GHOST_GLOW_INNER_SCALE = 1.7
 SPIKE_GHOST_GLOW_INNER_ALPHA = 180
 SPIKE_GHOST_GLOW_PULSE = 0.14
 SPIKE_GHOST_GLOW_PULSE_SPEED = 3.2
+
+# Blocs tombants : delay apres le pas du joueur, puis chute sans collision
+# avec le terrain, puis respawn a la position d'origine.
+FALLING_BLOCK_DELAY = 0.45
+FALLING_BLOCK_DELAY_MIN = 0.05
+FALLING_BLOCK_DELAY_MAX = 4.0
+FALLING_BLOCK_DELAY_STEP = 0.05
+FALLING_BLOCK_RESPAWN = 2.0
+FALLING_BLOCK_RESPAWN_MIN = 0.2
+FALLING_BLOCK_RESPAWN_MAX = 12.0
+FALLING_BLOCK_RESPAWN_STEP = 0.2
+FALLING_BLOCK_GRAVITY = GRAVITY
+FALLING_BLOCK_MAX_SPEED = 12.0
+FALLING_BLOCK_SHAKE = 1.6  # pixels, pendant le delay
 
 # Halo rouge des menaces (piques et ennemis), perce le voile fantome.
 # Gros, saturé, identique pour les deux : un signal DANGER, pas un point.
@@ -602,6 +617,9 @@ COLOR_BACKGROUND = (18, 18, 28)
 COLOR_WALL = (72, 76, 96)
 COLOR_ICE = (118, 196, 220)
 COLOR_ICE_INNER = (186, 232, 244)
+COLOR_FALLING_BLOCK = (176, 122, 64)
+COLOR_FALLING_BLOCK_INNER = (214, 168, 96)
+COLOR_FALLING_BLOCK_ARMED = (212, 96, 64)
 COLOR_SPECTRAL_WALL = (96, 84, 140)
 COLOR_SPIKE = (196, 84, 84)
 COLOR_FLAMETHROWER = (232, 96, 36)
@@ -867,6 +885,11 @@ COLOR_EDITOR_OVERLAY = (8, 10, 16, 235)
 COLOR_EDITOR_PLATE = (64, 168, 214, 80)
 COLOR_EDITOR_PLATE_BORDER = (140, 220, 255)
 COLOR_EDITOR_PLATE_SELECTED = (255, 210, 90, 95)
+COLOR_EDITOR_PLATE_INVERT = (214, 120, 64, 80)
+COLOR_EDITOR_PLATE_INVERT_BORDER = (255, 176, 96)
 COLOR_EDITOR_GATED = (240, 110, 110, 75)
 COLOR_EDITOR_GATED_BORDER = (255, 160, 160)
+COLOR_EDITOR_GATED_INVERT = (96, 196, 128, 75)
+COLOR_EDITOR_GATED_INVERT_BORDER = (150, 230, 170)
 COLOR_EDITOR_LINK = (150, 214, 255)
+COLOR_EDITOR_LINK_INVERT = (255, 176, 120)

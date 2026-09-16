@@ -1,8 +1,10 @@
 """Plaques d'activation et blocs qu'elles commandent.
 
-Une plaque reagit a un poids (corps, cadavre, ennemi) : tant qu'elle est
-enfoncee, les tuiles `setBlock type=void` disparaissent. Des qu'elle est
-relachee, les blocs reviennent, sauf s'ils recouvriraient encore un corps.
+Une plaque reagit a un poids (corps, cadavre, ennemi). Par defaut, tant
+qu'elle est enfoncee, les tuiles `setBlock type=void` disparaissent. Avec
+`invert`, c'est l'inverse : les blocs sont caches au repos et n'apparaissent
+que tant que la plaque est active. Des qu'ils devraient revenir, ils restent
+absents s'ils recouvriraient encore un corps.
 
 Le fantome ne pese pas. Les liens plaque -> paquets de blocs se dessinent
 dans `PlayView`, uniquement en mode fantome : un brin par groupe connexe,
@@ -105,12 +107,19 @@ class Mechanism:
     targets: list[GatedTile] = field(default_factory=list)
     chunks: tuple[GatedChunk, ...] = ()
     pressed: bool = False
+    inverted: bool = False
+
+    def __post_init__(self) -> None:
+        if self.inverted:
+            for tile in self.targets:
+                tile.hide()
 
     def set_pressed(self, pressed: bool, occupants: Sequence[arcade.Sprite]) -> None:
         """Applique l'etat de la plaque : retire ou restitue les cibles."""
         self.pressed = pressed
         self.plate.set_pressed(pressed)
-        if pressed:
+        hide = pressed != self.inverted
+        if hide:
             for tile in self.targets:
                 tile.hide()
             return

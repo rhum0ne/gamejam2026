@@ -244,7 +244,10 @@ class PlayView(arcade.View):
             if checkpoint.spawn_point == self.level.checkpoint_spawn:
                 self.level.activate_checkpoint(checkpoint, ignite=False)
                 break
-        self.player.bind_world(self.level.static_walls, platforms=[self.level.corpses])
+        self.player.bind_world(
+            self.level.static_walls,
+            platforms=[self.level.corpses, self.level.falling_blocks],
+        )
         for enemy in self.level.enemies:
             enemy.bind_world(self._static_platforms(), hazards=self.level.hazards)
         self.level.prepare_draw()
@@ -487,6 +490,7 @@ class PlayView(arcade.View):
             if thrower.is_lethal:
                 left, right, bottom, top = thrower.flame_bounds()
                 arcade.draw_lrbt_rectangle_outline(left, right, bottom, top, color, 1)
+        self.level.falling_blocks.draw_hit_boxes(color)
         if self.player.alive:
             self.player.draw_hit_box(color)
         if self.ghost is not None:
@@ -742,8 +746,10 @@ class PlayView(arcade.View):
 
     def _update_playing(self, delta_time: float) -> None:
         self.player.walk(self._horizontal_input())
+        self._eject_from_respawned_blocks()
         self.player.update(delta_time)
         self._play_attack_sound_events()
+        self._resolve_falling_blocks()
         self._block_hazard_sides()
         self._update_enemies(delta_time)
         self._resolve_player_collisions()
@@ -757,6 +763,27 @@ class PlayView(arcade.View):
                 )
             else:
                 self.camera.follow(self.player, delta_time, zoom=settings.CAMERA_ZOOM_PLAYER)
+
+    def _eject_from_respawned_blocks(self) -> None:
+        """Avant la physique : un bloc qui reapparait dans le joueur le pousse vers le haut."""
+        player = self.player
+        if not player.alive:
+            return
+        for block in self.level.falling_blocks:
+            if not block.just_respawned:
+                continue
+            block.just_respawned = False
+            block.eject_upward(player)
+
+    def _resolve_falling_blocks(self) -> None:
+        """Arme le bloc sous les pieds et colle le joueur pendant la chute."""
+        player = self.player
+        if not player.alive:
+            return
+        for block in self.level.falling_blocks:
+            if block.supports(player):
+                block.arm()
+            block.stick_rider(player)
 
     def _block_hazard_sides(self) -> None:
         """Une pique bloque comme un mur si on la touche par le cote (cf Mario)."""
