@@ -116,19 +116,9 @@ def on_player_ghost_end(view: PlayView, data: dict) -> None:
 
 
 def on_player_win(view: PlayView, data: dict) -> None:
-    """Niveau reussi : ecran de transition vers le suivant, ou victoire finale."""
+    """Niveau reussi : ecran de victoire (suivant / reessayer / niveaux)."""
     from src.systems.game_state import GameState
-    from src.ui.menus import LevelIntroView, VictoryView
+    from src.ui.menus import VictoryView
 
     view.machine.try_to(GameState.VICTORY)
-    if view.session.advance_level():
-        view.window.show_view(LevelIntroView(view.session))
-        from src.ui.menus import show_level_error
-        from src.world.level import LevelFormatError
-
-        try:
-            view.setup()
-        except LevelFormatError as error:
-            show_level_error(view.window, view.session, error)
-        return
     view.window.show_view(VictoryView(view.session))
