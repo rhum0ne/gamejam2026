@@ -179,7 +179,8 @@ class Spike(arcade.Sprite):
         offset_y = (size - hit_height) / 2
         if not spec.hanging:
             offset_y = -offset_y
-        sprites.apply_rect_hit_box(self, size, hit_height, offset_y=offset_y)
+        hit_width = size * settings.SPIKE_HITBOX_WIDTH_RATIO
+        sprites.apply_rect_hit_box(self, hit_width, hit_height, offset_y=offset_y)
 
     def draw_ghost_glow(self, *, bind_blend: bool = True) -> None:
         """Halo rouge identique aux ennemis, visible a travers le voile."""

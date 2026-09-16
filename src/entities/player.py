@@ -61,7 +61,7 @@ class Player(arcade.Sprite):
         super().__init__(self._idle.textures[0], center_x=center_x, center_y=center_y)
         sprites.apply_rect_hit_box(
             self,
-            settings.PLAYER_WIDTH * settings.ENTITY_SCALE,
+            settings.PLAYER_HITBOX_WIDTH * settings.ENTITY_SCALE,
             settings.PLAYER_HEIGHT * settings.ENTITY_SCALE,
         )
         self._animator = sprites.Animator(self._idle)

@@ -243,7 +243,7 @@ class PlayView(arcade.View):
                 break
         self.player.bind_world(self.level.static_walls, platforms=[self.level.corpses])
         for enemy in self.level.enemies:
-            enemy.bind_world(self._static_platforms())
+            enemy.bind_world(self._static_platforms(), hazards=self.level.hazards)
         self.level.prepare_draw()
         self.camera.set_bounds(self.level.width, self.level.height)
         self._enemy_spawns = [(enemy, enemy.center_x, enemy.center_y) for enemy in self.level.enemies]
@@ -630,10 +630,24 @@ class PlayView(arcade.View):
     def _update_playing(self, delta_time: float) -> None:
         self.player.walk(self._horizontal_input())
         self.player.update(delta_time)
+        self._block_hazard_sides()
         self._update_enemies(delta_time)
         self._resolve_player_collisions()
         if self.machine.state is GameState.PLAYING:
             self.camera.follow(self.player, delta_time, zoom=settings.CAMERA_ZOOM_PLAYER)
+
+    def _block_hazard_sides(self) -> None:
+        """Une pique bloque comme un mur si on la touche par le cote (cf Mario)."""
+        player = self.player
+        for hazard in collisions.hazard_side_contacts(player, self.level):
+            overlap = min(player.right, hazard.right) - max(player.left, hazard.left)
+            if overlap <= 0:
+                continue
+            if player.center_x < hazard.center_x:
+                player.center_x -= overlap
+            else:
+                player.center_x += overlap
+            player.change_x = 0.0
 
     def _update_ghost(self, delta_time: float) -> None:
         ghost = self.ghost
