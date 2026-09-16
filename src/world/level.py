@@ -57,7 +57,13 @@ import settings
 from src.entities.enemy import Enemy
 from src.entities.glow import glow_pass
 from src.entities.item import Item, ItemKind
-from src.world.mechanisms import GatedTile, Mechanism, PressurePlate, plate_geometry
+from src.world.mechanisms import (
+    GatedTile,
+    Mechanism,
+    PressurePlate,
+    group_gated_chunks,
+    plate_geometry,
+)
 from src.world.obstacles import (
     TILE_SPECS,
     Checkpoint,
@@ -268,7 +274,11 @@ class Level:
         ]
         if not targets:
             raise LevelFormatError("activate.setBlock ne cible aucun bloc")
-        return Mechanism(plate=plate, targets=targets)
+        return Mechanism(
+            plate=plate,
+            targets=targets,
+            chunks=group_gated_chunks(targets, self.tile_size),
+        )
 
     def _gated_tile_at(self, column: int, row: int) -> GatedTile:
         self._ensure_in_bounds(column, row)
@@ -362,10 +372,12 @@ class Level:
         for checkpoint in self.checkpoints:
             checkpoint.draw_fx()
         self.doors.draw()
+        with glow_pass():
+            self._queue_torch_glows(view_rect, layer="bloom")
         self.torch_stems.draw()
         self.torches.draw()
         with glow_pass():
-            self._queue_torch_glows(view_rect)
+            self._queue_torch_glows(view_rect, layer="core")
             for item in self.items:
                 item.draw_fx()
         self.corpses.draw()
@@ -508,8 +520,8 @@ class Level:
             tiles_drawn += len(walls) + len(spectral) + len(hazards)
         return walls_drawn, tiles_drawn
 
-    def _queue_torch_glows(self, view_rect) -> None:
-        """Empile les halos de torche visibles (marge = rayon du halo)."""
+    def _queue_torch_glows(self, view_rect, *, layer: str) -> None:
+        """Empile les halos de torche visibles (marge = rayon du bloom)."""
         margin = settings.TORCH_GLOW_OUTER
         for torch in self.torches:
             if view_rect is not None:
@@ -520,7 +532,7 @@ class Level:
                     or torch.center_y > view_rect.top + margin
                 ):
                     continue
-            torch.draw_fx()
+            torch.draw_fx(layer=layer)
 
     def update(self, delta_time: float, attractor: arcade.Sprite | None = None) -> None:
         """Met a jour les elements dont la logique ne depend pas de l'etat de jeu.

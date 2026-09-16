@@ -411,7 +411,13 @@ class PlayView(arcade.View):
         emergence.draw_fx()
 
     def _draw_ghost_layer(self, ghost: Ghost) -> None:
-        """Voile radial, auras toujours visibles, secrets dans le champ, fantome."""
+        """Voile radial, auras toujours visibles, secrets dans le champ, fantome.
+
+        Les piques restent dans le rendu terrain, sous le voile : les redessiner
+        apres `ghost.reveals` les faisait popper opaques au bord du rayon.
+        """
+        with glow_pass():
+            self._draw_spike_glows()
         revealed_walls: list[arcade.Sprite] = []
         for wall in self.level.spectral_walls:
             wall.set_revealed(ghost.reveals(wall))
@@ -423,7 +429,7 @@ class PlayView(arcade.View):
             for item in self.level.items:
                 if ghost.reveals(item):
                     item.draw_fx()
-            self._draw_ghost_danger_glows()
+            self._draw_enemy_glows()
             self._draw_mechanism_hints()
             ghost.draw_fx()
         revealed_actors: list[arcade.Sprite] = []
@@ -433,32 +439,28 @@ class PlayView(arcade.View):
         for enemy in self.level.enemies:
             if ghost.reveals(enemy):
                 revealed_actors.append(enemy)
-        for spike in self.level.hazards:
-            if ghost.reveals(spike):
-                revealed_actors.append(spike)
-        for spike in self.level.falling_spikes:
-            if ghost.reveals(spike):
-                revealed_actors.append(spike)
         self._reveal_actors.draw(revealed_actors)
         draw_pixel_sprite(ghost)
         self._draw_body_arrow(ghost)
 
-    def _draw_ghost_danger_glows(self) -> None:
-        """Halos d'ennemis et de pieges, au-dessus du voile."""
-        view = self.camera.cull_rect()
-        pad = max(
-            settings.ENEMY_WIDTH * settings.ENEMY_GHOST_GLOW_SCALE,
-            settings.TILE_SIZE * settings.SPIKE_GHOST_GLOW_SCALE,
-        )
-        for enemy in self.level.enemies:
-            if _in_view(enemy, view, pad):
-                enemy.draw_ghost_glow(bind_blend=False)
+    def _draw_spike_glows(self) -> None:
+        """Halos de piques, sous le voile pour suivre le degrade de vision."""
+        view = self._terrain_cull_rect()
+        pad = settings.TILE_SIZE * settings.SPIKE_GHOST_GLOW_SCALE
         for spike in self.level.hazards:
             if _in_view(spike, view, pad):
                 spike.draw_ghost_glow(bind_blend=False)
         for spike in self.level.falling_spikes:
             if _in_view(spike, view, pad):
                 spike.draw_ghost_glow(bind_blend=False)
+
+    def _draw_enemy_glows(self) -> None:
+        """Halos d'ennemis, au-dessus du voile (lisibles hors du champ)."""
+        view = self.camera.cull_rect()
+        pad = settings.ENEMY_WIDTH * settings.ENEMY_GHOST_GLOW_SCALE
+        for enemy in self.level.enemies:
+            if _in_view(enemy, view, pad):
+                enemy.draw_ghost_glow(bind_blend=False)
 
     def _draw_mechanism_hints(self) -> None:
         """Auras silhouette et vrilles d'ame, visibles en projection."""

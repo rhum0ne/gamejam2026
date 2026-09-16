@@ -182,7 +182,7 @@ class Spike(arcade.Sprite):
         sprites.apply_rect_hit_box(self, size, hit_height, offset_y=offset_y)
 
     def draw_ghost_glow(self, *, bind_blend: bool = True) -> None:
-        """Halo rouge, visible a travers le voile du fantome."""
+        """Halo rouge, dessine sous le voile pour fondre avec le terrain."""
         pulse = 1.0 + settings.SPIKE_GHOST_GLOW_PULSE * math.sin(
             time.perf_counter() * settings.SPIKE_GHOST_GLOW_PULSE_SPEED
             + self.center_x * 0.11
@@ -258,27 +258,37 @@ class Torch(arcade.SpriteSolidColor):
             color=settings.COLOR_TORCH_STEM,
         )
 
-    def draw_fx(self) -> None:
-        """Halo chaud additif autour de la flamme."""
+    def draw_fx(self, *, layer: str = "all") -> None:
+        """Halo chaud : bloom large sur le decor, noyau chaud sur la flamme."""
         flicker = self._flicker()
         flame_x = self.center_x
         flame_y = self.center_y
-        draw_glow(
-            flame_x,
-            flame_y,
-            settings.TORCH_GLOW_OUTER * flicker,
-            settings.TORCH_GLOW_OUTER * flicker * 1.15,
-            settings.COLOR_TORCH_GLOW,
-            int(settings.TORCH_GLOW_ALPHA * flicker),
-        )
-        draw_glow(
-            flame_x,
-            flame_y,
-            settings.TORCH_GLOW_INNER * flicker,
-            settings.TORCH_GLOW_INNER * flicker,
-            settings.COLOR_TORCH_GLOW_CORE,
-            int(settings.TORCH_GLOW_INNER_ALPHA * flicker),
-        )
+        if layer in ("all", "bloom"):
+            draw_glow(
+                flame_x,
+                flame_y,
+                settings.TORCH_GLOW_OUTER * flicker,
+                settings.TORCH_GLOW_OUTER * flicker * 1.2,
+                settings.COLOR_TORCH_GLOW,
+                int(settings.TORCH_GLOW_ALPHA * flicker),
+            )
+            draw_glow(
+                flame_x,
+                flame_y,
+                settings.TORCH_GLOW_MID * flicker,
+                settings.TORCH_GLOW_MID * flicker,
+                settings.COLOR_TORCH_GLOW,
+                int(settings.TORCH_GLOW_MID_ALPHA * flicker),
+            )
+        if layer in ("all", "core"):
+            draw_glow(
+                flame_x,
+                flame_y,
+                settings.TORCH_GLOW_INNER * flicker,
+                settings.TORCH_GLOW_INNER * flicker,
+                settings.COLOR_TORCH_GLOW_CORE,
+                int(settings.TORCH_GLOW_INNER_ALPHA * flicker),
+            )
 
     def _flicker(self) -> float:
         now = time.perf_counter()
