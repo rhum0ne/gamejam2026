@@ -44,6 +44,8 @@ class HudData:
     pressed_keys: frozenset[int] = frozenset()
     show_esprit: bool = False
     attack_cooldown_left: float | None = None
+    attack_stage: int = 0
+    attack_queued: bool = False
 
 
 class Hud:
@@ -103,9 +105,15 @@ class Hud:
         self._state_text.text = data.state_label
         if data.attack_cooldown_left is not None:
             cooldown = max(0.0, data.attack_cooldown_left)
-            self._attack_text.text = (
-                "Attaque : prete" if cooldown <= 0.0 else f"Attaque : {cooldown:0.1f} s"
-            )
+            if data.attack_stage > 0:
+                queued = "  >" if data.attack_queued else ""
+                self._attack_text.text = (
+                    f"Combo : {data.attack_stage}/{settings.PLAYER_ATTACK_COMBO_COUNT}{queued}"
+                )
+            else:
+                self._attack_text.text = (
+                    "Attaque : prete" if cooldown <= 0.0 else f"Attaque : {cooldown:0.1f} s"
+                )
         self._essence_text.text = f"Ames : {data.essence}  |  Fantome niv. {data.ghost_level}"
         self._key_text.text = "Cle : oui" if data.has_key else "Cle : non"
         self._hint_text.text = data.hint

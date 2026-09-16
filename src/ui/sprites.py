@@ -24,7 +24,6 @@ import settings
 _IMAGE_CACHE: dict[str, Image.Image] = {}
 _TEXTURE_CACHE: dict[str, arcade.Texture] = {}
 _STRIP_CACHE: dict[str, tuple[arcade.Texture, ...]] = {}
-_SKELETON_SWORD_CACHE: dict[int, arcade.Texture] = {}
 
 
 def sprite_path(name: str | Path) -> Path:
@@ -172,39 +171,6 @@ def load_strip(
     strip = tuple(frames)
     _STRIP_CACHE[cache_key] = strip
     return strip
-
-
-def skeleton_sword_texture(facing: int = 1) -> arcade.Texture:
-    """Retourne l'arme extraite de l'animation d'attaque du squelette.
-
-    La planche ne fournit pas de PNG d'arme autonome : on reutilise donc la
-    portion transparente de sa frame d'attaque, sans recreer une forme qui
-    divergerait du sprite de l'ennemi.
-    """
-    direction = 1 if facing >= 0 else -1
-    cached = _SKELETON_SWORD_CACHE.get(direction)
-    if cached is not None:
-        return cached
-
-    source = _open_image(settings.ENEMY_SPRITE_ATTACK)
-    frame_left = settings.ENEMY_SWORD_FRAME * settings.ENEMY_FRAME_WIDTH
-    crop_left, crop_top, crop_right, crop_bottom = settings.ENEMY_SWORD_CROP
-    crop = source.crop(
-        (
-            frame_left + crop_left,
-            crop_top,
-            frame_left + crop_right,
-            crop_bottom,
-        )
-    )
-    bbox = crop.getbbox()
-    if bbox is not None:
-        crop = crop.crop(bbox)
-    if direction < 0:
-        crop = crop.transpose(Image.Transpose.FLIP_LEFT_RIGHT)
-    texture = arcade.Texture(crop, hash=f"skeleton-sword:{direction}")
-    _SKELETON_SWORD_CACHE[direction] = texture
-    return texture
 
 
 @dataclass(frozen=True, slots=True)

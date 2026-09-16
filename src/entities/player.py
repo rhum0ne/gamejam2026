@@ -40,6 +40,15 @@ def _walk_animation() -> sprites.StripAnimation:
     return sprites.StripAnimation(frames, settings.ANIM_WALK_FRAME_TIME, loop=True)
 
 
+def _attack_animation() -> sprites.StripAnimation:
+    frames = sprites.load_strip(
+        settings.SPRITE_PLAYER_ATTACK,
+        settings.SPRITE_FRAME_SIZE,
+        scale=settings.ENTITY_SCALE,
+    )
+    return sprites.StripAnimation(frames, settings.ANIM_PLAYER_ATTACK_FRAME_TIME, loop=False)
+
+
 def _exp_alpha(delta_time: float, smooth_time: float) -> float:
     if smooth_time <= 0.0:
         return 1.0
@@ -58,6 +67,7 @@ class Player(arcade.Sprite):
     def __init__(self, center_x: float, center_y: float) -> None:
         self._idle = _idle_animation()
         self._walk = _walk_animation()
+        self._attack = _attack_animation()
         super().__init__(self._idle.textures[0], center_x=center_x, center_y=center_y)
         sprites.apply_rect_hit_box(
             self,
@@ -65,6 +75,7 @@ class Player(arcade.Sprite):
             settings.PLAYER_HEIGHT * settings.ENTITY_SCALE,
         )
         self._animator = sprites.Animator(self._idle)
+        self._attack_animator = sprites.Animator(self._attack, speed=1.0)
         self.alive = True
         self.facing = 1
         self.inventory: set[ItemKind] = set()
@@ -87,6 +98,11 @@ class Player(arcade.Sprite):
         self._attack_time_left = 0.0
         self._attack_cooldown_left = 0.0
         self._attack_hit_targets: set[int] = set()
+        self._attack_stage = 0
+        self._attack_chain_timer = 0.0
+        self._attack_queued = False
+        self._attack_sound_events: list[int] = []
+        self._attack_sound_played = False
 
     # ------------------------------------------------------------------ #
     # Initialisation
@@ -159,23 +175,64 @@ class Player(arcade.Sprite):
     @property
     def attack_progress(self) -> float:
         """Retourne l'avancement de la frappe entre 0.0 et 1.0."""
-        if not self.is_attacking or settings.PLAYER_ATTACK_DURATION <= 0.0:
+        duration = self.attack_duration
+        if not self.is_attacking or duration <= 0.0:
             return 1.0
-        return 1.0 - self._attack_time_left / settings.PLAYER_ATTACK_DURATION
+        return 1.0 - self._attack_time_left / duration
+
+    @property
+    def attack_stage(self) -> int:
+        """Numero du coup actuellement joue, ou 0 hors animation."""
+        return self._attack_stage if self.is_attacking else 0
+
+    @property
+    def attack_queued(self) -> bool:
+        """Indique si le prochain coup du combo a ete demande."""
+        return self.is_attacking and self._attack_queued
+
+    @property
+    def attack_impact_active(self) -> bool:
+        """Vrai quand la frame visible de la lame peut toucher une cible."""
+        return self.is_attacking and self.attack_progress >= settings.PLAYER_ATTACK_IMPACT_PROGRESS
+
+    @property
+    def attack_duration(self) -> float:
+        """Duree du coup actif, adaptee a son rang dans le combo."""
+        return self._stage_value(settings.PLAYER_ATTACK_DURATIONS, settings.PLAYER_ATTACK_DURATION)
+
+    @property
+    def attack_range(self) -> float:
+        """Portee horizontale du coup actif."""
+        return self._stage_value(settings.PLAYER_ATTACK_RANGES, settings.PLAYER_ATTACK_RANGE)
+
+    @property
+    def attack_damage(self) -> int:
+        """Degats du coup actif."""
+        return int(self._stage_value(settings.PLAYER_ATTACK_DAMAGES, settings.PLAYER_ATTACK_DAMAGE))
+
+    @property
+    def attack_knockback_scale(self) -> float:
+        """Multiplicateur de recul du coup actif."""
+        return self._stage_value(settings.PLAYER_ATTACK_KNOCKBACK_SCALES, 1.0)
+
+    @property
+    def attack_vertical_scale(self) -> float:
+        """Hauteur relative de la hitbox du coup actif."""
+        return self._stage_value(settings.PLAYER_ATTACK_VERTICAL_SCALES, 1.0)
 
     @property
     def attack_bounds(self) -> tuple[float, float, float, float] | None:
         """Retourne la hitbox rectangulaire devant le joueur, si elle est active."""
-        if not self.is_attacking:
+        if not self.attack_impact_active:
             return None
         if self.facing >= 0:
             left = self.right
-            right = self.right + settings.PLAYER_ATTACK_RANGE
+            right = self.right + self.attack_range
         else:
-            left = self.left - settings.PLAYER_ATTACK_RANGE
+            left = self.left - self.attack_range
             right = self.left
-        vertical_padding = self.height * 0.1
-        return left, self.bottom + vertical_padding, right, self.top - vertical_padding
+        half_height = abs(self.height) * 0.4 * self.attack_vertical_scale
+        return left, self.center_y - half_height, right, self.center_y + half_height
 
     def has_item(self, kind: ItemKind) -> bool:
         return kind in self.inventory
@@ -195,6 +252,11 @@ class Player(arcade.Sprite):
         self._dash_trail.clear()
         self._attack_time_left = 0.0
         self._attack_hit_targets.clear()
+        self._attack_stage = 0
+        self._attack_chain_timer = 0.0
+        self._attack_queued = False
+        self._attack_sound_events.clear()
+        self._attack_sound_played = False
 
     def respawn_at(self, position: tuple[float, float]) -> None:
         """Fait reapparaitre le corps au checkpoint fourni."""
@@ -214,6 +276,11 @@ class Player(arcade.Sprite):
         self._attack_time_left = 0.0
         self._attack_cooldown_left = 0.0
         self._attack_hit_targets.clear()
+        self._attack_stage = 0
+        self._attack_chain_timer = 0.0
+        self._attack_queued = False
+        self._attack_sound_events.clear()
+        self._attack_sound_played = False
 
     # ------------------------------------------------------------------ #
     # Commandes
@@ -254,13 +321,27 @@ class Player(arcade.Sprite):
         return True
 
     def attack(self) -> bool:
-        """Declenche une attaque frontale si le delai de recuperation est ecoule."""
-        if not self.alive or self._attack_cooldown_left > 0.0:
+        """Lance un coup ou memorise le clic pour enchainer le suivant."""
+        if not self.alive:
             return False
-        self._attack_time_left = settings.PLAYER_ATTACK_DURATION
-        self._attack_cooldown_left = settings.PLAYER_ATTACK_COOLDOWN
-        self._attack_hit_targets.clear()
+        if self.is_attacking:
+            if (
+                self._attack_stage < settings.PLAYER_ATTACK_COMBO_COUNT
+                and self.attack_progress >= settings.PLAYER_ATTACK_BUFFER_PROGRESS
+            ):
+                self._attack_queued = True
+                return True
+            return False
+        if self._attack_cooldown_left > 0.0:
+            return False
+        self._start_attack(self._next_attack_stage())
         return True
+
+    def consume_attack_sound_events(self) -> tuple[int, ...]:
+        """Retourne les impacts sonores depuis la derniere lecture."""
+        events = tuple(self._attack_sound_events)
+        self._attack_sound_events.clear()
+        return events
 
     def attack_has_hit(self, target: object) -> bool:
         """Indique si la frappe en cours a deja touche cette cible."""
@@ -269,6 +350,37 @@ class Player(arcade.Sprite):
     def mark_attack_hit(self, target: object) -> None:
         """Enregistre une cible pour eviter les degats multiples d'une frappe."""
         self._attack_hit_targets.add(id(target))
+
+    def _stage_value(self, values: Sequence[float | int], fallback: float | int) -> float:
+        if not values:
+            return float(fallback)
+        index = max(0, min(self._attack_stage - 1, len(values) - 1))
+        return float(values[index])
+
+    def _next_attack_stage(self) -> int:
+        if (
+            self._attack_chain_timer <= 0.0
+            or self._attack_stage >= settings.PLAYER_ATTACK_COMBO_COUNT
+        ):
+            return 1
+        return self._attack_stage + 1
+
+    def _start_attack(self, stage: int) -> None:
+        max_stage = min(
+            settings.PLAYER_ATTACK_COMBO_COUNT,
+            len(settings.PLAYER_ATTACK_DURATIONS),
+            len(settings.PLAYER_ATTACK_RANGES),
+        )
+        self._attack_stage = max(1, min(stage, max_stage))
+        self._attack_time_left = self.attack_duration
+        self._attack_cooldown_left = settings.PLAYER_ATTACK_COOLDOWN
+        self._attack_chain_timer = settings.PLAYER_ATTACK_COMBO_RESET_TIME
+        self._attack_queued = False
+        self._attack_hit_targets.clear()
+        self._attack_sound_played = False
+        self._attack_animator.play(self._attack, restart=True)
+        self.texture = self._attack.textures[0]
+        sprites.apply_facing(self, self.facing)
 
     def cut_jump(self) -> None:
         """Ecourte le saut quand la touche est relachee (saut a hauteur variable)."""
@@ -313,15 +425,25 @@ class Player(arcade.Sprite):
     # ------------------------------------------------------------------ #
 
     def update(self, delta_time: float = settings.FRAME_TIME, *args, **kwargs) -> None:
+        was_attacking = self._attack_time_left > 0.0
         self._attack_time_left = max(0.0, self._attack_time_left - delta_time)
         self._attack_cooldown_left = max(0.0, self._attack_cooldown_left - delta_time)
+        self._attack_chain_timer = max(0.0, self._attack_chain_timer - delta_time)
+        if was_attacking and self._attack_time_left <= 0.0 and self._attack_queued:
+            self._start_attack(self._attack_stage + 1)
         if not self.alive or self._physics is None:
             return
-        if abs(self.change_x) > 0.05:
+        if self.is_attacking:
+            self.texture = self._attack_animator.update(delta_time)
+            if self.attack_impact_active and not self._attack_sound_played:
+                self._attack_sound_played = True
+                self._attack_sound_events.append(self._attack_stage)
+        elif abs(self.change_x) > 0.05:
             self._animator.play(self._walk)
+            self.texture = self._animator.update(delta_time)
         else:
             self._animator.play(self._idle)
-        self.texture = self._animator.update(delta_time)
+            self.texture = self._animator.update(delta_time)
         sprites.apply_facing(self, self.facing)
         self._tick_dash(delta_time)
         if self.is_dashing:

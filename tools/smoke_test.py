@@ -188,9 +188,27 @@ def check_combat(window: arcade.Window) -> None:
 
     player = view.player
     enemy = view.level.enemies[0]
+    player_start_x = player.center_x
+    player_start_y = player.center_y
+    enemy_start_y = enemy.center_y
+
+    # Le contact vertical ne doit plus etre une attaque : seul le clic gauche
+    # doit infliger des degats aux ennemis.
+    enemy.state = EnemyState.PATROL
+    player.center_x = enemy.center_x
+    player.center_y = enemy.center_y + settings.ENEMY_HEIGHT
+    player.change_y = -5.0
+    view._resolve_player_collisions()
+    assert enemy.state is EnemyState.PATROL, "sauter sur un ennemi ne doit plus le vaincre"
+    assert enemy.hit_points == enemy.max_hit_points, "le saut ne doit pas infliger de degats"
+    assert player.change_y == -5.0, "le saut sur un ennemi ne doit pas rebondir"
+
     player.facing = 1
+    player.center_x = player_start_x
+    player.center_y = player_start_y
     enemy.center_x = player.right + abs(enemy.width) / 2 + 6
-    enemy.center_y = player.center_y
+    enemy.center_y = enemy_start_y
+    player.change_y = 0.0
 
     view.on_mouse_press(
         view.camera.world.viewport_width / 2 + 100,
@@ -198,7 +216,7 @@ def check_combat(window: arcade.Window) -> None:
         arcade.MOUSE_BUTTON_LEFT,
         0,
     )
-    advance(view, 1)
+    advance(view, 5)
 
     assert enemy.state is EnemyState.DYING, "un clic gauche doit vaincre l'ennemi a portee"
     assert any(item.kind is ItemKind.SOUL_ORB for item in view.level.items), (

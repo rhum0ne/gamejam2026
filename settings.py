@@ -22,7 +22,8 @@ UI_DIR = ASSETS_DIR / "ui"
 SOUNDS_DIR = ASSETS_DIR / "sons"
 MAPS_DIR = ASSETS_DIR / "maps"
 FONTS_DIR = ASSETS_DIR / "fonts"
-ATTACK_SOUND_FILENAME = "54427377-sword-slash-476148.mp3"
+# Version nettoyee du son fourni : l'original a ~570 ms de silence en tete.
+ATTACK_SOUND_FILENAME = "attack_sword_sync.wav"
 DEFAULT_ATTACK_SOUND = ":resources:sounds/hit1.wav"
 ATTACK_SOUND_VOLUME = 0.45
 
@@ -90,6 +91,7 @@ SPRITE_SPIKE_HANGING = "spike_up"
 # Bandeaux d'entites (fichiers tels quels, y compris le typo "gost").
 SPRITE_PLAYER_WALK = "player_walk"
 SPRITE_PLAYER_IDLE = "player_idle"
+SPRITE_PLAYER_ATTACK = "player_attack_1"
 SPRITE_GHOST_WALK = "gost_walk"
 SPRITE_GHOST_DISAPPEAR = "gost_disappears"
 SPRITE_KEY = "key"
@@ -103,6 +105,7 @@ SPRITE_FRAME_SIZE = 32
 ENTITY_SCALE = 1.5
 ANIM_WALK_FRAME_TIME = 0.07
 ANIM_IDLE_FRAME_TIME = 0.12
+ANIM_PLAYER_ATTACK_FRAME_TIME = 0.03
 ANIM_GHOST_DISAPPEAR_FRAME_TIME = 0.08
 # 1.0 = rythme de base ; plus petit = plus lent (0.5 = deux fois plus lent).
 ANIM_SPEED = 0.5
@@ -177,11 +180,30 @@ PLAYER_DASH_GLOW_ALPHA = 34
 PLAYER_DASH_GLOW_STRETCH = 1.55  # etirement du halo dans l'axe du dash
 PLAYER_DASH_GLOW_OFFSET = 0.32  # recul du halo, en fractions de PLAYER_WIDTH
 # Attaque de melee du joueur (clic gauche).
-PLAYER_ATTACK_RANGE = 42.0  # longueur de la hitbox frontale, en pixels
-PLAYER_ATTACK_DURATION = 0.12  # duree pendant laquelle la hitbox est active
-PLAYER_ATTACK_COOLDOWN = 0.35  # delai minimal entre deux frappes
+PLAYER_ATTACK_RANGE = 42.0  # portee du premier coup, conservee pour compatibilite
+PLAYER_ATTACK_RANGES: tuple[float, ...] = (42.0, 50.0, 62.0)
+PLAYER_ATTACK_DURATION = 0.12  # duree de base, conservee pour compatibilite
+PLAYER_ATTACK_DURATIONS: tuple[float, ...] = (0.12, 0.14, 0.18)
+PLAYER_ATTACK_COOLDOWN = 0.35  # delai minimal quand aucun enchainement n'est prepare
 PLAYER_ATTACK_DAMAGE = 1
+PLAYER_ATTACK_DAMAGES: tuple[int, ...] = (1, 1, 1)
+PLAYER_ATTACK_KNOCKBACK_SCALES: tuple[float, ...] = (1.0, 1.2, 1.65)
+PLAYER_ATTACK_VERTICAL_SCALES: tuple[float, ...] = (1.0, 1.1, 1.3)
+PLAYER_ATTACK_COMBO_COUNT = 3
+PLAYER_ATTACK_BUFFER_PROGRESS = 0.28  # le clic est memorise sur la fin du coup
+PLAYER_ATTACK_COMBO_RESET_TIME = 0.62  # temps avant de repartir au premier coup
+PLAYER_ATTACK_IMPACT_PROGRESS = 0.50  # debut de la frame ou la lame touche vraiment
+PLAYER_ATTACK_DRAW_WIDTHS: tuple[float, ...] = (48.0, 54.0, 62.0)
+PLAYER_ATTACK_SWEEP_ANGLES: tuple[tuple[float, float], ...] = (
+    (58.0, -40.0),
+    (-44.0, 58.0),
+    (84.0, -84.0),
+)
+PLAYER_ATTACK_TRAIL_COUNT = 3
+PLAYER_ATTACK_TRAIL_DELAY = 0.075
 COMBAT_HITSTOP_DURATION = 0.05  # micro-pause lors d'un impact reussi
+COMBAT_HIT_SHAKE_AMPLITUDE = 1.8
+COMBAT_HIT_SHAKE_DURATION = 0.08
 # Trainee de points (fantome cyan / dash jaune).
 TRAIL_SPACING = 6.5
 TRAIL_MOTES = 2
@@ -310,10 +332,6 @@ ENEMY_SPRITE_IDLE = ENEMY_SKELETON_DIR / "Skeleton_01_White_Idle.png"
 ENEMY_SPRITE_WALK = ENEMY_SKELETON_DIR / "Skeleton_01_White_Walk.png"
 ENEMY_SPRITE_ATTACK = ENEMY_SKELETON_DIR / "Skeleton_01_White_Attack1.png"
 ENEMY_SPRITE_DIE = ENEMY_SKELETON_DIR / "Skeleton_01_White_Die.png"
-# L'arme est integree dans la frame 5 de l'animation d'attaque du squelette.
-# Rectangle source de la lame et de la poignee, en pixels dans une frame 96x64.
-ENEMY_SWORD_FRAME = 5
-ENEMY_SWORD_CROP = (65, 24, 92, 34)
 # Planches natives en 96x64 : le squelette (dessine vers la droite) n'occupe
 # qu'une partie de la frame (l'epee balaie le reste pendant les attaques).
 ENEMY_FRAME_WIDTH = 96

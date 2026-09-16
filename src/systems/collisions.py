@@ -101,23 +101,6 @@ def enemy_striking_player(player: Player, enemies: Iterable[Enemy]) -> Enemy | N
     return None
 
 
-def enemy_stomped_by_player(player: Player, enemies: arcade.SpriteList) -> Enemy | None:
-    """Ennemi ecrase par le joueur en retombant dessus (attaque de base).
-
-    Le seuil utilise `settings.ENEMY_HEIGHT` (hauteur du corps visible du
-    squelette) plutot que `enemy.height` : ce dernier reflete desormais la
-    frame d'animation entiere (96x64 px), bien plus haute que l'ennemi.
-    """
-    if not player.alive or player.change_y >= 0:
-        return None
-    for enemy in arcade.check_for_collision_with_list(player, enemies):
-        if enemy.state is EnemyState.DYING:
-            continue
-        if player.center_y > enemy.center_y + settings.ENEMY_HEIGHT / 4:
-            return enemy
-    return None
-
-
 def enemies_hit_by_player_attack(player: Player, enemies: arcade.SpriteList) -> list[Enemy]:
     """Retourne les ennemis recouverts par la hitbox de la frappe frontale."""
     bounds = player.attack_bounds

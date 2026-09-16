@@ -25,7 +25,6 @@ from dataclasses import dataclass, field
 from enum import Enum, auto
 
 import arcade
-from arcade.types import XYWH
 
 import settings
 from src.entities.batch_draw import SpriteOverlay
@@ -42,7 +41,6 @@ from src.systems.upgrades import SoulProgression
 from src.ui.debug import DebugOverlay, DebugSnapshot
 from src.ui.display import handle_display_key
 from src.ui.hud import Hud, HudData
-from src.ui import sprites
 from src.ui.sprites import draw_pixel_sprite
 from src.world.atmosphere import ForegroundAtmosphere
 from src.world.camera import CameraRig
@@ -273,6 +271,17 @@ class PlayView(arcade.View):
         except (FileNotFoundError, OSError):
             return None
 
+    def _play_attack_sound_events(self) -> None:
+        """Joue le son au moment d'impact visuel, combo compris."""
+        if self._attack_sound is None:
+            self.player.consume_attack_sound_events()
+            return
+        for stage in self.player.consume_attack_sound_events():
+            # Le finisher est legerement plus present, tout en reutilisant le
+            # son fourni par le projet plutot que de forcer un nouvel asset.
+            volume = settings.ATTACK_SOUND_VOLUME * (1.0 + 0.06 * (stage - 1))
+            arcade.play_sound(self._attack_sound, volume=min(1.0, volume))
+
     @property
     def ghost_emerging(self) -> bool:
         return self._emergence is not None and self._emergence.active
@@ -334,7 +343,6 @@ class PlayView(arcade.View):
             if self.player.alive and not defer_player:
                 self.player.draw_fx()
                 draw_pixel_sprite(self.player)
-                self._draw_player_attack()
                 self.player.draw_particles()
             # Premier plan : passe devant le monde, reste sous le voile fantome et le HUD.
             self.atmosphere.draw(self.camera.world)
@@ -368,45 +376,76 @@ class PlayView(arcade.View):
         self.camera.present(warp)
 
     def _draw_player_attack(self) -> None:
-        """Dessine directement l'epee extraite de l'attaque du squelette."""
+        """Ajoute les effets autour de la frame d'attaque du joueur."""
         if self.player.attack_bounds is None:
             return
-        progress = min(1.0, self.player.attack_progress * 1.35)
+        stage = self.player.attack_stage
+        stage_index = max(
+            0,
+            min(
+                stage - 1,
+                len(settings.PLAYER_ATTACK_DRAW_WIDTHS) - 1,
+                len(settings.PLAYER_ATTACK_SWEEP_ANGLES) - 1,
+            ),
+        )
+        progress = min(1.0, self.player.attack_progress * 1.18)
         direction = 1 if self.player.facing >= 0 else -1
         body_width = abs(self.player.width)
-        body_height = abs(self.player.height)
-        hand_x = self.player.center_x + direction * body_width * 0.22
-        hand_y = self.player.center_y + body_height * 0.03
+        draw_width = settings.PLAYER_ATTACK_DRAW_WIDTHS[stage_index]
+        effect_x = self.player.center_x + direction * (body_width * 0.25 + draw_width * 0.36)
+        effect_y = self.player.center_y + math.sin(progress * math.pi) * (3.0 + stage_index * 1.5)
+        start_angle, end_angle = settings.PLAYER_ATTACK_SWEEP_ANGLES[stage_index]
 
-        texture = sprites.skeleton_sword_texture(direction)
-        draw_width = 48.0
-        draw_height = draw_width * texture.height / texture.width
-        weapon_x = hand_x + direction * draw_width * 0.33
-        weapon_y = hand_y + math.sin(progress * math.pi) * 3.0
-        weapon_angle = direction * (10.0 - 20.0 * progress)
-
-        # Halo court, concentre sur la lame et son mouvement.
+        # L'arme elle-meme vient maintenant de player_attack_1.png, dessinee
+        # avec le corps. Ces halos et streaks soulignent son mouvement.
         with glow_pass():
-            draw_glow(weapon_x, weapon_y, draw_width * 1.15, draw_height * 2.2, settings.COLOR_SWORD_GLOW, 46)
+            glow_alpha = 46 + stage_index * 12
+            draw_glow(
+                effect_x,
+                effect_y,
+                draw_width * 1.15,
+                body_width * 0.85,
+                settings.COLOR_SWORD_GLOW,
+                glow_alpha,
+            )
+            if stage_index == settings.PLAYER_ATTACK_COMBO_COUNT - 1:
+                draw_glow(
+                    effect_x,
+                    effect_y,
+                    draw_width * 1.55,
+                    body_width * 1.35,
+                    settings.COLOR_ATTACK_GLOW,
+                    int(34 * math.sin(progress * math.pi)),
+                )
 
-        arcade.draw_texture_rect(
-            texture,
-            XYWH(weapon_x, weapon_y, draw_width, draw_height),
-            angle=weapon_angle,
-            pixelated=True,
-        )
-
-        # Petit reflet anime pour rendre le coup lisible sans masquer la lame.
-        trail_x = weapon_x - direction * draw_width * 0.18
-        trail_y = weapon_y - draw_height * 0.22
-        arcade.draw_line(
-            trail_x,
-            trail_y,
-            weapon_x,
-            weapon_y,
-            settings.COLOR_ATTACK_GLOW,
-            2,
-        )
+        # Trois streaks retardes donnent une vraie sensation de balayage sans
+        # redessiner une deuxieme epee par-dessus le sprite du joueur.
+        for trail_index in range(settings.PLAYER_ATTACK_TRAIL_COUNT):
+            trail_progress = max(
+                0.0,
+                progress - settings.PLAYER_ATTACK_TRAIL_DELAY * (trail_index + 1),
+            )
+            trail_eased = trail_progress * trail_progress * (3.0 - 2.0 * trail_progress)
+            trail_angle = direction * (
+                start_angle + (end_angle - start_angle) * trail_eased
+            )
+            trail_radians = math.radians(trail_angle)
+            trail_center_x = effect_x - direction * trail_index * 4.0
+            trail_center_y = self.player.center_y + math.sin(
+                trail_progress * math.pi
+            ) * (3.0 + stage_index * 1.5)
+            trail_half_length = draw_width * (0.34 - trail_index * 0.045)
+            delta_x = math.cos(trail_radians) * trail_half_length
+            delta_y = math.sin(trail_radians) * trail_half_length
+            trail_alpha = max(18, 100 - trail_index * 28 + stage_index * 10)
+            arcade.draw_line(
+                trail_center_x - delta_x,
+                trail_center_y - delta_y,
+                trail_center_x + delta_x,
+                trail_center_y + delta_y,
+                (*settings.COLOR_ATTACK_GLOW, trail_alpha),
+                2 if stage_index < 2 else 3,
+            )
 
     def _draw_hud_layer(self, fade: float = 1.0) -> None:
         self.hud.draw(self._hud_data(), fade=fade)
@@ -594,6 +633,8 @@ class PlayView(arcade.View):
             attack_cooldown_left=self.player.attack_cooldown_left
             if state is GameState.PLAYING
             else None,
+            attack_stage=self.player.attack_stage if state is GameState.PLAYING else 0,
+            attack_queued=self.player.attack_queued if state is GameState.PLAYING else False,
         )
 
     def _hint_for(self, state: GameState) -> str:
@@ -708,6 +749,7 @@ class PlayView(arcade.View):
     def _update_playing(self, delta_time: float) -> None:
         self.player.walk(self._horizontal_input())
         self.player.update(delta_time)
+        self._play_attack_sound_events()
         self._update_enemies(delta_time)
         self._resolve_player_collisions()
         if self.machine.state is GameState.PLAYING:
@@ -801,22 +843,25 @@ class PlayView(arcade.View):
     # ------------------------------------------------------------------ #
 
     def _resolve_player_collisions(self) -> None:
-        stomped = collisions.enemy_stomped_by_player(self.player, self.level.enemies)
-        if stomped is not None:
-            orb = stomped.take_damage()
-            if orb is not None:
-                self.level.spawn_item(orb)
-            self.player.change_y = settings.PLAYER_JUMP_SPEED * 0.6
-
         for enemy in collisions.enemies_hit_by_player_attack(self.player, self.level.enemies):
             self.player.mark_attack_hit(enemy)
             orb = enemy.take_damage(
-                settings.PLAYER_ATTACK_DAMAGE,
-                knockback=settings.ENEMY_KNOCKBACK_SPEED * self.player.facing,
+                self.player.attack_damage,
+                knockback=(
+                    settings.ENEMY_KNOCKBACK_SPEED
+                    * self.player.facing
+                    * self.player.attack_knockback_scale
+                ),
             )
             if orb is not None:
                 self.level.spawn_item(orb)
-            self._hitstop_timer = settings.COMBAT_HITSTOP_DURATION
+            stage = max(1, self.player.attack_stage)
+            hitstop = settings.COMBAT_HITSTOP_DURATION * (1.0 + 0.25 * (stage - 1))
+            self._hitstop_timer = max(self._hitstop_timer, hitstop)
+            self.camera.shake(
+                settings.COMBAT_HIT_SHAKE_AMPLITUDE * (1.0 + 0.35 * (stage - 1)),
+                settings.COMBAT_HIT_SHAKE_DURATION,
+            )
 
         for item in collisions.items_reachable_by_body(self.player, self.level):
             self._collect(item.kind)
@@ -936,8 +981,7 @@ class PlayView(arcade.View):
         world_x = x + camera_x - self.camera.world.viewport_width / 2
         if abs(world_x - self.player.center_x) > 2:
             self.player.facing = 1 if world_x > self.player.center_x else -1
-        if self.player.attack() and self._attack_sound is not None:
-            arcade.play_sound(self._attack_sound, volume=settings.ATTACK_SOUND_VOLUME)
+        self.player.attack()
 
     def on_key_release(self, symbol: int, modifiers: int) -> None:
         self.held_keys.discard(symbol)
