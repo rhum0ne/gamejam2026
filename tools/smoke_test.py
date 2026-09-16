@@ -472,7 +472,7 @@ def check_editor_document() -> None:
     kinds = {item.kind for item in palette.PALETTE}
     for kind in gameplay_kinds():
         assert kind in kinds, f"la palette doit lister le gameplay '{kind}'"
-    assert "rock" in kinds and "enemy" in kinds and "spike" in kinds
+    assert "wall" in kinds and "enemy" in kinds and "spike" in kinds
 
     document = EditorDocument.from_file("level_1_tuto.json")
     assert document.columns > 0 and document.rows > 0
@@ -490,12 +490,12 @@ def check_editor_document() -> None:
     document.undo()
 
     rect = GridRect(2, 2, 6, 5)
-    document.fill_rect(rect, "grass")
+    document.fill_rect(rect, "wall")
     for cell_column, cell_row in rect.cells():
-        assert document.cell(cell_column, cell_row) == "grass"
-    document.replace_kind("grass", "rock", rect)
+        assert document.cell(cell_column, cell_row) == "wall"
+    document.replace_kind("wall", "bedrock", rect)
     for cell_column, cell_row in rect.cells():
-        assert document.cell(cell_column, cell_row) == "rock"
+        assert document.cell(cell_column, cell_row) == "bedrock"
     document.undo()
     document.undo()
 
@@ -531,7 +531,7 @@ def check_editor_views(window: arcade.Window) -> None:
     window.show_view(view)
     view.on_show_view()
     view.on_draw()
-    view.kind = "rock"
+    view.kind = "wall"
     view.tool = Tool.BRUSH
     screen_x = view.canvas.viewport.center_x
     screen_y = view.canvas.viewport.center_y

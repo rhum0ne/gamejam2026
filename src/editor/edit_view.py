@@ -75,7 +75,7 @@ class EditView(arcade.View):
         self.help = HelpOverlay()
         self.prompt = TextPrompt()
         self.tool = Tool.BRUSH
-        self.kind = "rock"
+        self.kind = "wall"
         self.selection: GridRect | None = None
         self.clipboard: Block | None = None
         self.hover: tuple[int, int] | None = None

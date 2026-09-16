@@ -69,19 +69,10 @@ RENDER_CHUNK_TILES = 16
 # chunk de 512 px apparait d'un coup au bord de l'ecran.
 RENDER_CULL_PAD = 120.0
 
-# Noms de fichiers dans SPRITES_DIR, sans extension. La legende d'une carte
-# JSON reprend ces noms (ou un alias : rock, dirt). Le chargeur ajoute `.png`.
-SPRITE_DIRT = "dirt_1"
-SPRITE_BEDROCK = "bedrock"
-SPRITE_ROCK_1 = "rock_1"
-SPRITE_ROCK_2 = "rock_2"
-SPRITE_GRASS = "grass"
-SPRITE_GRASS_VARIANT = "grass_1"
-SPRITE_GRASS_CORNER = "grass_corner"
-SPRITE_DIRT_TOP = "dirt_top"
-SPRITE_DIRT_CORNER = "dirt_corner"
-SPRITE_DIRT_CORNER_RIGHT = "dirt_corner_right"
-SPRITE_DIRT_FLOATING = "dirt_floating_block"
+# Noms de fichiers dans SPRITES_DIR, sans extension. Le chargeur ajoute `.png`.
+# Le terrain (dirt/grass/...) vient desormais de `SHEET_GROUND` plus bas
+# (planche "new_textures") : les anciens PNG individuels (dirt_1.png,
+# grass.png, ...) restent dans `assets/sprites/` mais ne sont plus charges.
 SPRITE_SPIKE = "spike"
 SPRITE_SPIKE_HANGING = "spike_up"
 # Bandeaux d'entites (fichiers tels quels, y compris le typo "gost").
@@ -116,6 +107,60 @@ TORCH_GLOW_INNER_ALPHA = 110
 TORCH_FLICKER = 0.22
 TORCH_FLICKER_SPEED = 8.4
 TORCH_FLICKER_SPEED_FAST = 19.0
+
+# --------------------------------------------------------------------------- #
+# Planches "new_textures" (pack de remplacement des tuiles de terrain)
+# --------------------------------------------------------------------------- #
+
+NEW_TEXTURES_DIR = SPRITES_DIR / "new_textures"
+SHEET_GROUND = NEW_TEXTURES_DIR / "TX Tileset Ground.png"
+SHEET_PROPS = NEW_TEXTURES_DIR / "TX Village Props.png"
+SHEET_CHEST = NEW_TEXTURES_DIR / "TX Chest Animation.png"
+
+# Taille native d'une case de `SHEET_GROUND` (planche a grille reguliere).
+GROUND_CELL = 32
+
+# Auto-tiling du terrain ("wall" : seule matiere terre/roche du jeu, symbole
+# "#" dans une carte). `obstacles.terrain_texture` choisit la case a afficher
+# selon les tuiles voisines : voir `obstacles._select_ground_cell`. Le level
+# designer ne pose qu'un seul type de mur ; le rendu se charge du reste.
+#
+# Etape 1 : seul le carre 3x3 en haut a gauche de `SHEET_GROUND` est utilise
+# (coordonnees (colonne, ligne) en cases de GROUND_CELL px, 0,0 = coin
+# haut-gauche de la planche). Une rangee par exposition verticale, une
+# colonne par exposition horizontale :
+#
+#            colonne 0          colonne 1           colonne 2
+#            (rien a gauche)    (encadree)          (rien a droite)
+#   rangee 0 : herbe, coin g.   herbe, milieu       herbe, coin d.    (surface, rien au-dessus)
+#   rangee 1 : terre, coin g.   terre, milieu       terre, coin d.    (interieur, enterree)
+#   rangee 2 : dessous, coin g. dessous, milieu     dessous, coin d.  (rien en dessous)
+GROUND_ROW_GRASS = 0  # rien au-dessus -> surface herbeuse
+GROUND_ROW_DIRT = 1  # enterree des deux cotes -> interieur
+GROUND_ROW_BOTTOM = 2  # rien en dessous -> face du dessous visible
+GROUND_COL_LEFT = 0  # rien a gauche
+GROUND_COL_MID = 1  # encadree des deux cotes
+GROUND_COL_RIGHT = 2  # rien a droite
+
+GROUND_BEDROCK = (11, 8)
+# Le socle (bordure indestructible) reprend une tuile hors du carre 3x3 de
+# "wall" et se voit assombri d'un cran : lisible comme "plus dur", distinct
+# du mur normal, sans nouvel asset.
+COLOR_BEDROCK_TINT = (176, 176, 184)
+
+# Decorations sans collision (coffres, panneaux, lampes...), cf.
+# `world/decorations.py`. `_BOX` est un rectangle (left, top, right, bottom)
+# en pixels dans la planche ; `_SIZE` est la largeur affichee en jeu (px),
+# la hauteur suit le ratio d'origine du sprite.
+DECORATION_CHEST_SHEET = SHEET_CHEST
+DECORATION_CHEST_BOX = (0, 0, 64, 64)
+DECORATION_CHEST_SIZE = 40
+DECORATION_SIGN_SHEET = SHEET_PROPS
+DECORATION_SIGN_BOX = (480, 0, 512, 64)
+DECORATION_SIGN_SIZE = 26
+DECORATION_LAMP_SHEET = SHEET_PROPS
+DECORATION_LAMP_BOX = (960, 0, 992, 32)
+DECORATION_LAMP_SIZE = 22
 
 
 # --------------------------------------------------------------------------- #

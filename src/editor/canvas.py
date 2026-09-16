@@ -6,6 +6,11 @@ vivent dans une seule `SpriteList` (donc un seul appel GPU) mise a jour
 cellule par cellule quand le document change : peindre ne reconstruit jamais
 la grille entiere, seul un redimensionnement le fait.
 
+Le terrain auto-tile ("wall", cf. `world/obstacles.py`) est redessine avec le
+meme calcul de voisinage que le jeu (`GroundNeighbors`), pour que l'apercu
+dans l'editeur soit exactement ce que le joueur verra : peindre ou effacer
+une case invalide aussi la texture de ses 4 voisines orthogonales.
+
 La camera a son propre viewport (la zone hors panneau lateral et barre d'etat)
 et son propre `scissor`, pour que le decor ne bave pas sous l'interface.
 """
@@ -22,6 +27,7 @@ import settings
 from src.editor import icons, palette
 from src.editor.document import CellState, EditorDocument
 from src.editor.selection import Block, GridRect
+from src.world.obstacles import SOLID_GROUND_KINDS, GroundNeighbors, terrain_texture
 
 
 class GridCanvas:
@@ -169,7 +175,30 @@ class GridCanvas:
             return
         if not states:
             return
+        changed = {(column, row) for column, row, _ in states}
+        neighbors_to_refresh: set[tuple[int, int]] = set()
         for column, row, kind in states:
+            self._set_cell(column, row, kind)
+            neighbors_to_refresh.update(
+                (
+                    (column, row - 1),
+                    (column, row + 1),
+                    (column - 1, row),
+                    (column + 1, row),
+                )
+            )
+        for column, row in neighbors_to_refresh - changed:
+            self._refresh_terrain_preview(column, row)
+
+    def _refresh_terrain_preview(self, column: int, row: int) -> None:
+        """Redessine une tuile auto-tilee dont un voisin vient de changer (pas son propre kind)."""
+        if not self.document.inside(column, row):
+            return
+        kind = self.document.cell(column, row)
+        if not kind:
+            return
+        spec = palette.item(kind).spec
+        if spec is not None and spec.autotile:
             self._set_cell(column, row, kind)
 
     def rebuild(self) -> None:
@@ -190,11 +219,33 @@ class GridCanvas:
             existing.remove_from_sprite_lists()
         if not kind:
             return
-        texture = icons.cell_texture(palette.item(kind), self.document.tile_size)
+        item = palette.item(kind)
         center_x, center_y = self.cell_center(column, row)
+        if item.spec is not None and item.spec.autotile:
+            texture = terrain_texture(
+                item.spec,
+                self.document.tile_size,
+                neighbors=self._ground_neighbors(column, row),
+            )
+        else:
+            texture = icons.cell_texture(item, self.document.tile_size)
         sprite = arcade.Sprite(texture, center_x=center_x, center_y=center_y)
+        if item.spec is not None and item.spec.tint is not None:
+            sprite.color = item.spec.tint
         self._sprites.append(sprite)
         self._by_cell[(column, row)] = sprite
+
+    def _ground_neighbors(self, column: int, row: int) -> GroundNeighbors:
+        """Occupation des 4 cases voisines, memes regles que `world/level.py`."""
+        return GroundNeighbors(
+            top_open=not self._is_solid_ground(column, row - 1),
+            right_open=not self._is_solid_ground(column + 1, row),
+            bottom_open=not self._is_solid_ground(column, row + 1),
+            left_open=not self._is_solid_ground(column - 1, row),
+        )
+
+    def _is_solid_ground(self, column: int, row: int) -> bool:
+        return self.document.cell(column, row) in SOLID_GROUND_KINDS
 
     # ------------------------------------------------------------------ #
     # Dessin

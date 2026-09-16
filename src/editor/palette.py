@@ -55,19 +55,14 @@ class PaletteItem:
 
 
 # kind -> (libelle, symbole habituel)
+#
+# "wall" est la seule matiere terre/roche a poser : son apparence (herbe,
+# coin, terre enterree, bloc isole...) est deduite automatiquement des tuiles
+# voisines a chaque chargement (auto-tiling, cf. `world/obstacles.py`), donc
+# aucune variante n'apparait ici en tant que type separe a choisir a la main.
 _TERRAIN_META: dict[str, tuple[str, str]] = {
-    "wall": ("Terre", "T"),
-    "rock": ("Roche", "#"),
-    "rock_2": ("Roche fissuree", "%"),
+    "wall": ("Terre", "#"),
     "bedrock": ("Socle", "B"),
-    "grass": ("Herbe", "G"),
-    "grass_1": ("Herbe fleurie", "g"),
-    "grass_corner": ("Herbe coin gauche", "("),
-    "grass_corner_right": ("Herbe coin droit", ")"),
-    "dirt_top": ("Terre sommet", "-"),
-    "dirt_corner": ("Terre coin gauche", "["),
-    "dirt_corner_right": ("Terre coin droit", "]"),
-    "dirt_floating_block": ("Bloc flottant", "F"),
     "spike": ("Piques (sol)", "^"),
     "spike_up": ("Piques (plafond)", "v"),
 }
@@ -82,6 +77,9 @@ _GAMEPLAY_META: dict[str, tuple[str, str, str, tuple[int, int, int]]] = {
     "enemy": ("Ennemi", CATEGORY_GAMEPLAY, "E", settings.COLOR_ENEMY),
     "spectral_wall": ("Mur spectral", CATEGORY_GAMEPLAY, "=", settings.COLOR_SPECTRAL_WALL),
     "torch": ("Torche", CATEGORY_DECOR, "i", settings.COLOR_TORCH_FLAME),
+    "chest": ("Coffre", CATEGORY_DECOR, "c", (150, 110, 60)),
+    "sign": ("Panneau", CATEGORY_DECOR, "p", (120, 96, 64)),
+    "lamp": ("Lampe", CATEGORY_DECOR, "l", (255, 196, 96)),
 }
 
 _CATEGORY_ORDER = (

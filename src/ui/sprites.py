@@ -97,6 +97,60 @@ def soul_orb_texture(size: int = 32) -> arcade.Texture:
     return texture
 
 
+def load_sheet_region(
+    sheet: str | Path,
+    box: tuple[int, int, int, int],
+    *,
+    size: int | None = None,
+    flip: bool = False,
+) -> arcade.Texture:
+    """Decoupe un rectangle `box` (left, top, right, bottom, en pixels) d'une
+    planche contenant plusieurs sprites, avec cache.
+
+    Contrairement a `load_texture`, `sheet` designe l'image entiere de la
+    planche : `box` isole la zone voulue. `size` redimensionne le resultat en
+    carre (nearest-neighbor, comme les tuiles de terrain) ; sans `size`, le
+    sprite garde ses proportions d'origine (utile pour un decor non carre).
+    """
+    left, top, right, bottom = box
+    if right <= left or bottom <= top:
+        raise ValueError("box invalide : right/bottom doivent depasser left/top")
+    if size is not None and size <= 0:
+        raise ValueError("size doit etre strictement positif")
+    key = f"region:{sheet}|{box}|{int(flip)}|{size or 0}"
+    cached = _TEXTURE_CACHE.get(key)
+    if cached is not None:
+        return cached
+    region = _open_image(sheet).crop(box)
+    if flip:
+        region = region.transpose(Image.Transpose.FLIP_LEFT_RIGHT)
+    if size is not None and region.size != (size, size):
+        region = region.resize((size, size), Image.Resampling.NEAREST)
+    texture = arcade.Texture(region, hash=key)
+    _TEXTURE_CACHE[key] = texture
+    return texture
+
+
+def load_sheet_cell(
+    sheet: str | Path,
+    column: int,
+    row: int,
+    cell: int,
+    *,
+    size: int | None = None,
+    flip: bool = False,
+) -> arcade.Texture:
+    """Decoupe la case (`column`, `row`) d'une planche a grille reguliere de
+    `cell` px (0,0 = case en haut a gauche). Sucre pour `load_sheet_region`."""
+    if cell <= 0:
+        raise ValueError("cell doit etre strictement positif")
+    if column < 0 or row < 0:
+        raise ValueError("column et row doivent etre positifs ou nuls")
+    left = column * cell
+    top = row * cell
+    return load_sheet_region(sheet, (left, top, left + cell, top + cell), size=size, flip=flip)
+
+
 def tile_texture(
     fill: str,
     overlay: str | None = None,
