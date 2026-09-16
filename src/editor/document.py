@@ -20,6 +20,14 @@ from pathlib import Path
 
 import settings
 from src.editor import palette
+from src.editor.activators import (
+    Activator,
+    ActivatorError,
+    can_link_kind,
+    dump_activators,
+    parse_activators,
+    prune,
+)
 from src.editor.history import CellChange, Edit, GridState, History
 from src.editor.selection import Block, GridRect
 
@@ -46,6 +54,7 @@ class EditorDocument:
         cells: Sequence[Sequence[str]],
         path: Path | None = None,
         symbols: dict[str, str] | None = None,
+        activators: Sequence[Activator] = (),
     ) -> None:
         if not cells or not cells[0]:
             raise DocumentError("une carte doit avoir au moins une cellule")
@@ -66,8 +75,10 @@ class EditorDocument:
         self._version = 0
         self._layout_version = 0
         self._saved_version = 0
+        self._activators: tuple[Activator, ...] = tuple(activators)
         self._stroke: list[CellChange] | None = None
         self._stroke_label = ""
+        self._stroke_activators: tuple[Activator, ...] | None = None
 
     # ------------------------------------------------------------------ #
     # Construction
@@ -135,6 +146,10 @@ class EditorDocument:
             for symbol, kind in legend.items()
             if kind != palette.EMPTY_KIND and symbol != "."
         }
+        try:
+            activators = parse_activators(data.get("activators"))
+        except ActivatorError as error:
+            raise DocumentError(str(error)) from error
         return cls(
             name=str(data.get("name", "Niveau sans nom")),
             hint=str(data.get("hint", "")),
@@ -142,6 +157,7 @@ class EditorDocument:
             cells=cells,
             path=path,
             symbols=symbols,
+            activators=activators,
         )
 
     # ------------------------------------------------------------------ #
@@ -173,6 +189,10 @@ class EditorDocument:
     @property
     def filename(self) -> str:
         return self.path.name if self.path is not None else "(jamais enregistre)"
+
+    @property
+    def activators(self) -> tuple[Activator, ...]:
+        return self._activators
 
     def inside(self, column: int, row: int) -> bool:
         return 0 <= column < self.columns and 0 <= row < self.rows
@@ -208,6 +228,19 @@ class EditorDocument:
         unknown = sorted(kind for kind in tally if not palette.is_known(kind))
         if unknown:
             issues.append(f"types inconnus du jeu : {', '.join(unknown)}")
+        for index, activator in enumerate(self._activators, start=1):
+            if not activator.targets:
+                issues.append(f"plaque {index} sans bloc lie (le jeu refusera la carte)")
+                continue
+            missing = [
+                f"{column},{row}"
+                for column, row in activator.targets
+                if not can_link_kind(self.cell(column, row))
+            ]
+            if missing:
+                issues.append(
+                    f"plaque {index} : cibles vides ou invalides ({', '.join(missing[:4])})"
+                )
         return tuple(issues)
 
     def block(self, rect: GridRect) -> Block | None:
@@ -231,13 +264,29 @@ class EditorDocument:
         if self._stroke is None:
             self._stroke = []
             self._stroke_label = label
+            self._stroke_activators = self._activators
 
     def end_stroke(self) -> None:
         """Ferme le groupe ouvert par `begin_stroke` et l'empile s'il a servi."""
         pending = self._stroke
+        before_activators = self._stroke_activators
         self._stroke = None
-        if pending:
-            self.history.push(Edit(label=self._stroke_label, changes=tuple(pending)))
+        self._stroke_activators = None
+        if pending is None:
+            return
+        self._sync_activators()
+        after_activators = self._activators
+        retargets = before_activators != after_activators
+        if not pending and not retargets:
+            return
+        self.history.push(
+            Edit(
+                label=self._stroke_label,
+                changes=tuple(pending),
+                activators_before=before_activators if retargets else None,
+                activators_after=after_activators if retargets else None,
+            )
+        )
 
     def paint(
         self,
@@ -361,10 +410,66 @@ class EditorDocument:
         ]
         self._cells = resized
         after = self._snapshot()
-        self.history.push(Edit(label="redimensionner", before=before, after=after))
+        before_activators = self._activators
+        self._sync_activators()
+        after_activators = self._activators
+        retargets = before_activators != after_activators
+        self.history.push(
+            Edit(
+                label="redimensionner",
+                before=before,
+                after=after,
+                activators_before=before_activators if retargets else None,
+                activators_after=after_activators if retargets else None,
+            )
+        )
         self._version += 1
         self._layout_version += 1
         return True
+
+    def can_link(self, column: int, row: int) -> bool:
+        """Indique si la cellule peut etre une cible `setBlock void`."""
+        return self.inside(column, row) and can_link_kind(self.cell(column, row))
+
+    def add_activator(self, column: int, row: int, width: int) -> int:
+        """Ajoute une plaque vide et retourne son index."""
+        if not self.inside(column, row) or not self.inside(column + width - 1, row):
+            raise ValueError("la plaque sort de la carte")
+        before = self._activators
+        added = Activator(column, row, width)
+        self._activators = (*before, added)
+        self._commit_activators("placer une plaque", before)
+        return len(self._activators) - 1
+
+    def remove_activator(self, index: int) -> None:
+        """Supprime une plaque. Leve IndexError si l'index est hors liste."""
+        before = self._activators
+        self._activators = tuple(item for i, item in enumerate(before) if i != index)
+        if self._activators == before:
+            raise IndexError("index de plaque inconnu")
+        self._commit_activators("supprimer une plaque", before)
+
+    def replace_activator(self, index: int, activator: Activator, label: str) -> None:
+        """Remplace une plaque (redimensionnement, cibles)."""
+        if index < 0 or index >= len(self._activators):
+            raise IndexError("index de plaque inconnu")
+        if self._activators[index] == activator:
+            return
+        before = self._activators
+        updated = list(before)
+        updated[index] = activator
+        self._activators = tuple(updated)
+        self._commit_activators(label, before)
+
+    def toggle_target(self, index: int, column: int, row: int) -> bool:
+        """Ajoute ou retire une cible. Retourne True si le lien est maintenant actif."""
+        if not self.can_link(column, row):
+            return False
+        current = self._activators[index]
+        updated = current.with_toggled(column, row)
+        added = updated.has_target(column, row)
+        self.replace_activator(index, updated, "lier un bloc" if added else "delier un bloc")
+        return added
 
     def set_metadata(
         self,
@@ -413,13 +518,17 @@ class EditorDocument:
         legend = {".": palette.EMPTY_KIND}
         legend.update({assigned[kind]: kind for kind in sorted(assigned)})
         rows = ["".join(assigned[kind] if kind else "." for kind in row) for row in self._cells]
-        return {
+        payload = {
             "name": self.name,
             "hint": self.hint,
             "tile_size": self.tile_size,
             "legend": legend,
             "rows": rows,
         }
+        activators = dump_activators(self._activators)
+        if activators:
+            payload["activators"] = activators
+        return payload
 
     def save(self, path: str | Path | None = None) -> Path:
         """Ecrit la carte sur disque et retourne le chemin utilise."""
@@ -444,12 +553,44 @@ class EditorDocument:
     def _record(self, label: str, changes: list[CellChange]) -> tuple[CellState, ...]:
         if not changes:
             return ()
+        before_activators = self._activators
+        self._sync_activators()
+        after_activators = self._activators
+        retargets = before_activators != after_activators
         if self._stroke is not None:
             self._stroke.extend(changes)
         else:
-            self.history.push(Edit(label=label, changes=tuple(changes)))
+            self.history.push(
+                Edit(
+                    label=label,
+                    changes=tuple(changes),
+                    activators_before=before_activators if retargets else None,
+                    activators_after=after_activators if retargets else None,
+                )
+            )
         self._version += 1
         return tuple((change.column, change.row, change.after) for change in changes)
+
+    def _sync_activators(self) -> None:
+        """Recadre les plaques et lache les cibles qui ne sont plus des blocs."""
+        self._activators = prune(
+            self._activators,
+            columns=self.columns,
+            rows=self.rows,
+            kind_at=self.cell,
+        )
+
+    def _commit_activators(self, label: str, before: tuple[Activator, ...]) -> None:
+        if before == self._activators:
+            return
+        self.history.push(
+            Edit(
+                label=label,
+                activators_before=before,
+                activators_after=self._activators,
+            )
+        )
+        self._version += 1
 
     def _erase_kind(self, kind: str, skip: set[tuple[int, int]]) -> list[CellChange]:
         changes: list[CellChange] = []
@@ -463,18 +604,24 @@ class EditorDocument:
 
     def _replay(self, edit: Edit, *, forward: bool) -> tuple[CellState, ...]:
         self._version += 1
+        states: tuple[CellState, ...] = ()
         if edit.reshapes:
             state = edit.after if forward else edit.before
             assert state is not None  # garanti par Edit.reshapes
             self._cells = [list(row) for row in state.cells]
             self._layout_version += 1
-            return ()
-        states: list[CellState] = []
-        for change in edit.changes:
-            value = change.after if forward else change.before
-            self._cells[change.row][change.column] = value
-            states.append((change.column, change.row, value))
-        return tuple(states)
+        else:
+            replayed: list[CellState] = []
+            for change in edit.changes:
+                value = change.after if forward else change.before
+                self._cells[change.row][change.column] = value
+                replayed.append((change.column, change.row, value))
+            states = tuple(replayed)
+        if edit.retargets:
+            restored = edit.activators_after if forward else edit.activators_before
+            assert restored is not None
+            self._activators = restored
+        return states
 
     def _snapshot(self) -> GridState:
         return GridState(tuple(tuple(row) for row in self._cells))
