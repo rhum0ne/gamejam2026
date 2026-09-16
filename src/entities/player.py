@@ -22,12 +22,21 @@ from src.entities.trail import PointTrail
 from src.ui import sprites
 
 
-def _idle_animation() -> sprites.StripAnimation:
-    frames = sprites.load_strip(
+def _idle_frames() -> tuple[arcade.Texture, ...]:
+    return sprites.load_strip(
         settings.SPRITE_PLAYER_IDLE,
         settings.SPRITE_FRAME_SIZE,
         scale=settings.ENTITY_SCALE,
     )
+
+
+def _idle_still_animation(frames: tuple[arcade.Texture, ...]) -> sprites.StripAnimation:
+    """Pose figee : premiere frame, sans respiration."""
+    return sprites.StripAnimation((frames[0],), settings.ANIM_IDLE_FRAME_TIME, loop=True)
+
+
+def _idle_breathe_animation(frames: tuple[arcade.Texture, ...]) -> sprites.StripAnimation:
+    """Idle qui respire, reserve au cooldown du dash."""
     return sprites.StripAnimation(frames, settings.ANIM_IDLE_FRAME_TIME, loop=True)
 
 
@@ -38,6 +47,24 @@ def _walk_animation() -> sprites.StripAnimation:
         scale=settings.ENTITY_SCALE,
     )
     return sprites.StripAnimation(frames, settings.ANIM_WALK_FRAME_TIME, loop=True)
+
+
+def _attack_animation() -> sprites.StripAnimation:
+    frames = sprites.load_strip(
+        settings.SPRITE_PLAYER_ATTACK,
+        settings.SPRITE_FRAME_SIZE,
+        scale=settings.ENTITY_SCALE,
+    )
+    return sprites.StripAnimation(frames, settings.ANIM_PLAYER_ATTACK_FRAME_TIME, loop=False)
+
+
+def _death_animation() -> sprites.StripAnimation:
+    frames = sprites.load_strip(
+        settings.SPRITE_PLAYER_DEATH,
+        settings.SPRITE_FRAME_SIZE,
+        scale=settings.ENTITY_SCALE,
+    )
+    return sprites.StripAnimation(frames, settings.ANIM_PLAYER_DEATH_FRAME_TIME, loop=False)
 
 
 def _exp_alpha(delta_time: float, smooth_time: float) -> float:
@@ -56,20 +83,26 @@ class Player(arcade.Sprite):
     """Corps physique controle au clavier."""
 
     def __init__(self, center_x: float, center_y: float) -> None:
-        self._idle = _idle_animation()
+        idle_frames = _idle_frames()
+        self._idle_still = _idle_still_animation(idle_frames)
+        self._idle_breathe = _idle_breathe_animation(idle_frames)
         self._walk = _walk_animation()
-        super().__init__(self._idle.textures[0], center_x=center_x, center_y=center_y)
+        self._attack = _attack_animation()
+        self._death = _death_animation()
+        super().__init__(self._idle_still.textures[0], center_x=center_x, center_y=center_y)
         sprites.apply_rect_hit_box(
             self,
             settings.PLAYER_HITBOX_WIDTH * settings.ENTITY_SCALE,
             settings.PLAYER_HEIGHT * settings.ENTITY_SCALE,
         )
-        self._animator = sprites.Animator(self._idle)
+        self._animator = sprites.Animator(self._idle_still)
+        self._attack_animator = sprites.Animator(self._attack, speed=1.0)
         self.alive = True
         self.facing = 1
         self.inventory: set[ItemKind] = set()
         self.respawn_point: tuple[float, float] = (center_x, center_y)
         self._physics: arcade.PhysicsEnginePlatformer | None = None
+        self._solids: list[arcade.SpriteList] = []
         self._time_off_ground = 0.0
         self._place_on_tile(center_x, center_y)
         self._was_on_ground = True
@@ -88,6 +121,14 @@ class Player(arcade.Sprite):
             settings.COLOR_TRAIL_DASH,
             settings.COLOR_TRAIL_DASH_CORE,
         )
+        self._attack_time_left = 0.0
+        self._attack_cooldown_left = 0.0
+        self._attack_hit_targets: set[int] = set()
+        self._attack_stage = 0
+        self._attack_chain_timer = 0.0
+        self._attack_queued = False
+        self._attack_sound_events: list[int] = []
+        self._attack_sound_played = False
 
     # ------------------------------------------------------------------ #
     # Initialisation
@@ -109,6 +150,9 @@ class Player(arcade.Sprite):
             platforms=list(platforms) if platforms else None,
             gravity_constant=settings.PLAYER_GRAVITY,
         )
+        self._solids = list(walls)
+        if platforms:
+            self._solids.extend(platforms)
 
     def _place_on_tile(self, center_x: float, center_y: float) -> None:
         """Pose les pieds sur le bas de la tuile dont `center` est le milieu."""
@@ -152,6 +196,78 @@ class Player(arcade.Sprite):
             return 0.0
         return max(0.0, min(1.0, self._ready_flash / duration))
 
+    @property
+    def is_attacking(self) -> bool:
+        """Indique si la hitbox de l'attaque est actuellement active."""
+        return self.alive and self._attack_time_left > 0.0
+
+    @property
+    def attack_cooldown_left(self) -> float:
+        """Retourne le temps restant avant de pouvoir frapper a nouveau."""
+        return max(0.0, self._attack_cooldown_left)
+
+    @property
+    def attack_progress(self) -> float:
+        """Retourne l'avancement de la frappe entre 0.0 et 1.0."""
+        duration = self.attack_duration
+        if not self.is_attacking or duration <= 0.0:
+            return 1.0
+        return 1.0 - self._attack_time_left / duration
+
+    @property
+    def attack_stage(self) -> int:
+        """Numero du coup actuellement joue, ou 0 hors animation."""
+        return self._attack_stage if self.is_attacking else 0
+
+    @property
+    def attack_queued(self) -> bool:
+        """Indique si le prochain coup du combo a ete demande."""
+        return self.is_attacking and self._attack_queued
+
+    @property
+    def attack_impact_active(self) -> bool:
+        """Vrai quand la frame visible de la lame peut toucher une cible."""
+        return self.is_attacking and self.attack_progress >= settings.PLAYER_ATTACK_IMPACT_PROGRESS
+
+    @property
+    def attack_duration(self) -> float:
+        """Duree du coup actif, adaptee a son rang dans le combo."""
+        return self._stage_value(settings.PLAYER_ATTACK_DURATIONS, settings.PLAYER_ATTACK_DURATION)
+
+    @property
+    def attack_range(self) -> float:
+        """Portee horizontale du coup actif."""
+        return self._stage_value(settings.PLAYER_ATTACK_RANGES, settings.PLAYER_ATTACK_RANGE)
+
+    @property
+    def attack_damage(self) -> int:
+        """Degats du coup actif."""
+        return int(self._stage_value(settings.PLAYER_ATTACK_DAMAGES, settings.PLAYER_ATTACK_DAMAGE))
+
+    @property
+    def attack_knockback_scale(self) -> float:
+        """Multiplicateur de recul du coup actif."""
+        return self._stage_value(settings.PLAYER_ATTACK_KNOCKBACK_SCALES, 1.0)
+
+    @property
+    def attack_vertical_scale(self) -> float:
+        """Hauteur relative de la hitbox du coup actif."""
+        return self._stage_value(settings.PLAYER_ATTACK_VERTICAL_SCALES, 1.0)
+
+    @property
+    def attack_bounds(self) -> tuple[float, float, float, float] | None:
+        """Retourne la hitbox rectangulaire devant le joueur, si elle est active."""
+        if not self.attack_impact_active:
+            return None
+        if self.facing >= 0:
+            left = self.right
+            right = self.right + self.attack_range
+        else:
+            left = self.left - self.attack_range
+            right = self.left
+        half_height = abs(self.height) * 0.4 * self.attack_vertical_scale
+        return left, self.center_y - half_height, right, self.center_y + half_height
+
     def has_item(self, kind: ItemKind) -> bool:
         return kind in self.inventory
 
@@ -159,7 +275,7 @@ class Player(arcade.Sprite):
         self.inventory.add(kind)
 
     def die(self) -> None:
-        """Marque le corps comme mort et l'immobilise."""
+        """Marque le corps comme mort, l'immobilise et lance l'anim de chute."""
         self.alive = False
         self.change_x = 0.0
         self.change_y = 0.0
@@ -172,6 +288,16 @@ class Player(arcade.Sprite):
         self._landing_timer = 0.0
         self._dust.clear()
         self._dash_trail.clear()
+        self._attack_time_left = 0.0
+        self._attack_hit_targets.clear()
+        self._attack_stage = 0
+        self._attack_chain_timer = 0.0
+        self._attack_queued = False
+        self._attack_sound_events.clear()
+        self._attack_sound_played = False
+        self._animator.play(self._death, restart=True)
+        self.texture = self._death.textures[0]
+        sprites.apply_facing(self, self.facing)
 
     def respawn_at(self, position: tuple[float, float]) -> None:
         """Fait reapparaitre le corps au checkpoint fourni."""
@@ -192,6 +318,17 @@ class Player(arcade.Sprite):
         self._ready_flash = 0.0
         self._dust.clear()
         self._dash_trail.clear()
+        self._attack_time_left = 0.0
+        self._attack_cooldown_left = 0.0
+        self._attack_hit_targets.clear()
+        self._attack_stage = 0
+        self._attack_chain_timer = 0.0
+        self._attack_queued = False
+        self._attack_sound_events.clear()
+        self._attack_sound_played = False
+        self._animator.play(self._idle_still, restart=True)
+        self.texture = self._idle_still.textures[0]
+        sprites.apply_facing(self, self.facing)
 
     # ------------------------------------------------------------------ #
     # Commandes
@@ -234,6 +371,68 @@ class Player(arcade.Sprite):
             return True
         self._jump_buffer = settings.PLAYER_JUMP_BUFFER
         return False
+
+    def attack(self) -> bool:
+        """Lance un coup ou memorise le clic pour enchainer le suivant."""
+        if not self.alive:
+            return False
+        if self.is_attacking:
+            if (
+                self._attack_stage < settings.PLAYER_ATTACK_COMBO_COUNT
+                and self.attack_progress >= settings.PLAYER_ATTACK_BUFFER_PROGRESS
+            ):
+                self._attack_queued = True
+                return True
+            return False
+        if self._attack_cooldown_left > 0.0:
+            return False
+        self._start_attack(self._next_attack_stage())
+        return True
+
+    def consume_attack_sound_events(self) -> tuple[int, ...]:
+        """Retourne les impacts sonores depuis la derniere lecture."""
+        events = tuple(self._attack_sound_events)
+        self._attack_sound_events.clear()
+        return events
+
+    def attack_has_hit(self, target: object) -> bool:
+        """Indique si la frappe en cours a deja touche cette cible."""
+        return id(target) in self._attack_hit_targets
+
+    def mark_attack_hit(self, target: object) -> None:
+        """Enregistre une cible pour eviter les degats multiples d'une frappe."""
+        self._attack_hit_targets.add(id(target))
+
+    def _stage_value(self, values: Sequence[float | int], fallback: float | int) -> float:
+        if not values:
+            return float(fallback)
+        index = max(0, min(self._attack_stage - 1, len(values) - 1))
+        return float(values[index])
+
+    def _next_attack_stage(self) -> int:
+        if (
+            self._attack_chain_timer <= 0.0
+            or self._attack_stage >= settings.PLAYER_ATTACK_COMBO_COUNT
+        ):
+            return 1
+        return self._attack_stage + 1
+
+    def _start_attack(self, stage: int) -> None:
+        max_stage = min(
+            settings.PLAYER_ATTACK_COMBO_COUNT,
+            len(settings.PLAYER_ATTACK_DURATIONS),
+            len(settings.PLAYER_ATTACK_RANGES),
+        )
+        self._attack_stage = max(1, min(stage, max_stage))
+        self._attack_time_left = self.attack_duration
+        self._attack_cooldown_left = settings.PLAYER_ATTACK_COOLDOWN
+        self._attack_chain_timer = settings.PLAYER_ATTACK_COMBO_RESET_TIME
+        self._attack_queued = False
+        self._attack_hit_targets.clear()
+        self._attack_sound_played = False
+        self._attack_animator.play(self._attack, restart=True)
+        self.texture = self._attack.textures[0]
+        sprites.apply_facing(self, self.facing)
 
     def cut_jump(self) -> None:
         """Arrete de maintenir : la gravite de coupe ecourte la montee."""
@@ -296,14 +495,33 @@ class Player(arcade.Sprite):
     # ------------------------------------------------------------------ #
 
     def update(self, delta_time: float = settings.FRAME_TIME, *args, **kwargs) -> None:
-        if not self.alive or self._physics is None:
+        was_attacking = self._attack_time_left > 0.0
+        self._attack_time_left = max(0.0, self._attack_time_left - delta_time)
+        self._attack_cooldown_left = max(0.0, self._attack_cooldown_left - delta_time)
+        self._attack_chain_timer = max(0.0, self._attack_chain_timer - delta_time)
+        if was_attacking and self._attack_time_left <= 0.0 and self._attack_queued:
+            self._start_attack(self._attack_stage + 1)
+        if not self.alive:
+            self.texture = self._animator.update(delta_time)
+            sprites.apply_facing(self, self.facing)
             return
-        if abs(self.change_x) > 0.05:
-            self._animator.play(self._walk)
+        if self._physics is None:
+            return
+        if self.is_attacking:
+            self.texture = self._attack_animator.update(delta_time)
+            if self.attack_impact_active and not self._attack_sound_played:
+                self._attack_sound_played = True
+                self._attack_sound_events.append(self._attack_stage)
         else:
-            self._animator.play(self._idle)
-        self.texture = self._animator.update(delta_time)
+            if abs(self.change_x) > 0.05:
+                self._animator.play(self._walk)
+            elif self._dash_cooldown > 0.0:
+                self._animator.play(self._idle_breathe)
+            else:
+                self._animator.play(self._idle_still)
+            self.texture = self._animator.update(delta_time)
         sprites.apply_facing(self, self.facing)
+        carried = self.is_dashing or self._dash_jump
         self._tick_dash(delta_time)
         if self.is_dashing:
             self.change_x = self._dash_dir * settings.PLAYER_DASH_SPEED
@@ -314,11 +532,16 @@ class Player(arcade.Sprite):
         self._apply_jump_gravity()
         self._cap_fall_speed()
         fall_speed = max(0.0, -self.change_y)
+        old_x = self.center_x
+        intended_x = self.change_x
         self._physics.update()
+        if carried and self._dash_blocked_by_wall(old_x, intended_x):
+            self._stop_dash_against_wall()
         self._cap_fall_speed()
         grounded = self._physics.can_jump()
         if grounded and not self._was_on_ground:
-            self._landing_timer = settings.PLAYER_LANDING_SLOW_TIME
+            if not self._standing_on_ice():
+                self._landing_timer = settings.PLAYER_LANDING_SLOW_TIME
             self._dust.emit_landing(
                 self.center_x,
                 self.bottom,
@@ -373,11 +596,26 @@ class Player(arcade.Sprite):
 
     def _tick_run_dust(self, delta_time: float) -> None:
         full_speed = abs(self.change_x) >= settings.PLAYER_SPEED * settings.PARTICLE_RUN_SPEED_RATIO
-        if not full_speed:
+        if not full_speed or self._standing_on_ice():
             self._dust.stop_run()
             return
         behind_x = self.center_x - self.facing * (self.width * 0.55)
         self._dust.tick_run(behind_x, self.bottom, self.facing, delta_time)
+
+    def _dash_blocked_by_wall(self, old_x: float, intended_x: float) -> bool:
+        """True si le moteur a absorbe le deplacement horizontal contre un mur."""
+        if intended_x == 0.0:
+            return False
+        moved = self.center_x - old_x
+        if intended_x > 0.0:
+            return moved < 1.0
+        return moved > -1.0
+
+    def _stop_dash_against_wall(self) -> None:
+        """Coupe le dash et l'elan horizontal : plus de glissade le long du mur."""
+        self._dash_timer = 0.0
+        self._dash_jump = False
+        self.change_x = 0.0
 
     def _tick_dash(self, delta_time: float) -> None:
         if self._dash_timer > 0.0:
@@ -394,18 +632,25 @@ class Player(arcade.Sprite):
 
     def _apply_horizontal(self, delta_time: float) -> None:
         grounded = self._was_on_ground
-        landing = grounded and self._landing_timer > 0.0
+        on_ice = grounded and self._standing_on_ice()
+        landing = grounded and self._landing_timer > 0.0 and not on_ice
         max_speed = settings.PLAYER_SPEED * (
             settings.PLAYER_LANDING_SPEED_SCALE if landing else 1.0
         )
         accel = max_speed / max(settings.PLAYER_ACCEL_TIME, 0.001)
+        if on_ice:
+            accel *= settings.PLAYER_ICE_ACCEL_SCALE
         direction = self._move_dir
         if grounded:
             if direction == 0:
-                self.change_x += (0.0 - self.change_x) * _exp_alpha(
-                    delta_time, settings.PLAYER_SLIDE_TIME
+                slide = (
+                    settings.PLAYER_ICE_SLIDE_TIME if on_ice else settings.PLAYER_SLIDE_TIME
                 )
-                if abs(self.change_x) < 0.18:
+                self.change_x += (0.0 - self.change_x) * _exp_alpha(delta_time, slide)
+                stop = (
+                    settings.PLAYER_ICE_STOP_SPEED if on_ice else 0.18
+                )
+                if abs(self.change_x) < stop:
                     self.change_x = 0.0
                 return
             if self.change_x * direction < 0.0:
@@ -427,3 +672,19 @@ class Player(arcade.Sprite):
         self.change_x = _approach(
             self.change_x, direction * air_cap, air_accel * delta_time
         )
+
+    def _standing_on_ice(self) -> bool:
+        """True si un pied repose sur un bloc `slippery`."""
+        if not self._solids:
+            return False
+        probes = (
+            (self.center_x, self.bottom - 2),
+            (self.center_x - self.width * 0.28, self.bottom - 2),
+            (self.center_x + self.width * 0.28, self.bottom - 2),
+        )
+        for group in self._solids:
+            for probe_x, probe_y in probes:
+                for sprite in arcade.get_sprites_at_point((probe_x, probe_y), group):
+                    if getattr(sprite, "slippery", False):
+                        return True
+        return False

@@ -30,6 +30,7 @@ from src.editor.activators import (
 )
 from src.editor.history import CellChange, Edit, GridState, History
 from src.editor.selection import Block, GridRect
+from src.world.falling_block import FallingSpec, dump_falling_specs, parse_falling_specs
 from src.world.flamethrower import FlameSpec, dump_flame_specs, parse_flame_specs
 
 # (colonne, ligne, type present apres l'operation)
@@ -57,6 +58,7 @@ class EditorDocument:
         symbols: dict[str, str] | None = None,
         activators: Sequence[Activator] = (),
         flames: dict[tuple[int, int], FlameSpec] | None = None,
+        fallings: dict[tuple[int, int], FallingSpec] | None = None,
     ) -> None:
         if not cells or not cells[0]:
             raise DocumentError("une carte doit avoir au moins une cellule")
@@ -80,10 +82,13 @@ class EditorDocument:
         self._activators: tuple[Activator, ...] = tuple(activators)
         self._flames: dict[tuple[int, int], FlameSpec] = dict(flames or {})
         self._flame_brush = FlameSpec(0, 0)
+        self._fallings: dict[tuple[int, int], FallingSpec] = dict(fallings or {})
+        self._falling_brush = FallingSpec(0, 0)
         self._stroke: list[CellChange] | None = None
         self._stroke_label = ""
         self._stroke_activators: tuple[Activator, ...] | None = None
         self._sync_flames()
+        self._sync_fallings()
 
     # ------------------------------------------------------------------ #
     # Construction
@@ -159,6 +164,10 @@ class EditorDocument:
             flames = parse_flame_specs(data.get("flamethrowers"))
         except ValueError as error:
             raise DocumentError(str(error)) from error
+        try:
+            fallings = parse_falling_specs(data.get("falling_blocks"))
+        except ValueError as error:
+            raise DocumentError(str(error)) from error
         return cls(
             name=str(data.get("name", "Niveau sans nom")),
             hint=str(data.get("hint", "")),
@@ -168,6 +177,7 @@ class EditorDocument:
             symbols=symbols,
             activators=activators,
             flames=flames,
+            fallings=fallings,
         )
 
     # ------------------------------------------------------------------ #
@@ -234,6 +244,34 @@ class EditorDocument:
         self._flame_brush = FlameSpec(
             0, 0, updated.range_tiles, updated.interval, updated.direction
         )
+        self._version += 1
+        return updated
+
+    def falling_at(self, column: int, row: int) -> FallingSpec | None:
+        """Reglages du bloc tombant pose en (colonne, ligne), s'il y en a un."""
+        return self._fallings.get((column, row))
+
+    def adjust_falling(
+        self,
+        column: int,
+        row: int,
+        *,
+        delay_delta: float = 0.0,
+        respawn_delta: float = 0.0,
+    ) -> FallingSpec | None:
+        """Modifie le bloc tombant sous le curseur. None si la cellule n'en est pas un."""
+        if self.cell(column, row) != settings.TILE_KIND_FALLING:
+            return None
+        current = self._fallings.get((column, row)) or FallingSpec(column, row)
+        updated = current
+        if delay_delta:
+            updated = updated.with_delay(updated.delay + delay_delta)
+        if respawn_delta:
+            updated = updated.with_respawn(updated.respawn + respawn_delta)
+        if updated == current:
+            return current
+        self._fallings[(column, row)] = updated
+        self._falling_brush = FallingSpec(0, 0, updated.delay, updated.respawn)
         self._version += 1
         return updated
 
@@ -469,6 +507,7 @@ class EditorDocument:
         self._version += 1
         self._layout_version += 1
         self._sync_flames()
+        self._sync_fallings()
         return True
 
     def can_link(self, column: int, row: int) -> bool:
@@ -514,6 +553,13 @@ class EditorDocument:
         added = updated.has_target(column, row)
         self.replace_activator(index, updated, "lier un bloc" if added else "delier un bloc")
         return added
+
+    def toggle_activator_invert(self, index: int) -> bool:
+        """Inverse cache / montre a l'activation. Retourne le nouvel etat."""
+        current = self._activators[index]
+        updated = current.with_inverted(not current.inverted)
+        self.replace_activator(index, updated, "inverser une plaque")
+        return updated.inverted
 
     def set_metadata(
         self,
@@ -575,6 +621,9 @@ class EditorDocument:
         flames = dump_flame_specs(self._flames)
         if flames:
             payload["flamethrowers"] = flames
+        fallings = dump_falling_specs(self._fallings)
+        if fallings:
+            payload["falling_blocks"] = fallings
         return payload
 
     def save(self, path: str | Path | None = None) -> Path:
@@ -617,6 +666,7 @@ class EditorDocument:
             )
         self._version += 1
         self._sync_flames()
+        self._sync_fallings()
         return tuple((change.column, change.row, change.after) for change in changes)
 
     def _sync_activators(self) -> None:
@@ -648,6 +698,27 @@ class EditorDocument:
                     brush.direction,
                 )
         self._flames = kept
+
+    def _sync_fallings(self) -> None:
+        """Garde un spec par cellule `falling_block`, jette le reste."""
+        kept: dict[tuple[int, int], FallingSpec] = {}
+        brush = self._falling_brush
+        kind_name = settings.TILE_KIND_FALLING
+        for row, line in enumerate(self._cells):
+            for column, kind in enumerate(line):
+                if kind != kind_name:
+                    continue
+                existing = self._fallings.get((column, row))
+                if existing is not None:
+                    kept[(column, row)] = existing
+                    continue
+                kept[(column, row)] = FallingSpec(
+                    column,
+                    row,
+                    brush.delay,
+                    brush.respawn,
+                )
+        self._fallings = kept
 
     def _commit_activators(self, label: str, before: tuple[Activator, ...]) -> None:
         if before == self._activators:
@@ -691,6 +762,7 @@ class EditorDocument:
             assert restored is not None
             self._activators = restored
         self._sync_flames()
+        self._sync_fallings()
         return states
 
     def _snapshot(self) -> GridState:

@@ -303,7 +303,8 @@ class PalettePanel:
             for index, activator in enumerate(activators):
                 rows.append(
                     _Row(
-                        f"#{index + 1}  {activator.column},{activator.row}  x{activator.width}",
+                        f"#{index + 1}  {activator.column},{activator.row}  x{activator.width}"
+                        f"{'  montre' if activator.inverted else ''}",
                         settings.EDITOR_ROW_HEIGHT,
                         activator_index=index,
                     )

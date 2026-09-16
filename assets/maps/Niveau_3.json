@@ -5,8 +5,8 @@
   "legend": {
     ".": "vide",
     "C": "checkpoint",
-    "[": "dirt_corner",
-    "-": "dirt_top",
+    "[": "wall",
+    "-": "wall",
     "D": "door",
     "E": "enemy",
     "K": "key",

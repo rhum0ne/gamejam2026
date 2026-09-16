@@ -12,6 +12,7 @@ n'apparait, mais le contexte OpenGL est bien reel, donc `on_draw` est teste.
 
 from __future__ import annotations
 
+import math
 import sys
 from pathlib import Path
 
@@ -20,9 +21,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import arcade  # noqa: E402
 
 import settings  # noqa: E402
+from src.entities.bat import Bat, BatState  # noqa: E402
 from src.entities.enemy import Enemy, EnemyState  # noqa: E402
 from src.entities.item import ItemKind  # noqa: E402
 from src.entities.player import Player  # noqa: E402
+from src.entities.zombie import Zombie, ZombieState  # noqa: E402
 from src.systems import collisions  # noqa: E402
 from src.systems.event_manager import EventManager  # noqa: E402
 from src.systems.events import PLAYER_DEATH, PLAYER_GHOST_END, PLAYER_WIN  # noqa: E402
@@ -47,10 +50,14 @@ def check_levels() -> None:
             assert len(level.mechanisms) >= 1, f"{name} : plaque d'activation manquante"
             hanging = sum(1 for hazard in level.hazards if getattr(hazard, "hanging", False))
             assert hanging >= 1, f"{name} : pique de plafond manquante"
+            assert any(isinstance(enemy, Bat) for enemy in level.enemies), (
+                f"{name} : chauve-souris manquante"
+            )
             extra = f", {len(level.mechanisms)} plaque(s), {hanging} pique(s) plafond"
         print(f"  carte '{name}' -> {level.name}: {level.columns}x{level.rows} tuiles, "
               f"{len(level.walls)} murs, {len(level.items)} objets, {len(level.enemies)} ennemis{extra}")
     check_invalid_activator()
+    check_inverted_activator()
 
 
 def check_invalid_activator() -> None:
@@ -81,6 +88,43 @@ def check_invalid_activator() -> None:
         print(f"  plaque orpheline -> {message}")
         return
     raise AssertionError("une plaque sans bloc aurait du etre refusee")
+
+
+def check_inverted_activator() -> None:
+    """Une plaque `invert` montre les blocs a l'activation au lieu de les cacher."""
+    from src.world.level import Level
+
+    data = {
+        "name": "inverse",
+        "tile_size": 32,
+        "legend": {"#": "wall", "P": "player_spawn"},
+        "rows": [
+            "#####",
+            "#P..#",
+            "#.#.#",
+            "#####",
+        ],
+        "activators": [
+            {
+                "x": 1,
+                "y": 1,
+                "width": 1,
+                "invert": True,
+                "activate": {"setBlock": [{"x": 2, "y": 2, "type": "void"}]},
+            }
+        ],
+    }
+    level = Level.from_dict(data)
+    assert len(level.mechanisms) == 1
+    mechanism = level.mechanisms[0]
+    assert mechanism.inverted
+    assert mechanism.targets
+    assert all(tile.hidden for tile in mechanism.targets), "les blocs inverses sont caches au repos"
+    mechanism.set_pressed(True, ())
+    assert all(not tile.hidden for tile in mechanism.targets), "l'activation doit montrer les blocs"
+    mechanism.set_pressed(False, ())
+    assert all(tile.hidden for tile in mechanism.targets), "le relachement doit recacher les blocs"
+    print("  plaque inversee -> cachee au repos, visible a l'activation")
 
 
 def check_progression() -> None:
@@ -209,6 +253,373 @@ def check_enemy_ai() -> None:
 
     print(f"  IA ennemie -> aggro vertical, contact inoffensif, coup a {frames_to_hit} frames, "
           "esquive, mort animee OK")
+
+
+def _player_at(x: float, y: float) -> Player:
+    """Player positionne exactement a (x, y).
+
+    `Player.__init__` appelle `_place_on_tile` (magnetisme au sol le plus
+    proche) : sans cette reaffectation apres coup, les positions precises
+    utilisees par `check_bat_ai` (cone d'attaque, etc.) seraient faussees.
+    """
+    player = Player(x, y)
+    player.center_x, player.center_y = x, y
+    return player
+
+
+def check_bat_ai() -> None:
+    """Sommeil/reveil, poursuite en vol libre, cone d'attaque (piquet vs charge), laisse, mort animee.
+
+    Meme principe que `check_enemy_ai` : des `Bat`/`Player` isoles (pas de
+    fenetre necessaire pour la logique, seul le dessin en demande une).
+    """
+    bat = Bat(300.0, 300.0)
+    assert bat.state is BatState.SLEEP
+    assert not bat.weighs_on_plates, "une chauve-souris volante ne doit pas peser sur une plaque"
+
+    # Joueur hors de portee de reveil : reste endormie.
+    player = _player_at(bat.center_x + settings.BAT_WAKE_RANGE + 40.0, bat.center_y)
+    bat.update(FRAME, player=player, corpses=None)
+    assert bat.state is BatState.SLEEP, "trop loin : la chauve-souris ne doit pas se reveiller"
+
+    # A portee : se reveille, puis part en poursuite une fois l'animation finie.
+    player.center_x = bat.center_x + settings.BAT_WAKE_RANGE - 10.0
+    player.center_y = bat.center_y
+    bat.update(FRAME, player=player, corpses=None)
+    assert bat.state is BatState.WAKE, "a portee de reveil : doit se reveiller"
+    for _ in range(200):
+        bat.update(FRAME, player=player, corpses=None)
+        if bat.state is not BatState.WAKE:
+            break
+    assert bat.state is BatState.CHASE, "le reveil doit se terminer et lancer la poursuite"
+
+    # Poursuite : vole librement vers le joueur (pas de gravite, 2 axes).
+    player.center_x, player.center_y = bat.center_x + 200.0, bat.center_y + 50.0
+    for _ in range(10):
+        bat.update(FRAME, player=player, corpses=None)
+    assert bat.change_x > 0.0, "doit voler vers un joueur situe a l'est"
+    assert bat.change_y > 0.0, "doit voler vers un joueur situe plus haut"
+
+    # Cone d'attaque : le piquet se declenche aussi si le joueur est *presque*
+    # en-dessous, pas seulement pile en-dessous (BAT_DIVE_CONE_ANGLE).
+    straight_below = _player_at(bat.center_x, bat.center_y - settings.BAT_DIVE_MIN_DROP - 20.0)
+    assert bat._pick_attack(straight_below) is bat._dive, "pile en-dessous : doit piquer"
+    offset_below = _player_at(bat.center_x + 15.0, bat.center_y - settings.BAT_DIVE_MIN_DROP - 20.0)
+    assert bat._pick_attack(offset_below) is bat._dive, (
+        "presque en-dessous, dans le cone : doit aussi piquer"
+    )
+    outside_cone = _player_at(bat.center_x + 40.0, bat.center_y - 25.0)
+    assert bat._pick_attack(outside_cone) is None, (
+        "angle trop grand par rapport a la verticale (hors cone) et trop haut pour charger : pas d'attaque"
+    )
+    same_height = _player_at(bat.center_x + settings.BAT_ATTACK_RANGE - 5.0, bat.center_y)
+    assert bat._pick_attack(same_height) is bat._lunge, "a peu pres a la meme hauteur : doit charger"
+
+    # Piquet declenche par la boucle de jeu : ne tue que sur les frames actives.
+    diver = Bat(300.0, 300.0)
+    diver.state = BatState.CHASE
+    prey = _player_at(diver.center_x, diver.center_y - settings.BAT_DIVE_MIN_DROP - 20.0)
+    diver.update(FRAME, player=prey, corpses=None)
+    assert diver.state is BatState.ATTACK and diver._animator.animation is diver._dive
+    assert collisions.enemy_striking_player(prey, [diver]) is None, (
+        "les premieres frames de l'attaque (armement) ne doivent pas tuer"
+    )
+    frames_to_hit = None
+    for frame in range(120):
+        diver.update(FRAME, player=prey, corpses=None)
+        if collisions.enemy_striking_player(prey, [diver]) is diver:
+            frames_to_hit = frame + 1
+            break
+    assert frames_to_hit is not None, "un joueur immobile pile sous la chauve-souris doit etre touche"
+    for _ in range(120):
+        diver.update(FRAME, player=prey, corpses=None)
+        if diver.state is not BatState.ATTACK:
+            break
+    assert diver.state is BatState.CHASE, "l'attaque finie doit reprendre la poursuite (avec recharge)"
+
+    # Regression : l'ATTAQUE doit vraiment rapprocher l'ancre du sprite du
+    # joueur, pas seulement jouer l'animation de piquet/charge sur place
+    # (bug corrige : la planche a elle seule un mouvement marque, mais sans
+    # deplacer le sprite, l'attaque semblait foncer sur le joueur sans jamais
+    # le toucher pour de vrai des qu'il n'etait pas deja tout pres).
+    charger = Bat(300.0, 300.0)
+    charger.state = BatState.CHASE
+    far_prey = _player_at(charger.center_x + settings.BAT_ATTACK_RANGE - 5.0, charger.center_y)
+    start_distance = math.dist((charger.center_x, charger.center_y), (far_prey.center_x, far_prey.center_y))
+    charger.update(FRAME, player=far_prey, corpses=None)
+    assert charger.state is BatState.ATTACK and charger._animator.animation is charger._lunge
+    for _ in range(30):
+        charger.update(FRAME, player=far_prey, corpses=None)
+    end_distance = math.dist((charger.center_x, charger.center_y), (far_prey.center_x, far_prey.center_y))
+    assert end_distance < start_distance - 10.0, (
+        "l'ancre de la chauve-souris doit vraiment se rapprocher du joueur pendant l'attaque "
+        f"(depart {start_distance:.0f}px, arrivee {end_distance:.0f}px)"
+    )
+
+    # Regression : l'elan d'attaque ne doit pas osciller ("picorement") une
+    # fois arrive pres du joueur (bug corrige : couper la cible sans annuler
+    # la vitesse acquise laissait l'elan porter l'ancre hors de la zone
+    # d'arrivee, qui se rearmait alors la frame suivante -> aller-retour).
+    pecker = Bat(300.0, 300.0)
+    pecker.state = BatState.CHASE
+    pecker_prey = _player_at(pecker.center_x, pecker.center_y - settings.BAT_DIVE_MIN_DROP - 20.0)
+    pecker.update(FRAME, player=pecker_prey, corpses=None)
+    assert pecker.state is BatState.ATTACK
+    previous = (pecker.center_x, pecker.center_y)
+    previous_delta = (0.0, 0.0)
+    reversals = 0
+    for _ in range(80):
+        pecker.update(FRAME, player=pecker_prey, corpses=None)
+        current = (pecker.center_x, pecker.center_y)
+        delta = (current[0] - previous[0], current[1] - previous[1])
+        if delta[0] * previous_delta[0] < -1e-6 or delta[1] * previous_delta[1] < -1e-6:
+            reversals += 1
+        previous = current
+        if delta != (0.0, 0.0):
+            previous_delta = delta
+        if pecker.state is not BatState.ATTACK:
+            break
+    assert reversals == 0, (
+        f"l'ancre ne doit pas faire d'aller-retour pendant l'attaque ({reversals} inversion(s) de sens)"
+    )
+
+    # Laisse : trop loin de son perchoir, la chauve-souris abandonne et rentre,
+    # puis se rendort une fois posee dessus.
+    homebound = Bat(300.0, 300.0)
+    homebound.state = BatState.CHASE
+    homebound.center_x = homebound._home_x + settings.BAT_LEASH_RANGE + 50.0
+    homebound.center_y = homebound._home_y
+    homebound.update(
+        FRAME, player=_player_at(homebound.center_x, homebound.center_y), corpses=None
+    )
+    assert homebound.state is BatState.RETURN, "trop loin de son perchoir : doit abandonner et rentrer"
+    for _ in range(400):
+        homebound.update(FRAME, player=None, corpses=None)
+        if homebound.state is BatState.SLEEP:
+            break
+    assert homebound.state is BatState.SLEEP, "de retour au perchoir : doit se rendormir"
+    assert math.dist((homebound.center_x, homebound.center_y), (300.0, 300.0)) < 1.0, (
+        "doit atterrir pile sur son perchoir d'origine"
+    )
+
+    # Regression : le joueur reste colle a portee de reveil pendant tout le
+    # retour (typiquement juste apres une esquive) -> ne doit pas reprendre la
+    # poursuite en boucle (BAT_LEASH_RANGE et BAT_WAKE_RANGE sont deux seuils
+    # independants ; annuler RETURN des que le joueur est proche recreait un
+    # aller-retour CHASE <-> RETURN a chaque frame).
+    clingy = Bat(300.0, 300.0)
+    clingy.state = BatState.CHASE
+    clingy.center_x = clingy._home_x + settings.BAT_LEASH_RANGE + 50.0
+    clingy.center_y = clingy._home_y
+    close_player = _player_at(clingy.center_x + 20.0, clingy.center_y)
+    clingy.update(FRAME, player=close_player, corpses=None)
+    assert clingy.state is BatState.RETURN, "trop loin de son perchoir : doit rentrer meme joueur tout pres"
+    for _ in range(400):
+        close_player.center_x, close_player.center_y = clingy.center_x + 20.0, clingy.center_y
+        clingy.update(FRAME, player=close_player, corpses=None)
+        assert clingy.state is not BatState.CHASE, (
+            "ne doit pas reprendre la poursuite avant d'etre rentree se reposer"
+        )
+        if clingy.state is BatState.SLEEP:
+            break
+    assert clingy.state is BatState.SLEEP, "doit finir par rentrer et se rendormir malgre le joueur colle"
+
+    # Mort : bille bleue, etat DYING, un 2e coup pendant DYING est ignore, animation finie.
+    victim = Bat(300.0, 300.0)
+    orb = victim.take_damage()
+    assert orb is not None, "take_damage doit renvoyer une bille bleue a la mort"
+    assert victim.state is BatState.DYING and victim.is_dying
+    assert victim.take_damage() is None, "une chauve-souris DYING ignore les coups suivants"
+    for _ in range(120):
+        victim.update(FRAME, player=None, corpses=None)
+    assert victim._animator.finished, "l'animation de mort doit se terminer"
+
+    print(f"  IA chauve-souris -> reveil/poursuite/laisse, piquet a {frames_to_hit} frames, "
+          "cone d'attaque, charge, mort animee OK")
+
+
+def _tile_walls(tiles: list[tuple[int, int]]) -> arcade.SpriteList:
+    """Mini-monde de tuiles (colonne, ligne ; ligne 0 en bas) pour tester une IA au sol."""
+    walls = arcade.SpriteList(use_spatial_hash=True)
+    for column, row in tiles:
+        tile = arcade.SpriteSolidColor(settings.TILE_SIZE, settings.TILE_SIZE, color=arcade.color.GRAY)
+        tile.left = column * settings.TILE_SIZE
+        tile.bottom = row * settings.TILE_SIZE
+        walls.append(tile)
+    return walls
+
+
+def _run_until(zombie: Zombie, player: Player | None, states: set[ZombieState], limit: int) -> int | None:
+    """Fait tourner le zombie jusqu'a l'un des `states` ; retourne le nombre de frames ecoulees."""
+    for frame in range(limit):
+        zombie.update(FRAME, player=player, corpses=None)
+        if zombie.state in states:
+            return frame + 1
+    return None
+
+
+def check_zombie_ai() -> None:
+    """Vision en cone + ligne de vue, cri puis course, memoire/recherche, griffe, 2 PV, chute.
+
+    Meme principe que `check_enemy_ai` : entites isolees. Les cas qui ont
+    besoin de murs (ligne de vue, chute) construisent un mini-monde de tuiles.
+    """
+    tile = settings.TILE_SIZE
+
+    # Vision : rien dans son dos (hors contact), le joueur devant declenche le cri.
+    zombie = Zombie(300.0, 300.0)
+    assert zombie.state is ZombieState.PATROL and zombie.facing == -1
+    player = _player_at(zombie.center_x + 120.0, zombie.center_y)
+    zombie.update(FRAME, player=player, corpses=None)
+    assert zombie.state is ZombieState.PATROL, "joueur dans le dos : le zombie ne doit pas le voir"
+    player.center_x = zombie.center_x - 150.0
+    zombie.update(FRAME, player=player, corpses=None)
+    assert zombie.state is ZombieState.ALERT, "joueur devant, a portee de vue : doit crier"
+    assert zombie.change_x == 0.0, "le cri immobilise le zombie"
+
+    # Cri -> course : annonce d'abord, puis plus rapide qu'en patrouille.
+    frames_alert = _run_until(zombie, player, {ZombieState.CHASE}, 120)
+    assert frames_alert is not None and frames_alert > 10, "le cri doit durer avant la course"
+    for _ in range(40):
+        zombie.update(FRAME, player=player, corpses=None)
+    assert zombie.change_x < -settings.ZOMBIE_PATROL_SPEED, "en poursuite, doit courir vers le joueur"
+
+    # Memoire puis recherche : joueur hors de vue, il ne renonce pas tout de suite.
+    player.center_x = zombie.center_x + settings.ZOMBIE_SIGHT_RANGE + 200.0
+    frames_to_search = _run_until(zombie, player, {ZombieState.SEARCH}, 400)
+    assert frames_to_search is not None, "vue perdue : doit finir par chercher"
+    assert frames_to_search >= int(settings.ZOMBIE_MEMORY_TIME / FRAME) - 2, (
+        "doit d'abord poursuivre le dernier point vu pendant ZOMBIE_MEMORY_TIME"
+    )
+    assert _run_until(zombie, player, {ZombieState.PATROL}, 400) is not None, (
+        "recherche infructueuse : doit reprendre sa patrouille"
+    )
+
+    # Un mur entre eux bloque la vue ; sans le mur, il voit le joueur.
+    floor = [(column, 0) for column in range(20)]
+    pillar = [(10, row) for row in range(1, 4)]
+    walls = _tile_walls(floor + pillar)
+    watcher = Zombie(13.5 * tile, tile + settings.ZOMBIE_HEIGHT / 2 + 2.0)
+    watcher.bind_world([walls])
+    hidden = _player_at(7.5 * tile, tile + settings.PLAYER_HEIGHT / 2)
+    for _ in range(20):
+        watcher.update(FRAME, player=hidden, corpses=None)
+        assert watcher.state is ZombieState.PATROL, "un mur entre eux doit bloquer la vue"
+    for sprite in [sprite for sprite in walls if sprite.bottom >= tile]:
+        sprite.remove_from_sprite_lists()
+    assert _run_until(watcher, hidden, {ZombieState.ALERT}, 30) is not None, (
+        "mur retire : doit voir le joueur"
+    )
+
+    # Griffe : annoncee (pas de degat au premier contact), puis touche un joueur
+    # immobile. Sur un vrai sol : a la distance de declenchement, c'est le bond
+    # (ZOMBIE_ATTACK_RANGE > ZOMBIE_ATTACK_REACH) qui amene la griffe au contact.
+    clawer = Zombie(15.5 * tile, tile + settings.ZOMBIE_HEIGHT / 2 + 2.0)
+    clawer.bind_world([_tile_walls([(column, 0) for column in range(30)])])
+    _run_until(clawer, None, set(), 5)
+    prey = _player_at(clawer.center_x - settings.ZOMBIE_ATTACK_RANGE + 5.0, clawer.center_y)
+    start_x = clawer.center_x
+    assert _run_until(clawer, prey, {ZombieState.ATTACK}, 120) is not None, "a portee : doit attaquer"
+    assert collisions.enemy_striking_player(prey, [clawer]) is None, "le debut de l'attaque ne doit pas tuer"
+    frames_to_hit = None
+    for frame in range(120):
+        clawer.update(FRAME, player=prey, corpses=None)
+        if collisions.enemy_striking_player(prey, [clawer]) is clawer:
+            frames_to_hit = frame + 1
+            break
+    assert frames_to_hit is not None and frames_to_hit > 5, "la griffe doit toucher apres l'armement"
+    assert clawer.center_x < start_x - 5.0, "l'attaque doit etre un bond vers le joueur"
+
+    # 2 PV : le 1er coup sonne (et coupe l'attaque en cours), sans bille bleue.
+    assert clawer.take_damage() is None, "1er coup : le zombie survit"
+    assert clawer.state is ZombieState.HURT and not clawer.is_dying
+    assert not clawer.strike_active, "un zombie sonne ne frappe plus"
+    prey.center_x = clawer.center_x + settings.ZOMBIE_SIGHT_RANGE + 100.0  # dans son dos, hors de vue
+    assert _run_until(clawer, prey, {ZombieState.CHASE}, 120) is not None, "doit se remettre du coup"
+    assert clawer.facing == 1 and clawer._memory_timer > 0.0, (
+        "enrage : doit se tourner vers le joueur meme sans le voir"
+    )
+    orb = clawer.take_damage()
+    assert orb is not None and clawer.state is ZombieState.DYING, "2e coup : mort et bille bleue"
+    assert clawer.take_damage() is None, "un zombie DYING ignore les coups suivants"
+    for _ in range(120):
+        clawer.update(FRAME, player=prey, corpses=None)
+    assert clawer._animator.finished, "l'animation de mort doit se terminer"
+
+    # Chute : se laisse tomber vers un joueur 3 tuiles plus bas...
+    upper = [(column, 4) for column in range(10)]
+    lower = [(column, 1) for column in range(25)]
+    walls = _tile_walls(upper + lower)
+    diver = Zombie(9.5 * tile, 5 * tile + settings.ZOMBIE_HEIGHT / 2 + 2.0)
+    diver.facing = 1
+    diver.bind_world([walls])
+    below = _player_at(15.5 * tile, 2 * tile + settings.PLAYER_HEIGHT / 2)
+    landed = False
+    for _ in range(400):
+        diver.update(FRAME, player=below, corpses=None)
+        if diver.bottom < 3 * tile and diver._grounded:
+            landed = True
+            break
+    assert landed, f"doit sauter de la plateforme vers le joueur (etat {diver.state.name}, bas={diver.bottom:.0f})"
+
+    # ... mais pas dans un puits plus profond que ZOMBIE_MAX_DROP_TILES.
+    deep = settings.ZOMBIE_MAX_DROP_TILES + 3
+    walls = _tile_walls([(column, deep) for column in range(10)] + [(column, 0) for column in range(25)])
+    cautious = Zombie(9.5 * tile, (deep + 1) * tile + settings.ZOMBIE_HEIGHT / 2 + 2.0)
+    cautious.facing = 1
+    cautious.bind_world([walls])
+    _run_until(cautious, None, set(), 10)
+    assert not cautious._may_drop(tile), "puits trop profond : ne doit pas s'y jeter"
+
+    print(f"  IA zombie -> cone de vision, mur bloquant, cri {frames_alert} frames, memoire "
+          f"{frames_to_search} frames, griffe a {frames_to_hit} frames, 2 PV, chute OK")
+
+
+def check_combat(window: arcade.Window) -> None:
+    """Un clic gauche declenche une frappe frontale et vainc un ennemi."""
+    view = PlayView(GameSession())
+    window.show_view(view)
+    advance(view, 2)
+
+    player = view.player
+    enemy = next(item for item in view.level.enemies if isinstance(item, Enemy))
+    player_start_x = player.center_x
+    player_start_y = player.center_y
+    enemy_start_y = enemy.center_y
+
+    # Le contact vertical ne doit plus etre une attaque : seul le clic gauche
+    # doit infliger des degats aux ennemis.
+    enemy.state = EnemyState.PATROL
+    player.center_x = enemy.center_x
+    player.center_y = enemy.center_y + settings.ENEMY_HEIGHT
+    player.change_y = -5.0
+    view._resolve_player_collisions()
+    assert enemy.state is EnemyState.PATROL, "sauter sur un ennemi ne doit plus le vaincre"
+    assert enemy.hit_points == enemy.max_hit_points, "le saut ne doit pas infliger de degats"
+    assert player.change_y == -5.0, "le saut sur un ennemi ne doit pas rebondir"
+
+    player.facing = 1
+    player.center_x = player_start_x
+    player.center_y = player_start_y
+    enemy.center_x = player.right + abs(enemy.width) / 2 + 6
+    enemy.center_y = enemy_start_y
+    player.change_y = 0.0
+
+    view.on_mouse_press(
+        view.camera.world.viewport_width / 2 + 100,
+        view.camera.world.viewport_height / 2,
+        arcade.MOUSE_BUTTON_LEFT,
+        0,
+    )
+    advance(view, 5)
+
+    assert enemy.state is EnemyState.DYING, "un clic gauche doit vaincre l'ennemi a portee"
+    assert any(item.kind is ItemKind.SOUL_ORB for item in view.level.items), (
+        "un ennemi vaincu doit laisser une bille bleue"
+    )
+    advance(view, 120)
+    assert enemy not in view.level.enemies, "un ennemi vaincu doit finir par disparaitre"
+    print("  combat -> clic gauche, ennemi vaincu, ame generee")
 
 
 def advance(view: arcade.View, frames: int) -> None:
@@ -379,9 +790,11 @@ def check_tutorial_is_solvable(window: arcade.Window) -> None:
             if abs(delta_y) > 6:
                 view.held_keys.add(arcade.key.UP if delta_y > 0 else arcade.key.DOWN)
             # Le timer et la duree de vie du cadavre ne sont pas le sujet de ce test.
-            # Le timer du fantome n'est pas le sujet ici : un pilote scripte
-            # est bien plus lent qu'un joueur, on le neutralise.
+            # Un pilote scripte est plus lent qu'un joueur, surtout depuis que
+            # le puits du tutoriel a gagne des etages : on les neutralise.
             view.ghost.time_left = settings.GHOST_DURATION
+            for corpse_sprite in view.level.corpses:
+                corpse_sprite.time_left = settings.CORPSE_LIFETIME
             view.on_update(FRAME)
             if is_done():
                 return True
@@ -394,7 +807,14 @@ def check_tutorial_is_solvable(window: arcade.Window) -> None:
     )
     # Remontee en deux temps : d'abord au-dessus du cadavre, puis descente
     # dessus, pour ne pas raser la corniche (le fantome bute sur les murs).
+    # Le puits a des etages intermediaires : on grimpe d'abord dans la
+    # gaine, sinon le vol diagonal se coince sous les planchers.
     waypoint_y = corpse.center_y + 3 * settings.TILE_SIZE
+    assert fly_to(
+        lambda: key_item.center_x,
+        lambda: waypoint_y,
+        lambda: abs(view.ghost.center_y - waypoint_y) < 12,
+    ), "le fantome doit pouvoir remonter du puits"
     assert fly_to(
         lambda: corpse.center_x,
         lambda: waypoint_y,
@@ -422,6 +842,7 @@ def check_tutorial_is_solvable(window: arcade.Window) -> None:
 
     view.held_keys.add(arcade.key.RIGHT)
     previous_x = view.player.center_x
+    start_level = view.session.level_index
     for _ in range(3500):
         blocked = abs(view.player.center_x - previous_x) < 0.2
         previous_x = view.player.center_x
@@ -435,11 +856,13 @@ def check_tutorial_is_solvable(window: arcade.Window) -> None:
         if view.player.on_ground and (blocked or wall_ahead or hole_ahead):
             view.player.jump()
         view.on_update(FRAME)
-        if view.machine.state is GameState.VICTORY:
+        if view.machine.state is GameState.VICTORY or view.session.level_index > start_level:
             break
         if view.machine.state is GameState.GHOST:
             break
-    assert view.machine.state is GameState.VICTORY, (
+    assert (
+        view.machine.state is GameState.VICTORY or view.session.level_index > start_level
+    ), (
         f"le niveau doit pouvoir etre termine (etat : {view.machine.state.name}, "
         f"x = {view.player.center_x:.0f})"
     )
@@ -517,7 +940,7 @@ def check_editor_document() -> None:
     kinds = {item.kind for item in palette.PALETTE}
     for kind in gameplay_kinds():
         assert kind in kinds, f"la palette doit lister le gameplay '{kind}'"
-    assert "wall" in kinds and "enemy" in kinds and "spike" in kinds
+    assert "wall" in kinds and "enemy" in kinds and "bat" in kinds and "zombie" in kinds and "spike" in kinds
 
     document = EditorDocument.from_file("level_1_tuto.json")
     assert document.columns > 0 and document.rows > 0
@@ -568,6 +991,26 @@ def check_editor_document() -> None:
     assert document.activators[index].width == 3
     linked = document.toggle_target(index, 2, document.rows - 2)
     assert linked
+    assert not document.activators[index].inverted
+    assert document.toggle_activator_invert(index)
+    invert_path = Path(tempfile.mkdtemp()) / "activator_invert.json"
+    invert_saved = document.save(invert_path)
+    invert_payload = json.loads(invert_saved.read_text(encoding="utf-8"))
+    inverted_entry = next(
+        entry
+        for entry in invert_payload["activators"]
+        if entry["x"] == 5 and entry["y"] == 5
+    )
+    assert inverted_entry.get("invert") is True
+    reloaded_invert = EditorDocument.from_file(invert_saved)
+    restored_plate = next(
+        plate
+        for plate in reloaded_invert.activators
+        if plate.column == 5 and plate.row == 5
+    )
+    assert restored_plate.inverted
+    invert_saved.unlink()
+    document.undo()
     document.undo()
     document.undo()
     assert len(document.activators) == 2
@@ -594,6 +1037,42 @@ def check_editor_document() -> None:
     flame_saved.unlink()
     document.undo()
     assert document.flame_at(*flame_cell) is None
+    ice_cell = (7, 7)
+    document.paint((ice_cell,), settings.TILE_KIND_ICE)
+    assert document.cell(*ice_cell) == settings.TILE_KIND_ICE
+    ice_saved = document.save(Path(tempfile.mkdtemp()) / "ice_roundtrip.json")
+    ice_payload = json.loads(ice_saved.read_text(encoding="utf-8"))
+    assert settings.TILE_KIND_ICE in ice_payload["legend"].values()
+    ice_saved.unlink()
+    document.undo()
+    fall_cell = (8, 8)
+    document.paint((fall_cell,), settings.TILE_KIND_FALLING)
+    placed_fall = document.falling_at(*fall_cell)
+    assert placed_fall is not None, "peindre un bloc tombant doit creer ses reglages"
+    tuned_fall = document.adjust_falling(
+        *fall_cell,
+        delay_delta=0.15,
+        respawn_delta=0.6,
+    )
+    assert tuned_fall is not None
+    assert abs(tuned_fall.delay - (placed_fall.delay + 0.15)) < 1e-6
+    assert abs(tuned_fall.respawn - (placed_fall.respawn + 0.6)) < 1e-6
+    fall_path = Path(tempfile.mkdtemp()) / "falling_roundtrip.json"
+    fall_saved = document.save(fall_path)
+    fall_payload = json.loads(fall_saved.read_text(encoding="utf-8"))
+    assert settings.TILE_KIND_FALLING in fall_payload["legend"].values()
+    fall_entries = fall_payload.get("falling_blocks", [])
+    assert fall_entries, "la carte doit ecrire le champ falling_blocks"
+    assert abs(fall_entries[0]["delay"] - tuned_fall.delay) < 1e-6
+    assert abs(fall_entries[0]["respawn"] - tuned_fall.respawn) < 1e-6
+    reloaded_fall = EditorDocument.from_file(fall_saved)
+    restored_fall = reloaded_fall.falling_at(*fall_cell)
+    assert restored_fall is not None
+    assert abs(restored_fall.delay - tuned_fall.delay) < 1e-6
+    assert abs(restored_fall.respawn - tuned_fall.respawn) < 1e-6
+    fall_saved.unlink()
+    document.undo()
+    assert document.falling_at(*fall_cell) is None
     print(f"  editeur document -> {document.columns}x{document.rows}, "
           f"{len(palette.PALETTE)} elements de palette")
 
@@ -647,6 +1126,184 @@ def check_flamethrower(window: arcade.Window) -> None:
     )
 
 
+def check_ice_block(window: arcade.Window) -> None:
+    """Le bloc `ice_block` est solide et conserve l'elan du corps au sol."""
+    from src.world.level import Level
+
+    data = {
+        "name": "Glace",
+        "tile_size": settings.TILE_SIZE,
+        "legend": {
+            ".": "vide",
+            "#": "rock",
+            "~": settings.TILE_KIND_ICE,
+            "P": "player_spawn",
+        },
+        "rows": [
+            "############",
+            "#..........#",
+            "#P.........#",
+            "#~~~~~~~~~~#",
+            "############",
+        ],
+    }
+    level = Level.from_dict(data)
+    ices = [wall for wall in level.walls if getattr(wall, "slippery", False)]
+    assert len(ices) == 10, f"attendu 10 blocs de glace, obtenu {len(ices)}"
+    player = Player(*level.player_spawn)
+    player.bind_world(level.static_walls, platforms=[level.corpses])
+    player.walk(0)
+    for _ in range(4):
+        player.update(FRAME)
+    assert player._standing_on_ice(), "le joueur doit reposer sur la glace"
+    player.change_x = settings.PLAYER_SPEED
+    for _ in range(24):
+        player.update(FRAME)
+    assert abs(player.change_x) > settings.PLAYER_SPEED * 0.45, (
+        f"la glace doit conserver l'elan, vitesse restante {player.change_x:.2f}"
+    )
+    print(f"  glace -> {len(ices)} blocs, elan conserve ({player.change_x:.2f} px/frame)")
+
+
+def check_dash_stops_on_wall(window: arcade.Window) -> None:
+    """Un dash dans un mur coupe l'elan, au sol comme en l'air."""
+    from src.world.level import Level
+
+    data = {
+        "name": "Dash mur",
+        "tile_size": settings.TILE_SIZE,
+        "legend": {".": "vide", "#": "wall", "P": "player_spawn"},
+        "rows": [
+            "#####",
+            "#...#",
+            "#...#",
+            "#P..#",
+            "#####",
+        ],
+    }
+    level = Level.from_dict(data)
+
+    def remaining_speed(*, airborne: bool) -> float:
+        player = Player(*level.player_spawn)
+        player.bind_world(level.static_walls, platforms=[level.corpses])
+        for _ in range(6):
+            player.update(FRAME)
+        if airborne:
+            player.center_y += settings.TILE_SIZE * 2
+            player.change_y = 0.0
+            player._was_on_ground = False
+            player._time_off_ground = 1.0
+        player.walk(1)
+        assert player.dash(), "le dash doit partir"
+        for _ in range(20):
+            player.update(FRAME)
+            if not player.is_dashing:
+                player.walk(0)
+        player.walk(0)
+        player.update(FRAME)
+        return player.change_x
+
+    ground_vx = remaining_speed(airborne=False)
+    air_vx = remaining_speed(airborne=True)
+    assert abs(ground_vx) < 0.2, f"dash au sol contre un mur, vx={ground_vx:.2f}"
+    assert abs(air_vx) < 0.2, f"dash aerien contre un mur, vx={air_vx:.2f}"
+    print(f"  dash mur -> vx sol {ground_vx:.2f}, air {air_vx:.2f}")
+
+
+def check_falling_block(window: arcade.Window) -> None:
+    """Le bloc tombant s'effondre avec le joueur, traverse le terrain, puis respawn."""
+    from src.world.falling_block import FallingState
+    from src.world.level import Level
+
+    data = {
+        "name": "Chute",
+        "tile_size": settings.TILE_SIZE,
+        "legend": {
+            ".": "vide",
+            "#": "wall",
+            "F": settings.TILE_KIND_FALLING,
+            "P": "player_spawn",
+        },
+        "rows": [
+            "########",
+            "#......#",
+            "#..P...#",
+            "#..F...#",
+            "#......#",
+            "#..#...#",
+            "#......#",
+            "########",
+        ],
+        "falling_blocks": [
+            {"x": 3, "y": 3, "delay": 0.05, "respawn": 0.2},
+        ],
+    }
+    level = Level.from_dict(data)
+    assert len(level.falling_blocks) == 1
+    block = level.falling_blocks[0]
+    assert abs(block.delay - 0.05) < 1e-6
+    assert abs(block.respawn - 0.2) < 1e-6
+    home_y = block.home_y
+    wall_below = min(level.walls, key=lambda wall: abs(wall.center_x - block.center_x) + abs(wall.center_y - (home_y - settings.TILE_SIZE * 2)))
+    player = Player(*level.player_spawn)
+    player.bind_world(
+        level.static_walls,
+        platforms=[level.corpses, level.falling_blocks],
+    )
+
+    def step() -> None:
+        level.update(FRAME)
+        for falling in level.falling_blocks:
+            if falling.just_respawned:
+                falling.just_respawned = False
+                falling.eject_upward(player)
+        player.update(FRAME)
+        for falling in level.falling_blocks:
+            if falling.supports(player):
+                falling.arm()
+            falling.stick_rider(player)
+
+    for _ in range(4):
+        step()
+    assert block.state is FallingState.ARMED or block.state is FallingState.FALLING
+    for _ in range(12):
+        step()
+        if block.state is FallingState.FALLING:
+            break
+    assert block.state is FallingState.FALLING, "le bloc doit tomber apres le delay"
+    y_before = block.center_y
+    player_before = player.center_y
+    for _ in range(8):
+        step()
+    assert block.center_y < y_before, "le bloc doit descendre"
+    assert player.center_y < player_before, "le joueur doit tomber avec le bloc"
+    while block.state is FallingState.FALLING and block.center_y > wall_below.center_y:
+        step()
+        assert block.center_y > -settings.TILE_SIZE * 4, "le bloc devrait deja avoir traverse le mur"
+    assert block.state is FallingState.FALLING, "le bloc ne doit pas s'arreter sur un mur"
+    assert block.center_y < wall_below.center_y, "le bloc traverse le terrain"
+
+    while block.state is FallingState.FALLING:
+        step()
+        assert block.center_y > -settings.TILE_SIZE * 12
+    assert block.state is FallingState.GONE
+    waited = 0
+    while block.state is FallingState.GONE:
+        player.center_x = block.home_x
+        player.center_y = block.home_y
+        player.change_x = 0.0
+        player.change_y = 0.0
+        step()
+        waited += 1
+        assert waited < 60, "le bloc devrait respawn"
+    assert block.state in (FallingState.IDLE, FallingState.ARMED)
+    assert player.bottom >= block.top - 1.0, "le respawn doit pousser le joueur vers le haut"
+    print(
+        f"  bloc tombant -> delay {block.delay:.2f}s, chute a travers le terrain, "
+        f"respawn ejecte"
+    )
+
+
 def check_editor_views(window: arcade.Window) -> None:
     """Le navigateur et la vue d'edition se dessinent, peignent et annulent."""
     from src.editor.browser import BrowserView
@@ -674,21 +1331,30 @@ def check_editor_views(window: arcade.Window) -> None:
     view.tool = Tool.LINK
     view._link_index = 0
     view.on_draw()
+    view.on_key_press(arcade.key.F1, 0)
+    assert view.help.visible
+    view.on_draw()
+    view.on_key_press(arcade.key.F1, 0)
+    assert not view.help.visible
     print("  editeur vues -> navigateur et grille OK")
 
 
 def main() -> int:
     print("Project Astral Platformer - smoke test")
-    print("[1/10] chargement des cartes")
+    print("[1/17] chargement des cartes")
     check_levels()
-    print("[2/10] progression et ameliorations")
+    print("[2/17] progression et ameliorations")
     check_progression()
-    print("[3/10] event manager")
+    print("[3/17] event manager")
     check_event_manager()
-    print("[4/10] modele de l'editeur")
+    print("[4/17] modele de l'editeur")
     check_editor_document()
-    print("[5/10] IA ennemie")
+    print("[5/17] IA ennemie (squelette)")
     check_enemy_ai()
+    print("[6/17] IA ennemie (chauve-souris)")
+    check_bat_ai()
+    print("[7/17] IA ennemie (zombie)")
+    check_zombie_ai()
 
     window = arcade.Window(
         width=settings.SCREEN_WIDTH,
@@ -701,18 +1367,26 @@ def main() -> int:
     )
     assert window.vsync
     try:
-        print("[6/10] boucle de jeu")
+        print("[8/17] combat")
+        check_combat(window)
+        print("[9/17] boucle de jeu")
         check_gameplay_loop(window)
-        print("[7/10] defilement vertical de la camera")
+        print("[10/17] defilement vertical de la camera")
         check_vertical_scroll(window)
-        print("[8/10] solution du niveau tutoriel")
+        print("[11/17] solution du niveau tutoriel")
         check_tutorial_is_solvable(window)
-        print("[9/10] menus")
+        print("[12/17] menus")
         check_menus(window)
-        print("[10/10] vues de l'editeur")
+        print("[13/17] vues de l'editeur")
         check_editor_views(window)
-        print("[11/11] lance-flammes")
+        print("[14/17] lance-flammes")
         check_flamethrower(window)
+        print("[15/17] glace")
+        check_ice_block(window)
+        print("[16/17] dash contre un mur")
+        check_dash_stops_on_wall(window)
+        print("[17/17] blocs tombants")
+        check_falling_block(window)
     finally:
         window.close()
     print("OK : le squelette demarre et tourne.")

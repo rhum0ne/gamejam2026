@@ -80,6 +80,7 @@ que les menus se dessinent. A lancer avant chaque commit.
 | `Espace`, `Z` ou fleche haut | Sauter (hauteur variable : relache pour ecourter) |
 | `Maj` | Dash dans la direction actuelle (jauge en bas a droite) |
 | `Espace`, `Z` ou fleche haut | Sauter (hauteur variable : relache pour ecourter) |
+| Clic gauche | Attaquer devant soi (mode corps physique) |
 | `ZQSD` / fleches | Diriger le fantome (vol libre, 8 directions) |
 | `F` | Projeter son esprit (le corps meurt sur place et laisse un cadavre) |
 | `R` | En mode fantome : ecourter la projection et reapparaitre tout de suite au dernier checkpoint (au lieu d'attendre la fin du timer) |
