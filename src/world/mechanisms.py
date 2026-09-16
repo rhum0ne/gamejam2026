@@ -18,7 +18,7 @@ from dataclasses import dataclass, field
 import arcade
 
 import settings
-from src.entities.glow import additive_blend, draw_glow
+from src.entities.glow import draw_glow
 from src.ui import sprites
 
 
@@ -189,28 +189,32 @@ def draw_organic_link(
     now: float,
     intensity: float = 1.0,
 ) -> None:
-    """Courbe fantome : ruban pale, noyau, lucioles qui glissent le long du brin."""
+    """Brume organique : une nappe de halos, sans trait net."""
     points = _organic_link_points(start, end, strand, strand_count, now)
     if len(points) < 2:
         return
-    color = settings.COLOR_MECHANISM_LINK
-    alpha = max(1, min(255, int(settings.MECHANISM_LINK_ALPHA * intensity)))
+    mist = settings.COLOR_MECHANISM_LINK
+    core = settings.COLOR_MECHANISM_GLOW_CORE
+    mist_alpha = max(1, min(255, int(settings.MECHANISM_LINK_GLOW_ALPHA * intensity)))
     core_alpha = max(1, min(255, int(settings.MECHANISM_LINK_CORE_ALPHA * intensity)))
-    with additive_blend():
-        arcade.draw_line_strip(points, (*color, alpha), settings.MECHANISM_LINK_WIDTH)
-        arcade.draw_line_strip(
-            points,
-            (*settings.COLOR_MECHANISM_GLOW_CORE, core_alpha),
-            settings.MECHANISM_LINK_CORE_WIDTH,
-        )
+    mist_size = settings.MECHANISM_LINK_GLOW_SIZE
+    core_size = settings.MECHANISM_LINK_CORE_SIZE
+    for point_x, point_y in points:
+        draw_glow(point_x, point_y, mist_size, mist_size * 0.78, mist, mist_alpha)
+        draw_glow(point_x, point_y, core_size, core_size * 0.78, core, core_alpha)
     flow_alpha = max(1, min(255, int(settings.MECHANISM_LINK_FLOW_ALPHA * intensity)))
+    flow_core_alpha = max(
+        1, min(255, int(settings.MECHANISM_LINK_FLOW_CORE_ALPHA * intensity))
+    )
     flow_size = settings.MECHANISM_LINK_FLOW_SIZE
+    flow_core = settings.MECHANISM_LINK_FLOW_CORE_SIZE
     count = max(1, settings.MECHANISM_LINK_FLOW_COUNT)
     phase = now * settings.MECHANISM_LINK_FLOW_SPEED + strand * 0.37
     for index in range(count):
         t = (phase + index / count) % 1.0
         point_x, point_y = _point_along(points, t)
-        draw_glow(point_x, point_y, flow_size, flow_size * 0.72, color, flow_alpha)
+        draw_glow(point_x, point_y, flow_size, flow_size * 0.8, mist, flow_alpha)
+        draw_glow(point_x, point_y, flow_core, flow_core * 0.8, core, flow_core_alpha)
 
 
 def draw_plate_glow(
@@ -219,24 +223,38 @@ def draw_plate_glow(
     *,
     intensity: float = 1.0,
 ) -> None:
-    """Halo circulaire de la plaque, independant de sa silhouette plate."""
+    """Nappe floue autour de la plaque : large, douce, sans bord net."""
     pulse = 1.0 + settings.MECHANISM_AURA_PULSE * math.sin(
         now * settings.MECHANISM_LINK_PULSE_SPEED
     )
+    breathe = 1.0 + 0.08 * math.sin(now * settings.MECHANISM_LINK_PULSE_SPEED * 0.55)
     strength = pulse * intensity
+    center_x = plate.center_x
+    center_y = plate.center_y
+    outer = settings.MECHANISM_PLATE_GLOW_SIZE * breathe
+    mid = settings.MECHANISM_PLATE_GLOW_MID * breathe
+    inner = settings.MECHANISM_PLATE_GLOW_INNER
     draw_glow(
-        plate.center_x,
-        plate.center_y,
-        settings.MECHANISM_PLATE_GLOW_SIZE,
-        settings.MECHANISM_PLATE_GLOW_SIZE * 0.72,
+        center_x,
+        center_y,
+        outer,
+        outer * 0.7,
         settings.COLOR_MECHANISM_GLOW,
         max(1, min(255, int(settings.MECHANISM_PLATE_GLOW_ALPHA * strength))),
     )
     draw_glow(
-        plate.center_x,
-        plate.center_y,
-        settings.MECHANISM_PLATE_GLOW_INNER,
-        settings.MECHANISM_PLATE_GLOW_INNER * 0.72,
+        center_x,
+        center_y,
+        mid,
+        mid * 0.72,
+        settings.COLOR_MECHANISM_GLOW,
+        max(1, min(255, int(settings.MECHANISM_PLATE_GLOW_MID_ALPHA * strength))),
+    )
+    draw_glow(
+        center_x,
+        center_y,
+        inner,
+        inner * 0.75,
         settings.COLOR_MECHANISM_GLOW_CORE,
         max(1, min(255, int(settings.MECHANISM_PLATE_GLOW_INNER_ALPHA * strength))),
     )
@@ -364,6 +382,7 @@ def _organic_link_points(
         ),
     )
     phase = now * settings.MECHANISM_LINK_PULSE_SPEED + bias * math.pi
+    slow_phase = now * settings.MECHANISM_LINK_PULSE_SPEED * 0.37 + bias
     points: list[tuple[float, float]] = []
     for index in range(segments + 1):
         t = index / segments
@@ -372,7 +391,13 @@ def _organic_link_points(
         wave = math.sin(
             2.0 * math.pi * settings.MECHANISM_LINK_WIGGLE_WAVES * t + phase
         )
-        wiggle = settings.MECHANISM_LINK_WIGGLE * envelope * wave
+        slow = math.sin(
+            2.0 * math.pi * settings.MECHANISM_LINK_WIGGLE_SLOW_WAVES * t + slow_phase
+        )
+        wiggle = envelope * (
+            settings.MECHANISM_LINK_WIGGLE * wave
+            + settings.MECHANISM_LINK_WIGGLE_SLOW * slow
+        )
         points.append((point_x + perp_x * wiggle, point_y + perp_y * wiggle))
     return points
 
