@@ -883,9 +883,23 @@ KEY_GLOW_PULSE = 0.22
 KEY_GLOW_PULSE_SPEED = 2.4
 
 SOUL_ESSENCE_PER_ORB = 1
-# Ames cumulees pour atteindre le niveau n+1 (index = niveau - 1).
-# Niveau 1 : 0, 2 : 3, 3 : 8, 4 : 15, 5 : 25, 6 : 40. Bonus : `PALIERS`.
-SOUL_LEVEL_THRESHOLDS: tuple[int, ...] = (0, 3, 8, 15, 25, 40)
+# XP cumulee pour atteindre le niveau n (croissance exponentielle) :
+#   xp(n) = SOUL_XP_BASE * (SOUL_XP_GROWTH**(n-1) - 1) / (SOUL_XP_GROWTH - 1)
+# Avec ces valeurs : niveau 1=0, 2=3, 3=7, 4=15, 5=27, 6=47, 7=78 ames...
+SOUL_XP_BASE = 3.0
+SOUL_XP_GROWTH = 1.6
+
+# Prix en ames (monnaie depensable, `SoulProgression.essence`) du prochain
+# rang d'une amelioration fantome, croissance exponentielle avec le rang deja
+# achete de cette amelioration (rang 0 = jamais prise) :
+#   cost(rang) = SOUL_UPGRADE_BASE_COST * SOUL_UPGRADE_COST_GROWTH**rang
+SOUL_UPGRADE_BASE_COST = 2.0
+SOUL_UPGRADE_COST_GROWTH = 1.7
+
+# Bonus fixe accorde par rang achete d'une carte d'amelioration.
+GHOST_UPGRADE_VISION_BONUS = 40.0  # px de rayon de revelation
+GHOST_UPGRADE_SPEED_BONUS = 1.0  # px/frame de vitesse de deplacement fantome
+GHOST_UPGRADE_DURATION_BONUS = 3.0  # secondes de duree en mode fantome
 
 # --------------------------------------------------------------------------- #
 # Couleurs (RGB) - palette provisoire, remplacee par les sprites plus tard
@@ -969,6 +983,20 @@ COLOR_MENU_FOCUS = (196, 132, 72)
 COLOR_MENU_VEIL = (16, 10, 8)
 COLOR_MENU_GOLD = (216, 168, 88)
 COLOR_MENU_TITLE_SHADOW = (36, 22, 14)
+
+# Cartes de choix d'amelioration fantome (montee de niveau) : accent
+# bleu-spectre plutot que le marron/torche des autres menus, pour bien les
+# distinguer visuellement d'une pause ou d'une victoire.
+COLOR_CARD_FILL = (26, 32, 52)
+COLOR_CARD_BORDER = (74, 108, 158)
+COLOR_CARD_FOCUS_FILL = (40, 54, 86)
+COLOR_CARD_ACCENT = (128, 200, 255)  # = COLOR_GHOST
+COLOR_CARD_COST = (150, 205, 255)
+
+MENU_CARD_WIDTH = 190
+MENU_CARD_HEIGHT = 220
+MENU_CARD_GAP = 24
+
 MENU_PAUSE_VEIL_ALPHA = 176
 MENU_GRID_COLUMNS = 2
 MENU_CELL_WIDTH = 220

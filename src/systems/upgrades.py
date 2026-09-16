@@ -1,37 +1,38 @@
-"""Progression du fantome : essence d'ame, paliers et statistiques.
+"""Progression du fantome : experience, ames et ameliorations choisies.
 
-Boucle : ennemi tue -> bille bleue -> essence -> palier du fantome -> bonus.
-Les paliers se debloquent tout seuls (pas de shop).
+Boucle : ennemi tue -> bille bleue -> XP (fait monter de niveau) + ame
+(monnaie depensable) -> a chaque niveau gagne, le joueur choisit une des 3
+cartes d'amelioration pour le fantome (`UPGRADE_KINDS`), payee en ames.
 
-Paliers d'ames cumulees (`settings.SOUL_LEVEL_THRESHOLDS`) :
+Deux courbes exponentielles pilotent l'economie :
+    - `_xp_for_level`   : XP cumulee pour atteindre un niveau donne ;
+    - `_upgrade_cost`   : prix en ames du prochain rang d'une amelioration,
+      qui augmente a chaque fois que cette meme amelioration est reprise.
 
-    Niveau fantome | Ames cumulees | Bonus debloques
-    -------------- | ------------- | ------------------------------------------
-    1 (depart)     | 0             | stats de base (settings.GHOST_*)
-    2              | 3             | Longe astrale I, Persistance I
-    3              | 8             | Perception I
-    4              | 15            | Poigne spectrale I
-    5              | 25            | (aucun bonus extra pour l'instant)
-    6              | 40            | (aucun bonus extra pour l'instant)
-
-Bonus (additifs, se cumulent) :
-
-    Nom                 | Effet
-    ------------------- | --------------------------------
-    Longe astrale I     | +120 px de portee autour du cadavre
-    Persistance I       | +4 s de timer fantome
-    Perception I        | +60 px de rayon de revelation
-    Poigne spectrale I  | +1 objet transporte a la fois
-
-Pour ajouter un palier : une entree dans `PALIERS` (et un seuil dans
-`SOUL_LEVEL_THRESHOLDS` si le niveau n'existe pas encore).
+Contrairement a l'ancien systeme de paliers automatiques, rien ne se
+debloque tout seul : `ghost_stats` ne reflete que les rangs effectivement
+achetes via `apply_upgrade`.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, field
 
 import settings
+
+UPGRADE_KINDS: tuple[str, ...] = ("vision", "speed", "duration")
+
+_UPGRADE_LABELS: dict[str, tuple[str, str]] = {
+    "vision": ("Vision spectrale", "px de rayon de revelation"),
+    "speed": ("Vitesse spectrale", "de vitesse de deplacement"),
+    "duration": ("Endurance spectrale", "s de duree en mode fantome"),
+}
+
+_UPGRADE_BONUS: dict[str, float] = {
+    "vision": settings.GHOST_UPGRADE_VISION_BONUS,
+    "speed": settings.GHOST_UPGRADE_SPEED_BONUS,
+    "duration": settings.GHOST_UPGRADE_DURATION_BONUS,
+}
 
 
 @dataclass(frozen=True, slots=True)
@@ -42,121 +43,111 @@ class GhostStats:
     duration: float = settings.GHOST_DURATION
     vision_radius: float = settings.GHOST_VISION_RADIUS
     carry_capacity: int = settings.GHOST_CARRY_CAPACITY
-
-    def level_increased(self) -> "GhostStats":
-        """Retourne une nouvelle instance avec les bonus d'un niveau supplementaire."""
-        return replace(
-            self,
-            max_range=self.max_range + settings.GHOST_MAX_RANGE_INCREASE_VALUE,
-            duration=self.duration + settings.GHOST_DURATION_INCREASE_VALUE,
-            vision_radius=self.vision_radius + settings.GHOST_VISION_RADIUS_INCREASE_VALUE,
-        )
-
-    @staticmethod
-    def for_level(level: int) -> "GhostStats":
-        """Construit les stats de base pour un niveau donne (0 = aucun bonus)."""
-        base = GhostStats()
-        for _ in range(level):
-            base = base.level_increased()
-        return base
+    speed: float = settings.GHOST_SPEED
 
 
 @dataclass(frozen=True, slots=True)
-class Palier:
-    """Bonus automatique a partir d'un niveau de fantome."""
+class UpgradeCard:
+    """Une des 3 ameliorations proposees a la montee de niveau."""
 
-    level: int
+    kind: str
     name: str
     description: str
-    range_bonus: float = 0.0
-    duration_bonus: float = 0.0
-    vision_bonus: float = 0.0
-    carry_bonus: int = 0
-
-    def __post_init__(self) -> None:
-        if self.level < 1:
-            raise ValueError("level doit etre >= 1")
+    cost: int
+    rank: int  # rang deja possede AVANT cet achat
 
 
-# `level` = palier de `SOUL_LEVEL_THRESHOLDS` (1 = depart, 2 = 3 ames, ...).
-PALIERS: tuple[Palier, ...] = (
-    Palier(
-        level=2,
-        name="Longe astrale I",
-        description="+120 px de portee autour du cadavre.",
-        range_bonus=120.0,
-    ),
-    Palier(
-        level=2,
-        name="Persistance I",
-        description="+4 s de duree en mode fantome.",
-        duration_bonus=4.0,
-    ),
-    Palier(
-        level=3,
-        name="Perception I",
-        description="+60 px de rayon de revelation.",
-        vision_bonus=60.0,
-    ),
-    Palier(
-        level=4,
-        name="Poigne spectrale I",
-        description="Transporte un objet supplementaire.",
-        carry_bonus=1,
-    ),
-)
+def _xp_for_level(level: int) -> int:
+    """XP cumulee necessaire pour atteindre `level` (>= 1, croissance exponentielle)."""
+    if level <= 1:
+        return 0
+    growth = settings.SOUL_XP_GROWTH
+    base = settings.SOUL_XP_BASE
+    return round(base * (growth ** (level - 1) - 1) / (growth - 1))
+
+
+def _upgrade_cost(rank: int) -> int:
+    """Prix en ames du rang `rank + 1` d'une amelioration (rang 0 = jamais prise)."""
+    return round(settings.SOUL_UPGRADE_BASE_COST * settings.SOUL_UPGRADE_COST_GROWTH**rank)
 
 
 @dataclass(slots=True)
 class SoulProgression:
-    """Essence d'ame recoltee. Les paliers se debloquent tout seuls."""
+    """Ames recoltees (XP cumulee + monnaie) et rangs d'amelioration achetes."""
 
     essence: int = 0
     collected_total: int = 0
+    upgrade_ranks: dict[str, int] = field(default_factory=lambda: dict.fromkeys(UPGRADE_KINDS, 0))
 
-    def absorb_orb(self, amount: int = settings.SOUL_ESSENCE_PER_ORB) -> None:
-        """Convertit une bille bleue recoltee en essence d'ame."""
+    def absorb_orb(self, amount: int = settings.SOUL_ESSENCE_PER_ORB) -> bool:
+        """Convertit une bille bleue recoltee en XP + ames.
+
+        Retourne True si cette recolte fait passer un niveau (a signaler par
+        l'appelant pour ouvrir l'ecran de choix d'amelioration).
+        """
         if amount <= 0:
             raise ValueError("amount doit etre strictement positif")
+        level_before = self.level
         self.essence += amount
         self.collected_total += amount
+        return self.level > level_before
 
     @property
     def level(self) -> int:
-        """Niveau du fantome, deduit de l'essence totale recoltee."""
+        """Niveau du fantome, deduit de l'XP totale recoltee."""
         level = 1
-        for index, threshold in enumerate(settings.SOUL_LEVEL_THRESHOLDS):
-            if self.collected_total >= threshold:
-                level = index + 1
+        while self.collected_total >= _xp_for_level(level + 1):
+            level += 1
         return level
 
     @property
-    def ghost_stats(self) -> GhostStats:
-        """Statistiques du fantome correspondant au niveau actuel."""
-        return GhostStats.for_level(self.level - 1)
+    def essence_to_next_level(self) -> int:
+        """XP restante avant le prochain niveau (jamais de palier max : illimite)."""
+        return max(0, _xp_for_level(self.level + 1) - self.collected_total)
 
-    @property
-    def essence_to_next_level(self) -> int | None:
-        """Essence restante avant le prochain palier, ou None si palier max."""
-        for threshold in settings.SOUL_LEVEL_THRESHOLDS:
-            if self.collected_total < threshold:
-                return threshold - self.collected_total
-        return None
+    def upgrade_cost(self, kind: str) -> int:
+        """Prix en ames du prochain rang de l'amelioration `kind`."""
+        return _upgrade_cost(self.upgrade_ranks.get(kind, 0))
 
-    def unlocked_paliers(self) -> tuple[Palier, ...]:
-        """Paliers dont le niveau requis est atteint."""
-        current = self.level
-        return tuple(palier for palier in PALIERS if palier.level <= current)
-
-    @property
-    def ghost_stats(self) -> GhostStats:
-        """Statistiques du fantome apres application des paliers atteints."""
-        stats = GhostStats()
-        for palier in self.unlocked_paliers():
-            stats = GhostStats(
-                max_range=stats.max_range + palier.range_bonus,
-                duration=stats.duration + palier.duration_bonus,
-                vision_radius=stats.vision_radius + palier.vision_bonus,
-                carry_capacity=stats.carry_capacity + palier.carry_bonus,
+    def upgrade_cards(self) -> tuple[UpgradeCard, ...]:
+        """Les 3 cartes proposees a chaque montee de niveau, prix courant inclus."""
+        cards = []
+        for kind in UPGRADE_KINDS:
+            name, unit = _UPGRADE_LABELS[kind]
+            rank = self.upgrade_ranks.get(kind, 0)
+            amount = _UPGRADE_BONUS[kind]
+            cards.append(
+                UpgradeCard(
+                    kind=kind,
+                    name=name,
+                    description=f"+{amount:g} {unit}",
+                    cost=self.upgrade_cost(kind),
+                    rank=rank,
+                )
             )
-        return stats
+        return tuple(cards)
+
+    def apply_upgrade(self, kind: str) -> None:
+        """Achete un rang de `kind` : ames depensees (plancher 0), rang incremente."""
+        if kind not in UPGRADE_KINDS:
+            raise ValueError(f"amelioration inconnue : '{kind}'")
+        self.essence = max(0, self.essence - self.upgrade_cost(kind))
+        self.upgrade_ranks[kind] = self.upgrade_ranks.get(kind, 0) + 1
+
+    @property
+    def ghost_stats(self) -> GhostStats:
+        """Statistiques du fantome apres application des ameliorations achetees."""
+        ranks = self.upgrade_ranks
+        return GhostStats(
+            vision_radius=(
+                settings.GHOST_VISION_RADIUS
+                + ranks.get("vision", 0) * settings.GHOST_UPGRADE_VISION_BONUS
+            ),
+            speed=(
+                settings.GHOST_SPEED + ranks.get("speed", 0) * settings.GHOST_UPGRADE_SPEED_BONUS
+            ),
+            duration=(
+                settings.GHOST_DURATION
+                + ranks.get("duration", 0) * settings.GHOST_UPGRADE_DURATION_BONUS
+            ),
+        )
