@@ -15,6 +15,8 @@ from src.systems.game_state import GameSession, PlayView
 from src.ui import keys
 from src.ui.display import handle_display_key, use_default_camera
 from src.ui.fonts import PIXEL_FONT
+from src.ui.menu_kit import ButtonColumn, LevelCell, LevelGrid, TextButton, draw_panel
+from src.ui.title_fx import TitleStage
 from src.world.level import peek_level_info, LevelFormatError
 
 _TEXT_CACHE: dict[tuple, arcade.Text] = {}
@@ -83,53 +85,191 @@ def _draw_action(
 
 
 class TitleView(_HeldKeysMixin, arcade.View):
-    """Ecran titre : point d'entree de l'experience."""
+    """Accueil : tableau de niveaux (lignes x colonnes)."""
 
     def __init__(self, session: GameSession | None = None) -> None:
         super().__init__()
         self.background_color = settings.COLOR_BACKGROUND
         self.session = session if session is not None else GameSession()
+        self.stage = TitleStage()
+        self.title_echo = arcade.Text(
+            settings.GAME_TITLE,
+            0,
+            0,
+            settings.COLOR_MENU_TITLE_SHADOW,
+            font_size=settings.MENU_TITLE_SIZE,
+            anchor_x="center",
+            anchor_y="center",
+            font_name=PIXEL_FONT,
+        )
+        self.title = arcade.Text(
+            settings.GAME_TITLE,
+            0,
+            0,
+            settings.COLOR_MENU_TITLE,
+            font_size=settings.MENU_TITLE_SIZE,
+            anchor_x="center",
+            anchor_y="center",
+            font_name=PIXEL_FONT,
+        )
+        self.level_name = arcade.Text(
+            "",
+            0,
+            0,
+            settings.COLOR_MENU_FOCUS,
+            font_size=12,
+            anchor_x="center",
+            font_name=PIXEL_FONT,
+        )
+        self.grid = LevelGrid([], settings.MENU_GRID_COLUMNS)
+        self.quit_button = TextButton("Quitter", on_activate=self._quit_game)
+        self._on_quit = False
+        self._panel = (0.0, 0.0, 0.0, 0.0)
 
     def on_show_view(self) -> None:
         use_default_camera(self.window)
+        self._rebuild()
+
+    def on_resize(self, width: int, height: int) -> None:
+        self._rebuild()
+
+    def _rebuild(self) -> None:
+        width, height = self.window.width, self.window.height
+        cx = width / 2
+        self.stage.resize(width, height)
+        cells = []
+        for index, filename in enumerate(settings.LEVEL_SEQUENCE):
+            name, _subtitle = peek_level_info(filename)
+            cells.append(
+                LevelCell(
+                    index,
+                    name or f"Niveau {index + 1}",
+                    on_activate=lambda chosen=index: self._open_level(chosen),
+                )
+            )
+        self.grid = LevelGrid(cells, settings.MENU_GRID_COLUMNS)
+        cols = settings.MENU_GRID_COLUMNS
+        rows = max(1, (len(cells) + cols - 1) // cols)
+        gap = settings.MENU_CELL_GAP
+        cell_w = min(
+            settings.MENU_CELL_WIDTH,
+            max(96.0, (width * 0.72 - (cols - 1) * gap) / cols),
+        )
+        avail_h = height - 210
+        cell_h = min(
+            settings.MENU_CELL_HEIGHT,
+            max(52.0, (avail_h - (rows - 1) * gap) / rows),
+        )
+        grid_w = cols * cell_w + (cols - 1) * gap
+        grid_h = rows * cell_h + (rows - 1) * gap
+        panel_w = grid_w + settings.MENU_PANEL_PAD * 2
+        panel_h = grid_h + 118
+        top = height * 0.88
+        self.title.x = cx
+        self.title.y = top
+        self.title_echo.x = cx + 3
+        self.title_echo.y = top - 3
+        panel_top = top - 40
+        panel_bottom = panel_top - panel_h
+        self._panel = (cx - panel_w / 2, cx + panel_w / 2, panel_bottom, panel_top)
+        grid_top = panel_top - 28
+        grid_bottom = self.grid.layout(cx, grid_top, cell_w, cell_h)
+        self.level_name.x = cx
+        self.level_name.y = grid_bottom - 24
+        self.quit_button.place(cx, panel_bottom + 36, min(settings.MENU_BUTTON_WIDTH, panel_w - 40), settings.MENU_BUTTON_HEIGHT)
+        self._on_quit = False
+        self._sync_chrome()
+
+    def _sync_chrome(self) -> None:
+        self.quit_button.set_focused(self._on_quit)
+        if self._on_quit:
+            self.level_name.text = ""
+        else:
+            self.level_name.text = self.grid.focused_name
+
+    def _open_level(self, index: int) -> None:
+        self.session.restart()
+        self.session.start_level(index)
+        self.window.show_view(LevelIntroView(self.session))
+
+    def _quit_game(self) -> None:
+        self.window.close()
+
+    def on_update(self, delta_time: float) -> None:
+        self.stage.update(delta_time)
 
     def on_draw(self) -> None:
-        self.clear()
-        height = self.window.height
-        _draw_centered(self, "PROJECT ASTRAL PLATFORMER", height * 0.70, 28, settings.COLOR_MENU_TITLE)
-        _draw_centered(self, "Dualite Joueur / Fantome", height * 0.63, 20, settings.COLOR_MENU_HINT)
-        _draw_action(self, height * 0.48, ("enter",), "Commencer l'aventure", self.held_keys)
-        _draw_action(self, height * 0.42, ("f11",), "Plein ecran", self.held_keys)
-        _draw_action(self, height * 0.36, ("esc",), "Quitter", self.held_keys)
+        self.stage.draw()
+        self.title_echo.draw()
+        self.title.draw()
+        left, right, bottom, top = self._panel
+        draw_panel(left, right, bottom, top, accent=settings.COLOR_MENU_FOCUS)
+        self.grid.draw()
+        self.level_name.draw()
+        self.quit_button.draw()
         keys.draw_prompt_row(
             self.window.width / 2,
-            height * 0.18,
+            28,
             (
                 (("z", "q", "s", "d"), "bouger"),
                 (("space",), "sauter"),
                 (("shift",), "dash"),
             ),
             self.held_keys,
-            height=32,
-        )
-        _draw_centered(
-            self,
-            "Un secret dort au fond du premier puits.",
-            height * 0.11,
-            15,
-            settings.COLOR_MENU_HINT,
+            height=20,
         )
 
     def on_key_press(self, symbol: int, modifiers: int) -> None:
         self.held_keys.add(symbol)
         if handle_display_key(self.window, symbol, modifiers):
             return
-        if symbol in (arcade.key.ENTER, arcade.key.RETURN, arcade.key.NUM_ENTER, arcade.key.SPACE):
-            self.session.restart()
-            self.window.show_view(LevelIntroView(self.session))
-            open_play_view(self.window, self.session)
-        elif symbol == arcade.key.ESCAPE:
-            self.window.close()
+        if symbol == arcade.key.ESCAPE:
+            self._quit_game()
+            return
+        left = symbol in (arcade.key.LEFT, arcade.key.Q, arcade.key.A)
+        right = symbol in (arcade.key.RIGHT, arcade.key.D)
+        up = symbol in (arcade.key.UP, arcade.key.W, arcade.key.Z)
+        down = symbol in (arcade.key.DOWN, arcade.key.S)
+        if self._on_quit:
+            if up or left or right:
+                self._on_quit = False
+                self.grid.focus_last_row()
+                self._sync_chrome()
+            elif symbol in (arcade.key.ENTER, arcade.key.RETURN, arcade.key.NUM_ENTER, arcade.key.SPACE):
+                self._quit_game()
+            return
+        if left:
+            self.grid.move(-1, 0)
+        elif right:
+            self.grid.move(1, 0)
+        elif up:
+            self.grid.move(0, -1)
+        elif down:
+            if not self.grid.move(0, 1):
+                self._on_quit = True
+        elif symbol in (arcade.key.ENTER, arcade.key.RETURN, arcade.key.NUM_ENTER, arcade.key.SPACE):
+            self.grid.activate_focused()
+        self._sync_chrome()
+
+    def on_mouse_motion(self, x: float, y: float, dx: float, dy: float) -> None:
+        if self.grid.on_hover(x, y):
+            self._on_quit = False
+        self.quit_button.on_hover(x, y)
+        if self.quit_button.hovered:
+            self._on_quit = True
+        self._sync_chrome()
+
+    def on_mouse_press(self, x: float, y: float, button: int, modifiers: int) -> None:
+        if button != arcade.MOUSE_BUTTON_LEFT:
+            return
+        self.grid.on_press(x, y)
+        self.quit_button.on_press(x, y)
+
+    def on_mouse_release(self, x: float, y: float, button: int, modifiers: int) -> None:
+        if button != arcade.MOUSE_BUTTON_LEFT:
+            return
+        self.grid.on_release(x, y)
+        self.quit_button.on_release(x, y)
 
 
 class LevelIntroView(_HeldKeysMixin, arcade.View):
@@ -222,7 +362,7 @@ class LevelIntroView(_HeldKeysMixin, arcade.View):
             self._advance()
 
     def _advance(self) -> None:
-        self.window.show_view(PlayView(self.session))
+        open_play_view(self.window, self.session)
 
 
 class GameOverView(_HeldKeysMixin, arcade.View):
@@ -260,42 +400,122 @@ class GameOverView(_HeldKeysMixin, arcade.View):
 
 
 class VictoryView(_HeldKeysMixin, arcade.View):
-    """Ecran affiche quand le dernier niveau de `LEVEL_SEQUENCE` est termine."""
+    """Fin d'un niveau : suivant, recommencer, ou retour au tableau."""
 
     def __init__(self, session: GameSession) -> None:
         super().__init__()
         self.background_color = settings.COLOR_BACKGROUND
         self.session = session
+        heading = "VICTOIRE" if session.is_last_level else "NIVEAU TERMINE"
+        self.title = arcade.Text(
+            heading,
+            0,
+            0,
+            settings.COLOR_MENU_GOLD,
+            font_size=20,
+            anchor_x="center",
+            anchor_y="center",
+            font_name=PIXEL_FONT,
+        )
+        self.level_label = arcade.Text(
+            "",
+            0,
+            0,
+            settings.COLOR_MENU_HINT,
+            font_size=12,
+            anchor_x="center",
+            font_name=PIXEL_FONT,
+        )
+        self.stats = arcade.Text(
+            "",
+            0,
+            0,
+            settings.COLOR_HUD_TEXT,
+            font_size=11,
+            anchor_x="center",
+            font_name=PIXEL_FONT,
+        )
+        self.column = ButtonColumn()
+        self._panel = (0.0, 0.0, 0.0, 0.0)
 
     def on_show_view(self) -> None:
         use_default_camera(self.window)
+        name, _subtitle = peek_level_info(self.session.level_file)
+        self.level_label.text = name
+        progression = self.session.progression
+        self.stats.text = (
+            f"{progression.collected_total} ames   nv.{progression.level}   "
+            f"{self.session.deaths} morts"
+        )
+        self._rebuild()
+
+    def on_resize(self, width: int, height: int) -> None:
+        self._rebuild()
+
+    def _rebuild(self) -> None:
+        width, height = self.window.width, self.window.height
+        cx, cy = width / 2, height / 2
+        panel_w, panel_h = 420.0, 340.0
+        left, right = cx - panel_w / 2, cx + panel_w / 2
+        bottom, top = cy - panel_h / 2, cy + panel_h / 2
+        self._panel = (left, right, bottom, top)
+        self.title.x = cx
+        self.title.y = top - 44
+        self.level_label.x = cx
+        self.level_label.y = self.title.y - 32
+        self.stats.x = cx
+        self.stats.y = self.level_label.y - 28
+        buttons: list[TextButton] = []
+        if not self.session.is_last_level:
+            buttons.append(TextButton("Suivant", on_activate=self._next_level))
+        buttons.append(TextButton("Reessayer", on_activate=self._retry_level))
+        buttons.append(TextButton("Niveaux", on_activate=self._go_select))
+        self.column.set_buttons(buttons)
+        self.column.layout(cx, self.stats.y - 48)
+
+    def _next_level(self) -> None:
+        if not self.session.advance_level():
+            self._go_select()
+            return
+        self.window.show_view(LevelIntroView(self.session))
+
+    def _retry_level(self) -> None:
+        self.window.show_view(LevelIntroView(self.session))
+
+    def _go_select(self) -> None:
+        if self.session.on_leave is not None:
+            self.session.on_leave()
+            return
+        self.window.show_view(TitleView(self.session))
 
     def on_draw(self) -> None:
         self.clear()
-        height = self.window.height
-        progression = self.session.progression
-        _draw_centered(self, "VICTOIRE", height * 0.66, 44, settings.COLOR_DOOR_OPEN)
-        _draw_centered(
-            self,
-            f"Ames recoltees : {progression.collected_total}  -  Fantome niveau {progression.level}",
-            height * 0.56,
-            20,
-            settings.COLOR_HUD_TEXT,
-        )
-        _draw_centered(self, f"Morts : {self.session.deaths}", height * 0.50, 20, settings.COLOR_HUD_TEXT)
-        _draw_action(
-            self, height * 0.40, ("esc",), "Menu principal", self.held_keys, color=settings.COLOR_MENU_HINT
-        )
+        left, right, bottom, top = self._panel
+        draw_panel(left, right, bottom, top, accent=settings.COLOR_MENU_GOLD)
+        self.title.draw()
+        self.level_label.draw()
+        self.stats.draw()
+        self.column.draw()
 
     def on_key_press(self, symbol: int, modifiers: int) -> None:
         self.held_keys.add(symbol)
         if handle_display_key(self.window, symbol, modifiers):
             return
         if symbol == arcade.key.ESCAPE:
-            if self.session.on_leave is not None:
-                self.session.on_leave()
-                return
-            self.window.show_view(TitleView(self.session))
+            self._go_select()
+            return
+        self.column.on_key_press(symbol)
+
+    def on_mouse_motion(self, x: float, y: float, dx: float, dy: float) -> None:
+        self.column.on_mouse_motion(x, y)
+
+    def on_mouse_press(self, x: float, y: float, button: int, modifiers: int) -> None:
+        if button == arcade.MOUSE_BUTTON_LEFT:
+            self.column.on_mouse_press(x, y)
+
+    def on_mouse_release(self, x: float, y: float, button: int, modifiers: int) -> None:
+        if button == arcade.MOUSE_BUTTON_LEFT:
+            self.column.on_mouse_release(x, y)
 
 
 def open_play_view(window: arcade.Window, session: GameSession) -> None:

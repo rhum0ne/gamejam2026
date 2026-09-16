@@ -380,6 +380,16 @@ class CameraRig:
         """
         self._present_viewport = self._letterboxed(width, height)
 
+    def window_to_ui(self, x: float, y: float) -> tuple[float, float]:
+        """Souris fenetre -> coordonnees HUD (resolution fixe, letterbox)."""
+        vx, vy, vw, vh = self._present_viewport
+        if vw <= 0 or vh <= 0:
+            return x, y
+        return (
+            (x - vx) * settings.WORLD_VIEW_WIDTH / vw,
+            (y - vy) * settings.WORLD_VIEW_HEIGHT / vh,
+        )
+
     def _letterboxed(self, width: int, height: int) -> tuple[int, int, int, int]:
         """Plus grand rectangle centre, au format de conception, dans `width x height`."""
         design_aspect = settings.WORLD_VIEW_WIDTH / settings.WORLD_VIEW_HEIGHT

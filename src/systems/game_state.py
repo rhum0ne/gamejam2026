@@ -56,6 +56,7 @@ class GameState(Enum):
     PLAYING = auto()
     GHOST = auto()
     RESPAWNING = auto()
+    PAUSED = auto()
     VICTORY = auto()
     GAME_OVER = auto()
 
@@ -63,10 +64,15 @@ class GameState(Enum):
 _TRANSITIONS: dict[GameState, frozenset[GameState]] = {
     GameState.MENU: frozenset({GameState.PLAYING}),
     GameState.PLAYING: frozenset(
-        {GameState.GHOST, GameState.VICTORY, GameState.GAME_OVER, GameState.MENU}
+        {GameState.GHOST, GameState.VICTORY, GameState.GAME_OVER, GameState.MENU, GameState.PAUSED}
     ),
-    GameState.GHOST: frozenset({GameState.RESPAWNING, GameState.GAME_OVER, GameState.MENU}),
-    GameState.RESPAWNING: frozenset({GameState.PLAYING, GameState.MENU}),
+    GameState.GHOST: frozenset(
+        {GameState.RESPAWNING, GameState.GAME_OVER, GameState.MENU, GameState.PAUSED}
+    ),
+    GameState.RESPAWNING: frozenset({GameState.PLAYING, GameState.MENU, GameState.PAUSED}),
+    GameState.PAUSED: frozenset(
+        {GameState.PLAYING, GameState.GHOST, GameState.RESPAWNING, GameState.MENU}
+    ),
     GameState.VICTORY: frozenset({GameState.PLAYING, GameState.MENU}),
     GameState.GAME_OVER: frozenset({GameState.PLAYING, GameState.MENU}),
 }
@@ -76,6 +82,7 @@ STATE_LABELS: dict[GameState, str] = {
     GameState.PLAYING: "Corps physique",
     GameState.GHOST: "Projection astrale",
     GameState.RESPAWNING: "Retour au corps...",
+    GameState.PAUSED: "Pause",
     GameState.VICTORY: "Niveau termine",
     GameState.GAME_OVER: "Game Over",
 }
@@ -173,6 +180,16 @@ class GameSession:
         self.level_index += 1
         return True
 
+    def start_level(self, index: int) -> None:
+        """Place la session sur un niveau de `LEVEL_SEQUENCE`."""
+        if not 0 <= index < len(settings.LEVEL_SEQUENCE):
+            raise ValueError(
+                f"index de niveau invalide : {index} "
+                f"(0..{len(settings.LEVEL_SEQUENCE) - 1})"
+            )
+        self.level_index = index
+        self.map_override = None
+
     def restart(self) -> None:
         """Remet la session a zero (nouvelle partie depuis le menu titre)."""
         self.progression = SoulProgression()
@@ -225,6 +242,8 @@ class PlayView(arcade.View):
         self._blood = BloodBurst()
         self._attack_sound = self._load_attack_sound()
         self._delivered_items: list[ItemKind] = []
+        self._pause_menu = None
+        self._paused_from = GameState.PLAYING
         bind_play_view(self)
         self._fps = 0.0
         self._last_draw_time = 0.0
@@ -374,6 +393,9 @@ class PlayView(arcade.View):
         if rebirth is not None and not rebirth.covers_hud and rebirth.hud_alpha > 0.0:
             self.camera.use_ui()
             self._draw_hud_layer(rebirth.hud_alpha)
+        if self.machine.state is GameState.PAUSED:
+            self.camera.use_ui()
+            self._pause_overlay().draw(settings.WORLD_VIEW_WIDTH, settings.WORLD_VIEW_HEIGHT)
         warp = 0.0
         if self.machine.state is GameState.GHOST and self.ghost is not None:
             warp = self.ghost.warp_strength
@@ -702,6 +724,8 @@ class PlayView(arcade.View):
     # ------------------------------------------------------------------ #
 
     def on_update(self, delta_time: float) -> None:
+        if self.machine.state is GameState.PAUSED:
+            return
         if self._hitstop_timer > 0.0:
             self._hitstop_timer = max(0.0, self._hitstop_timer - delta_time)
             return
@@ -1032,13 +1056,14 @@ class PlayView(arcade.View):
         return direction
 
     def on_key_press(self, symbol: int, modifiers: int) -> None:
-        from src.ui.menus import TitleView
-
         if handle_display_key(self.window, symbol, modifiers):
             return
         if symbol == arcade.key.F3:
             if settings.DEBUG_OVERLAY:
                 self._debug_enabled = not self._debug_enabled
+            return
+        if self.machine.state is GameState.PAUSED:
+            self._pause_overlay().on_key_press(self.window, symbol, modifiers)
             return
         self.held_keys.add(symbol)
         state = self.machine.state
@@ -1046,7 +1071,7 @@ class PlayView(arcade.View):
             if self.session.on_leave is not None:
                 self.session.on_leave()
                 return
-            self.window.show_view(TitleView(self.session))
+            self.enter_pause()
             return
         if state is GameState.PLAYING:
             if symbol in _JUMP_KEYS:
@@ -1075,8 +1100,65 @@ class PlayView(arcade.View):
 
     def on_key_release(self, symbol: int, modifiers: int) -> None:
         self.held_keys.discard(symbol)
+        if self.machine.state is GameState.PAUSED:
+            return
         if symbol in _JUMP_KEYS and self.machine.state is GameState.PLAYING:
             self.player.cut_jump()
+
+    def on_mouse_motion(self, x: float, y: float, dx: float, dy: float) -> None:
+        if self.machine.state is not GameState.PAUSED:
+            return
+        ui_x, ui_y = self.camera.window_to_ui(x, y)
+        self._pause_overlay().on_mouse_motion(ui_x, ui_y)
+
+    def on_mouse_press(self, x: float, y: float, button: int, modifiers: int) -> None:
+        if self.machine.state is not GameState.PAUSED:
+            return
+        if button != arcade.MOUSE_BUTTON_LEFT:
+            return
+        ui_x, ui_y = self.camera.window_to_ui(x, y)
+        self._pause_overlay().on_mouse_press(ui_x, ui_y)
+
+    def on_mouse_release(self, x: float, y: float, button: int, modifiers: int) -> None:
+        if self.machine.state is not GameState.PAUSED:
+            return
+        if button != arcade.MOUSE_BUTTON_LEFT:
+            return
+        ui_x, ui_y = self.camera.window_to_ui(x, y)
+        self._pause_overlay().on_mouse_release(ui_x, ui_y)
+
+    def _pause_overlay(self):
+        if self._pause_menu is None:
+            from src.ui.pause import PauseMenu
+
+            self._pause_menu = PauseMenu(
+                on_resume=self.leave_pause,
+                on_retry=self._retry_from_pause,
+                on_quit=self._quit_from_pause,
+            )
+        return self._pause_menu
+
+    def enter_pause(self) -> None:
+        if self.machine.state is GameState.PAUSED:
+            return
+        if not self.machine.can(GameState.PAUSED):
+            return
+        self._paused_from = self.machine.state
+        self.held_keys.clear()
+        self.machine.try_to(GameState.PAUSED)
+
+    def leave_pause(self) -> None:
+        if self.machine.state is not GameState.PAUSED:
+            return
+        self.machine.try_to(self._paused_from)
+
+    def _retry_from_pause(self) -> None:
+        self.setup()
+
+    def _quit_from_pause(self) -> None:
+        from src.ui.menus import TitleView
+
+        self.window.show_view(TitleView(self.session))
 
     def on_resize(self, width: int, height: int) -> None:
         super().on_resize(width, height)

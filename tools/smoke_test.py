@@ -937,7 +937,7 @@ def check_menus(window: arcade.Window) -> None:
     play.on_key_press(arcade.key.F3, 0)
     assert play._debug_enabled is False, "F3 doit pouvoir le recacher"
     play.on_resize(settings.SCREEN_WIDTH, settings.SCREEN_HEIGHT)
-    print("  menus -> titre, victoire et resize OK")
+    print("  menus -> titre, victoire, pause et resize OK")
 
 
 def check_editor_document() -> None:

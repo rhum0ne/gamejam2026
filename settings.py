@@ -41,9 +41,11 @@ FONT_PIXEL = "Press Start 2P"
 # Ordre de parcours des niveaux : le nom du fichier dans assets/maps/.
 LEVEL_SEQUENCE: tuple[str, ...] = (
     "level_1_tuto.json",
-    "Niveau_1.json",
-    "Niveau_2.json",
-    "Niveau_3.json",
+    "Niveau_1-1.json",
+    "Niveau_1-2.json",
+    "Niveau_1-3.json",
+    "Niveau_1-4.json",
+    "Niveau_1-5.json",
 )
 
 # --------------------------------------------------------------------------- #
@@ -54,7 +56,8 @@ SCREEN_WIDTH = 1280
 SCREEN_HEIGHT = 720
 SCREEN_MIN_WIDTH = 640
 SCREEN_MIN_HEIGHT = 360
-SCREEN_TITLE = "Project Astral Platformer"
+GAME_TITLE = "Out Of Body!"
+SCREEN_TITLE = GAME_TITLE
 FPS = 60
 FRAME_TIME = 1 / FPS
 
@@ -939,8 +942,38 @@ COLOR_TORCH_GLOW = (255, 150, 36)
 COLOR_TORCH_GLOW_CORE = (255, 240, 190)
 COLOR_DUST = (236, 228, 208)
 COLOR_DUST_DARK = (186, 174, 150)
-COLOR_MENU_TITLE = (200, 220, 255)
-COLOR_MENU_HINT = (150, 155, 175)
+COLOR_MENU_TITLE = (232, 208, 168)
+COLOR_MENU_HINT = (168, 136, 100)
+COLOR_MENU_PANEL = (48, 32, 22)
+COLOR_MENU_PANEL_BORDER = (118, 82, 50)
+COLOR_MENU_CELL = (62, 42, 28)
+COLOR_MENU_CELL_BORDER = (102, 70, 44)
+COLOR_MENU_FOCUS_FILL = (86, 56, 34)
+COLOR_MENU_FOCUS = (196, 132, 72)
+COLOR_MENU_VEIL = (16, 10, 8)
+COLOR_MENU_GOLD = (216, 168, 88)
+COLOR_MENU_TITLE_SHADOW = (36, 22, 14)
+MENU_PAUSE_VEIL_ALPHA = 176
+MENU_GRID_COLUMNS = 2
+MENU_CELL_WIDTH = 220
+MENU_CELL_HEIGHT = 78
+MENU_CELL_GAP = 12
+MENU_BUTTON_WIDTH = 300
+MENU_BUTTON_HEIGHT = 40
+MENU_PANEL_PAD = 24
+MENU_TITLE_SIZE = 20
+MENU_TITLE_MAP = "title_backdrop.json"
+MENU_TITLE_GHOST_COUNT = 5
+MENU_TITLE_GHOST_SPEED = 2.2  # px/frame, plus lent que le fantome jouable
+MENU_TITLE_VISION = 230.0  # halo de chaque esprit (suit le fantome, comme en jeu)
+MENU_TITLE_VISION_PULSE = 22.0
+MENU_TITLE_WARP = 0.028  # distorsion barillet discrete, comme le mode fantome
+MENU_TITLE_ZOOM = 0.72
+MENU_TITLE_FLOCK_RADIUS = 420.0
+MENU_TITLE_RETARGET_MIN = 1.2
+MENU_TITLE_RETARGET_MAX = 3.8
+MENU_TITLE_CURL = 0.7
+MENU_TITLE_HOVER_CHANCE = 0.14
 
 # --------------------------------------------------------------------------- #
 # Ecran de transition de niveau (nom + sous-titre sur fond noir)
