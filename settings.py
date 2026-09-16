@@ -475,6 +475,11 @@ PARTICLE_FOOT_CLEARANCE = 3.0  # au-dessus du sol, pour ne pas naitre dans la tu
 
 GHOST_WIDTH = 22
 GHOST_HEIGHT = 30
+# Hitbox plus etroite que le sprite, pour tenir dans une gaine d'une tuile.
+GHOST_HITBOX_WIDTH = 16
+GHOST_HITBOX_HEIGHT = 20
+GHOST_SAFE_SEARCH_RADIUS = TILE_SIZE * 8  # portee de la recherche d'un spawn libre
+GHOST_SAFE_SEARCH_STEP = 4  # pas de la spirale, en pixels
 GHOST_SPEED = 6.0
 GHOST_ACCEL_TIME = 0.20  # secondes pour atteindre la vitesse visee (plus grand = plus mou)
 GHOST_COAST_TIME = 0.48  # secondes pour glisser a l'arret une fois les touches lachees

@@ -671,6 +671,10 @@ def check_gameplay_loop(window: arcade.Window) -> None:
     assert view.ghost_emerging, "la mort doit ouvrir une cinematique"
     wait_ghost_ready(view)
     assert not view.ghost_emerging
+    assert view.ghost is not None
+    assert not arcade.check_for_collision_with_list(view.ghost, view.level.walls), (
+        "le fantome ne doit pas naitre coince dans un mur"
+    )
 
     view.on_key_press(arcade.key.DOWN, 0)
     advance(view, 60)
