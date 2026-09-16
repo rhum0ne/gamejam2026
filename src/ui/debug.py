@@ -1,6 +1,7 @@
 """Panneau de debug en jeu (FPS, etats, tuiles visibles, camera).
 
-Active par `settings.DEBUG_OVERLAY`, basculable avec F3 pendant une partie.
+Masque au lancement. F3 l'affiche ou le cache pendant une partie
+(`settings.DEBUG_OVERLAY` laisse le raccourci actif).
 """
 
 from __future__ import annotations

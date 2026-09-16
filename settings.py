@@ -121,7 +121,8 @@ ENTITY_SCALE = 1.5
 ANIM_WALK_FRAME_TIME = 0.07
 ANIM_IDLE_FRAME_TIME = 0.12
 ANIM_PLAYER_ATTACK_FRAME_TIME = 0.03
-ANIM_PLAYER_DEATH_FRAME_TIME = 0.08
+ANIM_PLAYER_DEATH_FRAME_TIME = 0.12  # pose de chute, avant le fondu
+ANIM_PLAYER_DEATH_BLEND_TIME = 0.16  # fondu vers le corps au sol
 ANIM_GHOST_DISAPPEAR_FRAME_TIME = 0.08
 # 1.0 = rythme de base ; plus petit = plus lent (0.5 = deux fois plus lent).
 ANIM_SPEED = 0.5
@@ -147,8 +148,24 @@ TORCH_FLICKER_SPEED_FAST = 19.0
 
 NEW_TEXTURES_DIR = SPRITES_DIR / "new_textures"
 SHEET_GROUND = NEW_TEXTURES_DIR / "TX Tileset Ground.png"
+SHEET_GROUND_SAND = NEW_TEXTURES_DIR / "TX Tileset Sand.png"
+SHEET_GROUND_ROCK = NEW_TEXTURES_DIR / "TX Tileset Rock.png"
 SHEET_PROPS = NEW_TEXTURES_DIR / "TX Village Props.png"
 SHEET_CHEST = NEW_TEXTURES_DIR / "TX Chest Animation.png"
+
+# Theme de terrain d'une carte (`"theme"` dans le JSON). Meme grille 16x16,
+# seule la planche change. Absent ou vide -> ground.
+GROUND_THEME_DEFAULT = "ground"
+GROUND_THEMES: dict[str, Path] = {
+    "ground": SHEET_GROUND,
+    "sand": SHEET_GROUND_SAND,
+    "rock": SHEET_GROUND_ROCK,
+}
+GROUND_THEME_LABELS: dict[str, str] = {
+    "ground": "terre",
+    "sand": "sable",
+    "rock": "roche",
+}
 
 # Taille native d'une case de `SHEET_GROUND` (planche a grille reguliere).
 GROUND_CELL = 32
@@ -477,6 +494,11 @@ PARTICLE_FOOT_CLEARANCE = 3.0  # au-dessus du sol, pour ne pas naitre dans la tu
 
 GHOST_WIDTH = 22
 GHOST_HEIGHT = 30
+# Hitbox plus etroite que le sprite, pour tenir dans une gaine d'une tuile.
+GHOST_HITBOX_WIDTH = 16
+GHOST_HITBOX_HEIGHT = 20
+GHOST_SAFE_SEARCH_RADIUS = TILE_SIZE * 8  # portee de la recherche d'un spawn libre
+GHOST_SAFE_SEARCH_STEP = 4  # pas de la spirale, en pixels
 GHOST_SPEED = 6.0
 GHOST_ACCEL_TIME = 0.20  # secondes pour atteindre la vitesse visee (plus grand = plus mou)
 GHOST_COAST_TIME = 0.48  # secondes pour glisser a l'arret une fois les touches lachees
@@ -510,9 +532,23 @@ GHOST_GLOW_PULSE = 0.12  # variation d'opacite (0 = halo fixe)
 # Cadavre
 # --------------------------------------------------------------------------- #
 
-CORPSE_LIFETIME = 15.0  # secondes avant dissipation
-CORPSE_FADE_TIME = 3.0  # secondes de fondu en fin de vie
-CORPSE_EAT_TIME = 4.0  # secondes pour qu'un ennemi devore un cadavre
+CORPSE_LIFETIME = 15.0  # secondes avant transformation en squelette
+CORPSE_FADE_TIME = 0.35  # fondu cadavre -> os (court, masque par les particules)
+CORPSE_EAT_TIME = 4.0  # secondes pour qu'un ennemi devore un cadavre (laisse un squelette)
+CORPSE_DECAY_COUNT = 28
+CORPSE_DECAY_LIFE = 0.48
+CORPSE_DECAY_SPEED = 95.0
+CORPSE_DECAY_GRAVITY = 220.0
+CORPSE_DECAY_SIZE_MIN = 3.2
+CORPSE_DECAY_SIZE_MAX = 8.5
+CORPSE_DECAY_SPREAD_X = 16.0
+CORPSE_DECAY_SPREAD_Y = 9.0
+CORPSE_DECAY_MAX = 80
+# Hitbox plus plate que le sprite (pose allongee) : le bas de la boite est
+# aligne sur le sol, et un leger lift evite que le dessin s'enfonce dans la tuile.
+CORPSE_HITBOX_WIDTH = PLAYER_WIDTH + 8
+CORPSE_HITBOX_HEIGHT = 16
+CORPSE_GROUND_LIFT = 0
 
 # --------------------------------------------------------------------------- #
 # Plaques d'activation
@@ -847,9 +883,23 @@ KEY_GLOW_PULSE = 0.22
 KEY_GLOW_PULSE_SPEED = 2.4
 
 SOUL_ESSENCE_PER_ORB = 1
-# Ames cumulees pour atteindre le niveau n+1 (index = niveau - 1).
-# Niveau 1 : 0, 2 : 3, 3 : 8, 4 : 15, 5 : 25, 6 : 40. Bonus : `PALIERS`.
-SOUL_LEVEL_THRESHOLDS: tuple[int, ...] = (0, 3, 8, 15, 25, 40)
+# XP cumulee pour atteindre le niveau n (croissance exponentielle) :
+#   xp(n) = SOUL_XP_BASE * (SOUL_XP_GROWTH**(n-1) - 1) / (SOUL_XP_GROWTH - 1)
+# Avec ces valeurs : niveau 1=0, 2=3, 3=7, 4=15, 5=27, 6=47, 7=78 ames...
+SOUL_XP_BASE = 3.0
+SOUL_XP_GROWTH = 1.6
+
+# Prix en ames (monnaie depensable, `SoulProgression.essence`) du prochain
+# rang d'une amelioration fantome, croissance exponentielle avec le rang deja
+# achete de cette amelioration (rang 0 = jamais prise) :
+#   cost(rang) = SOUL_UPGRADE_BASE_COST * SOUL_UPGRADE_COST_GROWTH**rang
+SOUL_UPGRADE_BASE_COST = 2.0
+SOUL_UPGRADE_COST_GROWTH = 1.7
+
+# Bonus fixe accorde par rang achete d'une carte d'amelioration.
+GHOST_UPGRADE_VISION_BONUS = 40.0  # px de rayon de revelation
+GHOST_UPGRADE_SPEED_BONUS = 1.0  # px/frame de vitesse de deplacement fantome
+GHOST_UPGRADE_DURATION_BONUS = 3.0  # secondes de duree en mode fantome
 
 # --------------------------------------------------------------------------- #
 # Couleurs (RGB) - palette provisoire, remplacee par les sprites plus tard
@@ -933,6 +983,20 @@ COLOR_MENU_FOCUS = (196, 132, 72)
 COLOR_MENU_VEIL = (16, 10, 8)
 COLOR_MENU_GOLD = (216, 168, 88)
 COLOR_MENU_TITLE_SHADOW = (36, 22, 14)
+
+# Cartes de choix d'amelioration fantome (montee de niveau) : accent
+# bleu-spectre plutot que le marron/torche des autres menus, pour bien les
+# distinguer visuellement d'une pause ou d'une victoire.
+COLOR_CARD_FILL = (26, 32, 52)
+COLOR_CARD_BORDER = (74, 108, 158)
+COLOR_CARD_FOCUS_FILL = (40, 54, 86)
+COLOR_CARD_ACCENT = (128, 200, 255)  # = COLOR_GHOST
+COLOR_CARD_COST = (150, 205, 255)
+
+MENU_CARD_WIDTH = 190
+MENU_CARD_HEIGHT = 220
+MENU_CARD_GAP = 24
+
 MENU_PAUSE_VEIL_ALPHA = 176
 MENU_GRID_COLUMNS = 2
 MENU_CELL_WIDTH = 220
@@ -1097,8 +1161,8 @@ HUD_GAUGE_LOW = 0.22  # le timer fantome pulse sous ce ratio
 # Debug
 # --------------------------------------------------------------------------- #
 
-DEBUG_OVERLAY = True  # panneau : FPS, etat, tuiles a l'ecran, positions (F3 en jeu)
-DEBUG_SHOW_HITBOXES = True
+DEBUG_OVERLAY = True  # autorise le panneau FPS/etat (F3 pour l'afficher, masque au lancement)
+DEBUG_SHOW_HITBOXES = False
 DEBUG_SHOW_FPS = True  # si l'overlay est off, affiche quand meme le FPS en bas a gauche
 COLOR_DEBUG = (140, 230, 160)
 COLOR_DEBUG_PANEL = (8, 12, 18, 180)

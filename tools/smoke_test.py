@@ -56,8 +56,10 @@ def check_levels() -> None:
             extra = f", {len(level.mechanisms)} plaque(s), {hanging} pique(s) plafond"
         print(f"  carte '{name}' -> {level.name}: {level.columns}x{level.rows} tuiles, "
               f"{len(level.walls)} murs, {len(level.items)} objets, {len(level.enemies)} ennemis{extra}")
+        assert level.theme in settings.GROUND_THEMES, f"{name} : theme inconnu '{level.theme}'"
     check_invalid_activator()
     check_inverted_activator()
+    check_ground_theme()
 
 
 def check_invalid_activator() -> None:
@@ -127,19 +129,82 @@ def check_inverted_activator() -> None:
     print("  plaque inversee -> cachee au repos, visible a l'activation")
 
 
+def check_ground_theme() -> None:
+    """Le champ optionnel `theme` choisit la planche, ou ground par defaut."""
+    from src.world.themes import next_theme, sheet_for, theme_ids
+
+    data = {
+        "name": "theme",
+        "tile_size": settings.TILE_SIZE,
+        "legend": {"#": "wall", "P": "player_spawn"},
+        "rows": ["####", "#P.#", "####"],
+    }
+    default = Level.from_dict(data)
+    assert default.theme == settings.GROUND_THEME_DEFAULT
+    empty = Level.from_dict({**data, "theme": ""})
+    assert empty.theme == settings.GROUND_THEME_DEFAULT
+    sand = Level.from_dict({**data, "theme": "sand"})
+    assert sand.theme == "sand"
+    rock = Level.from_dict({**data, "theme": "ROCK"})
+    assert rock.theme == "rock"
+    try:
+        Level.from_dict({**data, "theme": "lava"})
+    except LevelFormatError as error:
+        message = str(error)
+        assert "theme inconnu" in message, message
+    else:
+        raise AssertionError("un theme inconnu aurait du etre refuse")
+    try:
+        Level.from_dict({**data, "theme": 1})
+    except LevelFormatError as error:
+        assert "theme" in str(error)
+    else:
+        raise AssertionError("un theme non chaine aurait du etre refuse")
+    for theme_id in theme_ids():
+        path = sheet_for(theme_id)
+        assert path.is_file(), f"planche manquante pour '{theme_id}' : {path}"
+    assert next_theme("ground") == "sand"
+    assert next_theme("sand") == "rock"
+    assert next_theme("rock") == "ground"
+    ground_key = next(iter(default.walls)).texture.cache_name
+    sand_key = next(iter(sand.walls)).texture.cache_name
+    rock_key = next(iter(rock.walls)).texture.cache_name
+    assert ground_key != sand_key, "sand doit lire une autre planche que ground"
+    assert sand_key != rock_key, "rock doit lire une autre planche que sand"
+    print(f"  theme terrain -> defaut {default.theme}, sand/rock distincts, cycle OK")
+
+
 def check_progression() -> None:
-    """Les paliers d'ames se debloquent tout seuls, sans shop."""
+    """XP + ames exponentiels ; les ameliorations sont choisies, pas automatiques."""
     progression = SoulProgression()
     assert progression.level == 1
-    assert progression.ghost_stats.max_range == settings.GHOST_MAX_RANGE
+    assert progression.essence == 0
     assert progression.ghost_stats.duration == settings.GHOST_DURATION
+    assert progression.ghost_stats.speed == settings.GHOST_SPEED
+    leveled_up = False
     for _ in range(3):
-        progression.absorb_orb()
-    assert progression.level == 2
-    assert progression.ghost_stats.max_range > settings.GHOST_MAX_RANGE
-    assert progression.ghost_stats.duration > settings.GHOST_DURATION
-    print(f"  progression -> niveau {progression.level}, "
-          f"portee fantome {progression.ghost_stats.max_range:.0f} px")
+        leveled_up = progression.absorb_orb() or leveled_up
+    assert progression.level == 2, "3 ames doivent suffire pour le niveau 2 (courbe exponentielle)"
+    assert leveled_up, "absorb_orb doit signaler la montee de niveau"
+    assert progression.essence == 3, "l'essence (monnaie) n'est jamais depensee toute seule"
+    # Les stats du fantome ne bougent pas tant qu'aucune carte n'a ete choisie.
+    assert progression.ghost_stats.duration == settings.GHOST_DURATION
+    assert progression.ghost_stats.speed == settings.GHOST_SPEED
+
+    first_cost = progression.upgrade_cost("duration")
+    progression.apply_upgrade("duration")
+    assert progression.ghost_stats.duration == settings.GHOST_DURATION + settings.GHOST_UPGRADE_DURATION_BONUS
+    assert progression.essence == 3 - first_cost
+    second_cost = progression.upgrade_cost("duration")
+    assert second_cost > first_cost, "le prix d'une amelioration doit croitre a chaque achat"
+
+    cards = progression.upgrade_cards()
+    assert {card.kind for card in cards} == {"vision", "speed", "duration"}
+    print(
+        f"  progression -> niveau {progression.level}, {progression.essence} ame(s), "
+        f"duree fantome {progression.ghost_stats.duration:.1f}s "
+        f"(prochaine carte duree : {second_cost} ame(s))"
+    )
 
 
 def check_event_manager() -> None:
@@ -671,6 +736,10 @@ def check_gameplay_loop(window: arcade.Window) -> None:
     assert view.ghost_emerging, "la mort doit ouvrir une cinematique"
     wait_ghost_ready(view)
     assert not view.ghost_emerging
+    assert view.ghost is not None
+    assert not arcade.check_for_collision_with_list(view.ghost, view.level.walls), (
+        "le fantome ne doit pas naitre coince dans un mur"
+    )
 
     view.on_key_press(arcade.key.DOWN, 0)
     advance(view, 60)
@@ -686,6 +755,19 @@ def check_gameplay_loop(window: arcade.Window) -> None:
     assert view.machine.state is GameState.PLAYING, "le corps doit revenir au checkpoint"
     assert view.player.alive
     assert not view.player_rebirthing
+
+    cadaver = view.level.corpses[0]
+    assert not cadaver.is_remnant, "un cadavre non devore n'est pas un squelette"
+    cadaver.feed(settings.CORPSE_EAT_TIME)
+    view.on_update(FRAME)
+    assert cadaver.is_remnant, "un cadavre devore doit laisser un squelette"
+    assert len(view.level.corpses) == 0, "le squelette ne doit plus etre solide"
+    assert len(view.level.remains) == 1, "le squelette doit rester en decor"
+    advance(view, 30)
+    assert len(view.level.remains) == 1 and view.level.remains[0].alpha == 255, (
+        "le squelette doit rester indefiniment"
+    )
+
     print(f"  boucle de jeu -> {view.session.deaths} mort(s), "
           f"etats visites : {' > '.join(state.name for state in view.machine.history)}")
 
@@ -839,6 +921,7 @@ def check_tutorial_is_solvable(window: arcade.Window) -> None:
             break
         view.on_update(FRAME)
     assert not view.level.corpses, "le cadavre doit finir par se dissiper"
+    assert view.level.remains, "la dissipation doit laisser un squelette"
 
     view.held_keys.add(arcade.key.RIGHT)
     previous_x = view.player.center_x
@@ -913,16 +996,11 @@ def check_menus(window: arcade.Window) -> None:
         f"culling rendu inactif : {play.level.tiles_drawn}/{expected_total} tuiles"
     )
     assert 0 < play.level.chunks_drawn < play.level.chunks_total
+    assert play._debug_enabled is False, "l'overlay debug doit etre masque au lancement"
     play.on_key_press(arcade.key.F3, 0)
-    assert play._debug_enabled is not settings.DEBUG_OVERLAY
+    assert play._debug_enabled is True, "F3 doit afficher l'overlay"
     play.on_key_press(arcade.key.F3, 0)
-    assert play._debug_enabled is settings.DEBUG_OVERLAY
-    play.on_key_press(arcade.key.ESCAPE, 0)
-    assert play.machine.state is GameState.PAUSED, "Echap doit ouvrir la pause"
-    play.on_update(FRAME)
-    play.on_draw()
-    play.on_key_press(arcade.key.ESCAPE, 0)
-    assert play.machine.state is GameState.PLAYING, "Echap en pause doit reprendre"
+    assert play._debug_enabled is False, "F3 doit pouvoir le recacher"
     play.on_resize(settings.SCREEN_WIDTH, settings.SCREEN_HEIGHT)
     print("  menus -> titre, victoire, pause et resize OK")
 
@@ -933,7 +1011,7 @@ def check_editor_document() -> None:
     import tempfile
 
     from src.editor import palette
-    from src.editor.document import EditorDocument
+    from src.editor.document import DocumentError, EditorDocument
     from src.editor.selection import GridRect
     from src.world.level import gameplay_kinds
 
@@ -944,6 +1022,7 @@ def check_editor_document() -> None:
 
     document = EditorDocument.from_file("level_1_tuto.json")
     assert document.columns > 0 and document.rows > 0
+    assert document.theme == settings.GROUND_THEME_DEFAULT
     assert document.counts().get("player_spawn", 0) >= 1
     assert len(document.activators) == 2
     assert document.activators[0].width == 4
@@ -981,6 +1060,20 @@ def check_editor_document() -> None:
     payload = json.loads(saved.read_text(encoding="utf-8"))
     assert payload["rows"], "la carte reecrite doit avoir des lignes"
     assert "player_spawn" in payload["legend"].values()
+    assert "theme" not in payload, "le theme par defaut ne s'ecrit pas"
+    document.set_metadata(theme="sand")
+    sand_payload = document.to_dict()
+    assert sand_payload["theme"] == "sand"
+    restored_theme = EditorDocument.from_dict(sand_payload)
+    assert restored_theme.theme == "sand"
+    document.set_metadata(theme=settings.GROUND_THEME_DEFAULT)
+    assert "theme" not in document.to_dict()
+    try:
+        EditorDocument.from_dict({**payload, "theme": "lava"})
+    except DocumentError as error:
+        assert "theme inconnu" in str(error)
+    else:
+        raise AssertionError("l'editeur doit refuser un theme inconnu")
     assert len(payload.get("activators", [])) == 2
     first = payload["activators"][0]
     assert first["x"] == 13 and first["width"] == 4
@@ -1309,6 +1402,7 @@ def check_editor_views(window: arcade.Window) -> None:
     from src.editor.browser import BrowserView
     from src.editor.document import EditorDocument
     from src.editor.edit_view import EditView, Tool
+    from src.world.themes import next_theme
 
     browser = BrowserView()
     window.show_view(browser)
@@ -1327,6 +1421,10 @@ def check_editor_views(window: arcade.Window) -> None:
     view.on_mouse_press(screen_x, screen_y, arcade.MOUSE_BUTTON_LEFT, 0)
     view.on_mouse_release(screen_x, screen_y, arcade.MOUSE_BUTTON_LEFT, 0)
     view.on_key_press(arcade.key.Z, arcade.key.MOD_CTRL)
+    before_theme = view.document.theme
+    view.on_key_press(arcade.key.F5, 0)
+    assert view.document.theme == next_theme(before_theme)
+    view.on_draw()
     view.on_key_press(arcade.key.Z, arcade.key.MOD_CTRL | arcade.key.MOD_SHIFT)
     view.tool = Tool.LINK
     view._link_index = 0

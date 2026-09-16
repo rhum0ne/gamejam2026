@@ -9,13 +9,11 @@ Les murs et les piques prennent le sprite nomme dans la legende de la carte
 (`"#" : "wall"`, `"^" : "spike"`). La hitbox reste un rectangle plein :
 changer l'apparence d'une tuile ne doit jamais modifier la physique.
 
-Une seule matiere terre/roche (planche `settings.SHEET_GROUND`, kind
-`"wall"`) : le level designer pose un seul type de mur, et l'auto-tiling
-choisit la case a afficher pour toute la grille en un coup, via
-`compute_ground_cells` (herbe/terre/dessous, pilier d'un bloc de large,
-plateforme fine, grotte, ilot 2x2 - cf. `_base_ground_cell`). `world/level.py`
-(jeu) et `editor/canvas.py` (editeur) appellent cette meme fonction sur leur
-grille respective, pour que l'apercu de l'editeur corresponde au rendu en jeu.
+Une seule matiere auto-tilee (kind `"wall"`) : le level designer pose un
+seul type de mur, et `compute_ground_cells` choisit la case a afficher.
+La planche lue depend du `theme` de la carte (`ground` / `sand` / `rock`,
+meme grille). `world/level.py` (jeu) et `editor/canvas.py` (editeur)
+appellent cette meme fonction, pour que l'apercu corresponde au rendu en jeu.
 """
 
 from __future__ import annotations
@@ -32,6 +30,7 @@ import settings
 from src.entities.glow import draw_glow, draw_threat_glow
 from src.entities.particles import SoulBurst
 from src.ui import sprites
+from src.world.themes import sheet_for
 
 
 @dataclass(frozen=True, slots=True)
@@ -368,12 +367,14 @@ def terrain_texture(
     size: int,
     *,
     cell: GroundCell | None = None,
+    theme: str | None = None,
 ) -> arcade.Texture:
     """Texture d'affichage d'une tuile de mur, deja a la taille de la carte.
 
     `cell` est la case deja resolue par `compute_ground_cells` pour une tuile
     auto-tilee (`spec.autotile`) : sans lui, l'apercu par defaut (crete
     d'herbe) sert pour la palette de l'editeur ou une tuile hors niveau.
+    `theme` selectionne la planche ground / sand / rock (defaut : terre).
     """
     if spec.role == "ice":
         return sprites.placeholder_tile(
@@ -381,14 +382,15 @@ def terrain_texture(
         )
     if spec.role != "wall":
         raise ValueError(f"terrain_texture attend un mur, pas '{spec.role}'")
+    sheet = sheet_for(theme) if spec.sheet is not None else None
     if spec.autotile:
         return sprites.load_sheet_cell(
-            spec.sheet, *(cell or _DEFAULT_CELL), settings.GROUND_CELL, size=size
+            sheet, *(cell or _DEFAULT_CELL), settings.GROUND_CELL, size=size
         )
-    if spec.sheet is not None:
+    if sheet is not None:
         if spec.cell is None:
             raise ValueError("spec.sheet est renseigne sans spec.cell ni spec.autotile")
-        return sprites.load_sheet_cell(spec.sheet, *spec.cell, settings.GROUND_CELL, size=size)
+        return sprites.load_sheet_cell(sheet, *spec.cell, settings.GROUND_CELL, size=size)
     return sprites.load_texture(spec.sprite, size=size)
 
 
@@ -405,11 +407,12 @@ class Wall(arcade.Sprite):
         size: int = settings.TILE_SIZE,
         tile: str = "wall",
         cell: GroundCell | None = None,
+        theme: str | None = None,
     ) -> None:
         spec = tile_spec(tile)
         if spec.role not in ("wall", "ice"):
             raise ValueError(f"'{tile}' n'est pas une tuile de mur")
-        texture = terrain_texture(spec, size, cell=cell)
+        texture = terrain_texture(spec, size, cell=cell, theme=theme)
         super().__init__(
             texture,
             scale=sprites.scale_for_size(texture, size),
@@ -453,8 +456,9 @@ class SpectralWall(Wall):
         size: int = settings.TILE_SIZE,
         tile: str = "wall",
         cell: GroundCell | None = None,
+        theme: str | None = None,
     ) -> None:
-        super().__init__(center_x, center_y, size=size, tile=tile, cell=cell)
+        super().__init__(center_x, center_y, size=size, tile=tile, cell=cell, theme=theme)
         self.revealed = False
 
     def set_revealed(self, revealed: bool) -> None:
