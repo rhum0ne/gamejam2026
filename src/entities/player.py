@@ -22,12 +22,21 @@ from src.entities.trail import PointTrail
 from src.ui import sprites
 
 
-def _idle_animation() -> sprites.StripAnimation:
-    frames = sprites.load_strip(
+def _idle_frames() -> tuple[arcade.Texture, ...]:
+    return sprites.load_strip(
         settings.SPRITE_PLAYER_IDLE,
         settings.SPRITE_FRAME_SIZE,
         scale=settings.ENTITY_SCALE,
     )
+
+
+def _idle_still_animation(frames: tuple[arcade.Texture, ...]) -> sprites.StripAnimation:
+    """Pose figee : premiere frame, sans respiration."""
+    return sprites.StripAnimation((frames[0],), settings.ANIM_IDLE_FRAME_TIME, loop=True)
+
+
+def _idle_breathe_animation(frames: tuple[arcade.Texture, ...]) -> sprites.StripAnimation:
+    """Idle qui respire, reserve au cooldown du dash."""
     return sprites.StripAnimation(frames, settings.ANIM_IDLE_FRAME_TIME, loop=True)
 
 
@@ -56,15 +65,17 @@ class Player(arcade.Sprite):
     """Corps physique controle au clavier."""
 
     def __init__(self, center_x: float, center_y: float) -> None:
-        self._idle = _idle_animation()
+        idle_frames = _idle_frames()
+        self._idle_still = _idle_still_animation(idle_frames)
+        self._idle_breathe = _idle_breathe_animation(idle_frames)
         self._walk = _walk_animation()
-        super().__init__(self._idle.textures[0], center_x=center_x, center_y=center_y)
+        super().__init__(self._idle_still.textures[0], center_x=center_x, center_y=center_y)
         sprites.apply_rect_hit_box(
             self,
             settings.PLAYER_HITBOX_WIDTH * settings.ENTITY_SCALE,
             settings.PLAYER_HEIGHT * settings.ENTITY_SCALE,
         )
-        self._animator = sprites.Animator(self._idle)
+        self._animator = sprites.Animator(self._idle_still)
         self.alive = True
         self.facing = 1
         self.inventory: set[ItemKind] = set()
@@ -300,8 +311,10 @@ class Player(arcade.Sprite):
             return
         if abs(self.change_x) > 0.05:
             self._animator.play(self._walk)
+        elif self._dash_cooldown > 0.0:
+            self._animator.play(self._idle_breathe)
         else:
-            self._animator.play(self._idle)
+            self._animator.play(self._idle_still)
         self.texture = self._animator.update(delta_time)
         sprites.apply_facing(self, self.facing)
         self._tick_dash(delta_time)
