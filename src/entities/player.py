@@ -492,13 +492,14 @@ class Player(arcade.Sprite):
             if self.attack_impact_active and not self._attack_sound_played:
                 self._attack_sound_played = True
                 self._attack_sound_events.append(self._attack_stage)
-        elif abs(self.change_x) > 0.05:
-            self._animator.play(self._walk)
-        elif self._dash_cooldown > 0.0:
-            self._animator.play(self._idle_breathe)
         else:
-            self._animator.play(self._idle_still)
-        self.texture = self._animator.update(delta_time)
+            if abs(self.change_x) > 0.05:
+                self._animator.play(self._walk)
+            elif self._dash_cooldown > 0.0:
+                self._animator.play(self._idle_breathe)
+            else:
+                self._animator.play(self._idle_still)
+            self.texture = self._animator.update(delta_time)
         sprites.apply_facing(self, self.facing)
         self._tick_dash(delta_time)
         if self.is_dashing:
