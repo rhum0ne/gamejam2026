@@ -127,11 +127,6 @@ TORCH_FLICKER_SPEED_FAST = 19.0
 GRAVITY = 1.0
 SPIKE_FALL_GRAVITY = GRAVITY
 SPIKE_FALL_MAX_SPEED = 14.0
-# Largeur de la hitbox des piques, en fraction de la tuile. Le sprite est un
-# triangle : plein a la base, tres etroit pres de la pointe. Une hitbox pleine
-# largeur tue au moindre effleurement lateral, la ou le sprite est encore
-# presque vide (cote du triangle). Reste un rectangle (cf. commentaire de
-# module) mais plus etroit, centre sur la tuile.
 SPIKE_HITBOX_WIDTH_RATIO = 0.6
 # Halo des piques en mode fantome (visible a travers le voile).
 SPIKE_GHOST_GLOW_SCALE = 3.4
@@ -140,6 +135,17 @@ SPIKE_GHOST_GLOW_INNER_SCALE = 1.7
 SPIKE_GHOST_GLOW_INNER_ALPHA = 180
 SPIKE_GHOST_GLOW_PULSE = 0.14
 SPIKE_GHOST_GLOW_PULSE_SPEED = 3.2
+
+# Halo rouge des menaces (piques et ennemis), perce le voile fantome.
+# Gros, saturé, identique pour les deux : un signal DANGER, pas un point.
+HAZARD_GHOST_GLOW_SIZE = 260.0
+HAZARD_GHOST_GLOW_MID_SIZE = 128.0
+HAZARD_GHOST_GLOW_INNER_SIZE = 58.0
+HAZARD_GHOST_GLOW_ALPHA = 175
+HAZARD_GHOST_GLOW_MID_ALPHA = 210
+HAZARD_GHOST_GLOW_INNER_ALPHA = 245
+HAZARD_GHOST_GLOW_PULSE = 0.28
+HAZARD_GHOST_GLOW_PULSE_SPEED = 4.8
 PLAYER_WIDTH = SPRITE_FRAME_SIZE
 PLAYER_HEIGHT = SPRITE_FRAME_SIZE
 # Largeur de hitbox (physique), plus etroite que PLAYER_WIDTH : le moteur ne
@@ -179,6 +185,25 @@ CHECKPOINT_BURST_GLOW_ALPHA = 150
 CHECKPOINT_BURST_CORE_ALPHA = 220
 CHECKPOINT_BURST_SPREAD = 10.0
 CHECKPOINT_BURST_MAX = 48
+# Halo du totem : eteint au repos, flash a l'activation, pulse tant qu'il est actif.
+CHECKPOINT_GLOW_LIFT = 0.22  # fraction de la hauteur, vers le crane
+CHECKPOINT_GLOW_WASH = 340.0  # nappe large, derriere le totem
+CHECKPOINT_GLOW_OUTER = 240.0
+CHECKPOINT_GLOW_MID = 118.0
+CHECKPOINT_GLOW_INNER = 44.0
+CHECKPOINT_GLOW_WIDTH_SCALE = 1.38  # halo plus large que haut
+CHECKPOINT_GLOW_WASH_ALPHA = 52
+CHECKPOINT_GLOW_ALPHA = 70
+CHECKPOINT_GLOW_MID_ALPHA = 108
+CHECKPOINT_GLOW_INNER_ALPHA = 145
+CHECKPOINT_GLOW_PULSE = 0.14
+CHECKPOINT_GLOW_PULSE_SPEED = 2.15
+CHECKPOINT_IGNITE_TIME = 0.9
+CHECKPOINT_IGNITE_PEAK = 2.15  # taille au pic du flash
+CHECKPOINT_IGNITE_ALPHA = 2.4
+CHECKPOINT_IGNITE_FLASH_SIZE = 380.0
+CHECKPOINT_IGNITE_FLASH_ALPHA = 180
+CHECKPOINT_IGNITE_RISE = 0.18  # part du flash consacree a la montee
 # Temps pour atteindre PLAYER_SPEED en maintenant une direction au sol.
 PLAYER_ACCEL_TIME = 0.25
 # Glissade a l'arret (sol) : 2-3 frames, quelques pixels tout au plus.
@@ -225,6 +250,8 @@ PARTICLE_LAND_GRAVITY = 480.0
 PARTICLE_LAND_SIZE_MIN = 3.5
 PARTICLE_LAND_SIZE_MAX = 7.5
 PARTICLE_RUN_SPEED_RATIO = 0.88  # fraction de PLAYER_SPEED pour declencher
+# Trainee de dash tant que la vitesse reste nettement au-dessus de la course.
+PARTICLE_HIGH_SPEED_RATIO = 0.45  # fraction de PLAYER_DASH_SPEED
 PARTICLE_RUN_INTERVAL = 0.040  # secondes entre deux grains
 PARTICLE_RUN_LIFE = 0.28
 PARTICLE_RUN_SPEED_X = 55.0
@@ -288,30 +315,41 @@ CORPSE_EAT_TIME = 4.0  # secondes pour qu'un ennemi devore un cadavre
 PLATE_HEIGHT = 8
 # Retrait horizontal de chaque cote, en pixels (la hitbox suit la plaque).
 PLATE_INSET = 4
-# Halo spectral : deux blobs additifs par plaque / paquet de blocs.
-MECHANISM_AURA_EDGE = 28.0
+# Halo spectral : plaque en nappe floue, lien en brume (pas de trait net).
+MECHANISM_PLATE_GLOW_SIZE = 200.0
+MECHANISM_PLATE_GLOW_MID = 110.0
+MECHANISM_PLATE_GLOW_INNER = 44.0
+MECHANISM_PLATE_GLOW_ALPHA = 130
+MECHANISM_PLATE_GLOW_MID_ALPHA = 165
+MECHANISM_PLATE_GLOW_INNER_ALPHA = 220
+MECHANISM_AURA_EDGE = 22.0
 MECHANISM_AURA_MIN_PAD = 6.0
-MECHANISM_AURA_AXIS_RATIO = 0.55
-MECHANISM_AURA_FILL_ALPHA = 120
-MECHANISM_AURA_CORE_ALPHA = 190
-MECHANISM_AURA_OUTER_SCALE = 2.6
-MECHANISM_AURA_PULSE = 0.16
-MECHANISM_PRESSED_GLOW = 1.28  # plaque et cibles plus vives une fois actives
-MECHANISM_LINK_CURVE = 0.22  # amplitude du S, fraction de la longueur
-MECHANISM_LINK_FAN = 12.0  # px : ecarte les brins d'une meme plaque
-MECHANISM_LINK_WIGGLE = 4.5  # px d'ondulation orthogonale
-MECHANISM_LINK_WIGGLE_WAVES = 1.6
-MECHANISM_LINK_PULSE_SPEED = 1.15
-MECHANISM_LINK_SPACING = 48.0  # px entre deux samples de la courbe
-MECHANISM_LINK_MIN_SEGMENTS = 8
-MECHANISM_LINK_MAX_SEGMENTS = 16
-MECHANISM_LINK_WIDTH = 6.0
-MECHANISM_LINK_CORE_WIDTH = 2.0
-MECHANISM_LINK_ALPHA = 130
-MECHANISM_LINK_CORE_ALPHA = 200
-MECHANISM_LINK_GLOW_SIZE = 42.0
+MECHANISM_AURA_AXIS_RATIO = 0.45
+MECHANISM_AURA_FILL_ALPHA = 55
+MECHANISM_AURA_CORE_ALPHA = 90
+MECHANISM_AURA_OUTER_SCALE = 2.2
+MECHANISM_AURA_PULSE = 0.22
+MECHANISM_PRESSED_GLOW = 1.25
+MECHANISM_LINK_CURVE = 0.34
+MECHANISM_LINK_FAN = 14.0
+MECHANISM_LINK_WIGGLE = 16.0
+MECHANISM_LINK_WIGGLE_WAVES = 2.15
+MECHANISM_LINK_WIGGLE_SLOW = 7.0  # seconde ondulation, plus lente
+MECHANISM_LINK_WIGGLE_SLOW_WAVES = 0.7
+MECHANISM_LINK_PULSE_SPEED = 0.85
+MECHANISM_LINK_FLOW_SPEED = 0.42
+MECHANISM_LINK_FLOW_COUNT = 4
+MECHANISM_LINK_FLOW_SIZE = 78.0
+MECHANISM_LINK_FLOW_ALPHA = 90
+MECHANISM_LINK_FLOW_CORE_SIZE = 28.0
+MECHANISM_LINK_FLOW_CORE_ALPHA = 160
+MECHANISM_LINK_SPACING = 20.0
+MECHANISM_LINK_MIN_SEGMENTS = 12
+MECHANISM_LINK_MAX_SEGMENTS = 24
+MECHANISM_LINK_GLOW_SIZE = 70.0
 MECHANISM_LINK_GLOW_ALPHA = 70
-MECHANISM_LINK_GLOW_COUNT = 3  # bloom le long du brin, pas une chaine de tampons
+MECHANISM_LINK_CORE_SIZE = 30.0
+MECHANISM_LINK_CORE_ALPHA = 95
 
 # --------------------------------------------------------------------------- #
 # Ennemis
@@ -362,12 +400,6 @@ ANIM_ENEMY_IDLE_FRAME_TIME = 0.12
 ANIM_ENEMY_WALK_FRAME_TIME = 0.07
 ANIM_ENEMY_ATTACK_FRAME_TIME = 0.05
 ANIM_ENEMY_DIE_FRAME_TIME = 0.06
-ENEMY_GHOST_GLOW_SCALE = 5.6
-ENEMY_GHOST_GLOW_ALPHA = 96
-ENEMY_GHOST_GLOW_INNER_SCALE = 2.4
-ENEMY_GHOST_GLOW_INNER_ALPHA = 170
-ENEMY_GHOST_GLOW_PULSE = 0.16
-ENEMY_GHOST_GLOW_PULSE_SPEED = 3.4
 
 # --------------------------------------------------------------------------- #
 # Objets et progression
@@ -397,18 +429,20 @@ COLOR_BACKGROUND = (18, 18, 28)
 COLOR_WALL = (72, 76, 96)
 COLOR_SPECTRAL_WALL = (96, 84, 140)
 COLOR_SPIKE = (196, 84, 84)
-COLOR_SPIKE_GLOW = (255, 36, 28)
-COLOR_SPIKE_GLOW_CORE = (255, 110, 72)
+COLOR_HAZARD_GLOW = (255, 12, 4)
+COLOR_HAZARD_GLOW_CORE = (255, 72, 36)
 COLOR_DOOR_LOCKED = (150, 110, 46)
 COLOR_DOOR_OPEN = (96, 170, 110)
 COLOR_CHECKPOINT = (86, 148, 196)
 COLOR_CHECKPOINT_PARTICLE = (90, 186, 255)
 COLOR_CHECKPOINT_PARTICLE_CORE = (210, 240, 255)
+COLOR_CHECKPOINT_GLOW = (118, 198, 255)
+COLOR_CHECKPOINT_GLOW_CORE = (236, 248, 255)
 COLOR_PRESSURE_PLATE = (92, 108, 132)
 COLOR_PRESSURE_PLATE_PRESSED = (64, 168, 214)
-COLOR_MECHANISM_LINK = (150, 214, 255)
-COLOR_MECHANISM_GLOW = (160, 226, 255)
-COLOR_MECHANISM_GLOW_CORE = (230, 246, 255)
+COLOR_MECHANISM_LINK = (168, 220, 255)
+COLOR_MECHANISM_GLOW = (186, 232, 255)
+COLOR_MECHANISM_GLOW_CORE = (236, 248, 255)
 COLOR_PLAYER = (232, 232, 240)
 COLOR_GHOST = (128, 200, 255)
 COLOR_GHOST_GLOW = (110, 190, 255)
@@ -418,14 +452,13 @@ COLOR_DEATH_PARTICLE = (150, 214, 255)
 COLOR_DEATH_PARTICLE_CORE = (245, 252, 255)
 COLOR_CORPSE = (140, 120, 120)
 COLOR_ENEMY = (188, 92, 160)
-COLOR_ENEMY_GLOW = (255, 28, 22)
-COLOR_ENEMY_GLOW_CORE = (255, 92, 64)
 COLOR_KEY = (232, 204, 96)
 COLOR_SOUL_ORB = (110, 190, 255)
 COLOR_HUD_TEXT = (228, 228, 236)
 COLOR_HUD_BAR_BACKGROUND = (48, 48, 62)
 COLOR_HUD_BAR_FILL = (128, 200, 255)
 COLOR_HUD_GHOST_GAUGE = (110, 196, 255)
+COLOR_HUD_KEY_EMPTY = (36, 36, 42)  # cle absente : sombre, pas transparente
 COLOR_DASH = (255, 214, 120)
 COLOR_DASH_GLOW = (255, 224, 150)
 COLOR_TRAIL_DASH = (255, 214, 96)
@@ -554,12 +587,15 @@ UI_KEY_CELL = 16  # taille native d'une touche-lettre
 UI_KEY_ICON_HEIGHT = 40  # hauteur a l'ecran (nearest-neighbor)
 UI_KEY_CAPTION_SIZE = 16  # libelles a cote des icones
 
-# Jauge unique bas-centre : dash (corps) ou timer (fantome).
+# Stats haut-droit, une ligne par item : icone + valeur, jauge en dessous.
+HUD_STAT_ICON = 40
+HUD_STAT_GAP = 8  # espace vertical entre deux lignes
+HUD_STAT_VALUE_GAP = 10  # espace icone -> valeur
+# Jauge du timer fantome, sous les stats.
 HUD_GAUGE_WIDTH = 168
 HUD_GAUGE_HEIGHT = 10
 HUD_GAUGE_ICON = 22
 HUD_GAUGE_GAP = 8
-HUD_GAUGE_LIFT = 10  # au-dessus des icones clavier
 HUD_GAUGE_LOW = 0.22  # le timer fantome pulse sous ce ratio
 
 # --------------------------------------------------------------------------- #
@@ -588,12 +624,13 @@ EDITOR_MIN_ROWS = 8
 EDITOR_MAX_COLUMNS = 600
 EDITOR_MAX_ROWS = 300
 EDITOR_HISTORY_LIMIT = 250  # nombre d'actions annulables
-EDITOR_PANEL_WIDTH = 320  # largeur du panneau de droite (palette)
-EDITOR_STATUS_HEIGHT = 78  # hauteur de la barre d'etat du bas
-EDITOR_ROW_HEIGHT = 34  # hauteur d'une ligne de palette
-EDITOR_SWATCH_SIZE = 26  # cote d'une vignette de palette
-EDITOR_TEXT_SIZE = 12
-EDITOR_TITLE_SIZE = 14
+EDITOR_PANEL_WIDTH = 400  # largeur du panneau de droite (palette + plaques)
+EDITOR_STATUS_HEIGHT = 108  # hauteur de la barre d'etat du bas
+EDITOR_ROW_HEIGHT = 42  # hauteur d'une ligne de palette
+EDITOR_SWATCH_SIZE = 28  # cote d'une vignette de palette
+# Press Start 2P est une police 8 px : 16 est un multiple net, plus lisible que 12.
+EDITOR_TEXT_SIZE = 16
+EDITOR_TITLE_SIZE = 16
 EDITOR_ZOOM_MIN = 0.25
 EDITOR_ZOOM_MAX = 6.0
 EDITOR_ZOOM_DEFAULT = 1.25  # 1.0 = une tuile = TILE_SIZE pixels a l'ecran
@@ -603,18 +640,21 @@ EDITOR_GRID_MIN_ZOOM = 0.45  # sous ce zoom, la grille n'est plus tracee
 EDITOR_MESSAGE_TIME = 3.0  # secondes d'affichage d'un message de statut
 EDITOR_FLOOD_LIMIT = 20000  # garde-fou du remplissage par zone
 EDITOR_MAPS_GLOB = "*.json"
+EDITOR_MARQUEE_SPEED = 42.0  # pixels par seconde quand un libelle debord
+EDITOR_MARQUEE_PAUSE = 0.85  # pause aux extremites du defilement horizontal
 
 COLOR_EDITOR_BACKGROUND = (13, 14, 20)
-COLOR_EDITOR_PANEL = (22, 24, 34)
-COLOR_EDITOR_PANEL_BORDER = (54, 58, 78)
-COLOR_EDITOR_ROW_ACTIVE = (46, 62, 88)
-COLOR_EDITOR_ROW_HOVER = (34, 38, 52)
+COLOR_EDITOR_PANEL = (18, 20, 30)
+COLOR_EDITOR_PANEL_BORDER = (68, 74, 98)
+COLOR_EDITOR_ROW_ACTIVE = (52, 74, 108)
+COLOR_EDITOR_ROW_HOVER = (36, 42, 58)
+COLOR_EDITOR_HEADING = (30, 34, 48)
 COLOR_EDITOR_GRID = (40, 44, 60)
 COLOR_EDITOR_BOUNDS = (120, 132, 172)
-COLOR_EDITOR_TEXT = (226, 228, 238)
-COLOR_EDITOR_TEXT_DIM = (138, 145, 168)
-COLOR_EDITOR_ACCENT = (128, 200, 255)
-COLOR_EDITOR_WARNING = (255, 186, 72)
+COLOR_EDITOR_TEXT = (236, 238, 246)
+COLOR_EDITOR_TEXT_DIM = (176, 182, 204)
+COLOR_EDITOR_ACCENT = (140, 210, 255)
+COLOR_EDITOR_WARNING = (255, 196, 88)
 COLOR_EDITOR_DANGER = (240, 96, 96)
 COLOR_EDITOR_OK = (120, 210, 140)
 COLOR_EDITOR_SELECTION = (128, 200, 255, 55)
@@ -623,3 +663,9 @@ COLOR_EDITOR_PASTE = (255, 214, 120, 60)
 COLOR_EDITOR_HOVER = (255, 255, 255, 38)
 COLOR_EDITOR_UNKNOWN = (150, 90, 190)
 COLOR_EDITOR_OVERLAY = (8, 10, 16, 235)
+COLOR_EDITOR_PLATE = (64, 168, 214, 80)
+COLOR_EDITOR_PLATE_BORDER = (140, 220, 255)
+COLOR_EDITOR_PLATE_SELECTED = (255, 210, 90, 95)
+COLOR_EDITOR_GATED = (240, 110, 110, 75)
+COLOR_EDITOR_GATED_BORDER = (255, 160, 160)
+COLOR_EDITOR_LINK = (150, 214, 255)

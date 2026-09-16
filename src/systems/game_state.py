@@ -239,7 +239,7 @@ class PlayView(arcade.View):
         self.player.respawn_point = self.level.checkpoint_spawn
         for checkpoint in self.level.checkpoints:
             if checkpoint.spawn_point == self.level.checkpoint_spawn:
-                self.level.activate_checkpoint(checkpoint)
+                self.level.activate_checkpoint(checkpoint, ignite=False)
                 break
         self.player.bind_world(self.level.static_walls, platforms=[self.level.corpses])
         for enemy in self.level.enemies:
@@ -411,13 +411,7 @@ class PlayView(arcade.View):
         emergence.draw_fx()
 
     def _draw_ghost_layer(self, ghost: Ghost) -> None:
-        """Voile radial, auras toujours visibles, secrets dans le champ, fantome.
-
-        Les piques restent dans le rendu terrain, sous le voile : les redessiner
-        apres `ghost.reveals` les faisait popper opaques au bord du rayon.
-        """
-        with glow_pass():
-            self._draw_spike_glows()
+        """Voile radial, menaces rouges hors champ, secrets dans le champ, fantome."""
         revealed_walls: list[arcade.Sprite] = []
         for wall in self.level.spectral_walls:
             wall.set_revealed(ghost.reveals(wall))
@@ -429,7 +423,7 @@ class PlayView(arcade.View):
             for item in self.level.items:
                 if ghost.reveals(item):
                     item.draw_fx()
-            self._draw_enemy_glows()
+            self._draw_threat_glows()
             self._draw_mechanism_hints()
             ghost.draw_fx()
         revealed_actors: list[arcade.Sprite] = []
@@ -443,27 +437,22 @@ class PlayView(arcade.View):
         draw_pixel_sprite(ghost)
         self._draw_body_arrow(ghost)
 
-    def _draw_spike_glows(self) -> None:
-        """Halos de piques, sous le voile pour suivre le degrade de vision."""
-        view = self._terrain_cull_rect()
-        pad = settings.TILE_SIZE * settings.SPIKE_GHOST_GLOW_SCALE
+    def _draw_threat_glows(self) -> None:
+        """Piques et ennemis : meme halo rouge, au-dessus du voile, tout l'ecran."""
+        view = self.camera.cull_rect()
+        pad = settings.HAZARD_GHOST_GLOW_SIZE
         for spike in self.level.hazards:
             if _in_view(spike, view, pad):
                 spike.draw_ghost_glow(bind_blend=False)
         for spike in self.level.falling_spikes:
             if _in_view(spike, view, pad):
                 spike.draw_ghost_glow(bind_blend=False)
-
-    def _draw_enemy_glows(self) -> None:
-        """Halos d'ennemis, au-dessus du voile (lisibles hors du champ)."""
-        view = self.camera.cull_rect()
-        pad = settings.ENEMY_WIDTH * settings.ENEMY_GHOST_GLOW_SCALE
         for enemy in self.level.enemies:
             if _in_view(enemy, view, pad):
                 enemy.draw_ghost_glow(bind_blend=False)
 
     def _draw_mechanism_hints(self) -> None:
-        """Auras silhouette et vrilles d'ame, visibles en projection."""
+        """Plaque lumineuse et vrille fantome vers les paquets, hors du voile."""
         now = time.perf_counter()
         view = self.camera.cull_rect()
         pad = settings.RENDER_CULL_PAD
@@ -523,9 +512,6 @@ class PlayView(arcade.View):
             ghost_duration=self.ghost.stats.duration if self.ghost is not None else settings.GHOST_DURATION,
             leash_ratio=self.ghost.leash_ratio if self.ghost is not None else 0.0,
             fps=self._fps if settings.DEBUG_SHOW_FPS and not self._debug_enabled else None,
-            dash_ratio=self.player.dash_ratio if show_body_hud else None,
-            dash_ready=self.player.dash_ready,
-            dash_flash=self.player.dash_flash,
             controls=(
                 "ghost"
                 if state is GameState.GHOST and not self.ghost_emerging
