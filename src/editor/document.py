@@ -1,7 +1,7 @@
 """Carte en cours d'edition : grille de types, metadonnees, lecture/ecriture JSON.
 
 Le document ne manipule **pas** de symboles : chaque cellule contient le nom du
-type (`"rock"`, `"enemy"`, `""` pour du vide). Les symboles de legende ne sont
+type (`"wall"`, `"enemy"`, `""` pour du vide). Les symboles de legende ne sont
 choisis qu'a l'ecriture, ce qui evite les collisions et permet de changer un
 symbole sans toucher a la carte. Les symboles lus dans un fichier sont
 conserves pour que reecrire une carte existante ne bouleverse pas son diff.
@@ -30,6 +30,7 @@ from src.editor.activators import (
 )
 from src.editor.history import CellChange, Edit, GridState, History
 from src.editor.selection import Block, GridRect
+from src.world.flamethrower import FlameSpec, dump_flame_specs, parse_flame_specs
 
 # (colonne, ligne, type present apres l'operation)
 CellState = tuple[int, int, str]
@@ -55,6 +56,7 @@ class EditorDocument:
         path: Path | None = None,
         symbols: dict[str, str] | None = None,
         activators: Sequence[Activator] = (),
+        flames: dict[tuple[int, int], FlameSpec] | None = None,
     ) -> None:
         if not cells or not cells[0]:
             raise DocumentError("une carte doit avoir au moins une cellule")
@@ -76,9 +78,12 @@ class EditorDocument:
         self._layout_version = 0
         self._saved_version = 0
         self._activators: tuple[Activator, ...] = tuple(activators)
+        self._flames: dict[tuple[int, int], FlameSpec] = dict(flames or {})
+        self._flame_brush = FlameSpec(0, 0)
         self._stroke: list[CellChange] | None = None
         self._stroke_label = ""
         self._stroke_activators: tuple[Activator, ...] | None = None
+        self._sync_flames()
 
     # ------------------------------------------------------------------ #
     # Construction
@@ -92,16 +97,16 @@ class EditorDocument:
         rows: int = settings.EDITOR_NEW_ROWS,
         tile_size: int = settings.TILE_SIZE,
     ) -> "EditorDocument":
-        """Carte vide, entouree d'un cadre de roche pour ne pas tomber hors monde."""
+        """Carte vide, entouree d'un cadre de terre pour ne pas tomber hors monde."""
         columns = max(settings.EDITOR_MIN_COLUMNS, min(settings.EDITOR_MAX_COLUMNS, columns))
         rows = max(settings.EDITOR_MIN_ROWS, min(settings.EDITOR_MAX_ROWS, rows))
         cells = [[palette.EMPTY] * columns for _ in range(rows)]
         for column in range(columns):
-            cells[0][column] = "rock"
+            cells[0][column] = "wall"
             cells[rows - 1][column] = "bedrock"
         for row in range(rows):
-            cells[row][0] = "rock"
-            cells[row][columns - 1] = "rock"
+            cells[row][0] = "wall"
+            cells[row][columns - 1] = "wall"
         cells[rows - 2][2] = "player_spawn"
         return cls(name=name, hint="", tile_size=tile_size, cells=cells)
 
@@ -150,6 +155,10 @@ class EditorDocument:
             activators = parse_activators(data.get("activators"))
         except ActivatorError as error:
             raise DocumentError(str(error)) from error
+        try:
+            flames = parse_flame_specs(data.get("flamethrowers"))
+        except ValueError as error:
+            raise DocumentError(str(error)) from error
         return cls(
             name=str(data.get("name", "Niveau sans nom")),
             hint=str(data.get("hint", "")),
@@ -158,6 +167,7 @@ class EditorDocument:
             path=path,
             symbols=symbols,
             activators=activators,
+            flames=flames,
         )
 
     # ------------------------------------------------------------------ #
@@ -193,6 +203,39 @@ class EditorDocument:
     @property
     def activators(self) -> tuple[Activator, ...]:
         return self._activators
+
+    def flame_at(self, column: int, row: int) -> FlameSpec | None:
+        """Reglages du lance-flammes pose en (colonne, ligne), s'il y en a un."""
+        return self._flames.get((column, row))
+
+    def adjust_flame(
+        self,
+        column: int,
+        row: int,
+        *,
+        range_delta: int = 0,
+        interval_delta: float = 0.0,
+        rotate: bool = False,
+    ) -> FlameSpec | None:
+        """Modifie le lance-flammes sous le curseur. None si la cellule n'en est pas un."""
+        if self.cell(column, row) != "flamethrower":
+            return None
+        current = self._flames.get((column, row)) or FlameSpec(column, row)
+        updated = current
+        if range_delta:
+            updated = updated.with_range(updated.range_tiles + range_delta)
+        if interval_delta:
+            updated = updated.with_interval(updated.interval + interval_delta)
+        if rotate:
+            updated = updated.rotated()
+        if updated == current:
+            return current
+        self._flames[(column, row)] = updated
+        self._flame_brush = FlameSpec(
+            0, 0, updated.range_tiles, updated.interval, updated.direction
+        )
+        self._version += 1
+        return updated
 
     def inside(self, column: int, row: int) -> bool:
         return 0 <= column < self.columns and 0 <= row < self.rows
@@ -425,6 +468,7 @@ class EditorDocument:
         )
         self._version += 1
         self._layout_version += 1
+        self._sync_flames()
         return True
 
     def can_link(self, column: int, row: int) -> bool:
@@ -528,6 +572,9 @@ class EditorDocument:
         activators = dump_activators(self._activators)
         if activators:
             payload["activators"] = activators
+        flames = dump_flame_specs(self._flames)
+        if flames:
+            payload["flamethrowers"] = flames
         return payload
 
     def save(self, path: str | Path | None = None) -> Path:
@@ -569,6 +616,7 @@ class EditorDocument:
                 )
             )
         self._version += 1
+        self._sync_flames()
         return tuple((change.column, change.row, change.after) for change in changes)
 
     def _sync_activators(self) -> None:
@@ -579,6 +627,27 @@ class EditorDocument:
             rows=self.rows,
             kind_at=self.cell,
         )
+
+    def _sync_flames(self) -> None:
+        """Garde un spec par cellule `flamethrower`, jette le reste."""
+        kept: dict[tuple[int, int], FlameSpec] = {}
+        brush = self._flame_brush
+        for row, line in enumerate(self._cells):
+            for column, kind in enumerate(line):
+                if kind != "flamethrower":
+                    continue
+                existing = self._flames.get((column, row))
+                if existing is not None:
+                    kept[(column, row)] = existing
+                    continue
+                kept[(column, row)] = FlameSpec(
+                    column,
+                    row,
+                    brush.range_tiles,
+                    brush.interval,
+                    brush.direction,
+                )
+        self._flames = kept
 
     def _commit_activators(self, label: str, before: tuple[Activator, ...]) -> None:
         if before == self._activators:
@@ -621,6 +690,7 @@ class EditorDocument:
             restored = edit.activators_after if forward else edit.activators_before
             assert restored is not None
             self._activators = restored
+        self._sync_flames()
         return states
 
     def _snapshot(self) -> GridState:
