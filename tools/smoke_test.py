@@ -477,6 +477,9 @@ def check_editor_document() -> None:
     document = EditorDocument.from_file("level_1_tuto.json")
     assert document.columns > 0 and document.rows > 0
     assert document.counts().get("player_spawn", 0) >= 1
+    assert len(document.activators) == 2
+    assert document.activators[0].width == 4
+    assert document.activators[0].targets
 
     column, row = 4, 4
     before = document.cell(column, row)
@@ -510,7 +513,19 @@ def check_editor_document() -> None:
     payload = json.loads(saved.read_text(encoding="utf-8"))
     assert payload["rows"], "la carte reecrite doit avoir des lignes"
     assert "player_spawn" in payload["legend"].values()
+    assert len(payload.get("activators", [])) == 2
+    first = payload["activators"][0]
+    assert first["x"] == 13 and first["width"] == 4
+    assert first["activate"]["setBlock"]
     saved.unlink()
+
+    index = document.add_activator(5, 5, 3)
+    assert document.activators[index].width == 3
+    linked = document.toggle_target(index, 2, document.rows - 2)
+    assert linked
+    document.undo()
+    document.undo()
+    assert len(document.activators) == 2
     print(f"  editeur document -> {document.columns}x{document.rows}, "
           f"{len(palette.PALETTE)} elements de palette")
 
@@ -539,6 +554,8 @@ def check_editor_views(window: arcade.Window) -> None:
     view.on_mouse_release(screen_x, screen_y, arcade.MOUSE_BUTTON_LEFT, 0)
     view.on_key_press(arcade.key.Z, arcade.key.MOD_CTRL)
     view.on_key_press(arcade.key.Z, arcade.key.MOD_CTRL | arcade.key.MOD_SHIFT)
+    view.tool = Tool.LINK
+    view._link_index = 0
     view.on_draw()
     print("  editeur vues -> navigateur et grille OK")
 

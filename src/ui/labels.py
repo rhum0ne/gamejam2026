@@ -11,6 +11,8 @@ de rendu : il faut reutiliser des objets `Text`. Deux facons de faire ici :
 
 from __future__ import annotations
 
+import time
+
 import arcade
 
 import settings
@@ -89,11 +91,96 @@ class Line:
         x: float,
         y: float,
         color: tuple[int, int, int] | tuple[int, int, int, int] | None = None,
+        *,
+        max_width: float | None = None,
+        overflow: str = "marquee",
     ) -> None:
-        """Met a jour le contenu, la position, la couleur, puis dessine."""
+        """Met a jour le contenu, la position, la couleur, puis dessine.
+
+        Si `max_width` est fourni et que le texte depasse :
+            - `marquee` : defilement horizontal ping-pong ;
+            - `end` : aligne la fin (curseur de saisie toujours visible).
+        """
         self._text.text = text
-        self._text.x = x
         self._text.y = y
         if color is not None:
             self._text.color = color
-        self._text.draw()
+        if max_width is None or max_width <= 0:
+            self._text.x = x
+            self._text.draw()
+            return
+        width = float(self._text.content_width)
+        if width <= max_width:
+            self._text.x = x
+            self._text.draw()
+            return
+        overflow_px = width - max_width
+        if overflow == "end":
+            offset = overflow_px
+        else:
+            offset = _marquee_offset(overflow_px)
+        # Fenetre de caracteres : le glyphe ne part jamais loin a gauche de `x`.
+        # Le scissor coupe le reliquat (fraction de glyphe + bord droit).
+        char_w = width / max(1, len(text))
+        start = min(len(text) - 1, max(0, int(offset / char_w)))
+        frac = offset - start * char_w
+        visible = max(1, int(max_width / char_w) + 2)
+        self._text.text = text[start : start + visible]
+        self._text.x = x - frac
+        height = max(self._text.content_height, self._text.font_size) + 10
+        with _clip(x, y - 6, max_width, height):
+            self._text.draw()
+
+
+class _clip:
+    """Scissor OpenGL en coordonnees fenetre : coupe le texte qui debord.
+
+    Assigner `camera.scissor` sans `use()` ne change rien. On ecrit donc
+    directement `ctx.scissor` (le setter convertit deja les points Retina).
+    """
+
+    def __init__(self, x: float, y: float, width: float, height: float) -> None:
+        self._box = (
+            int(x),
+            int(y),
+            max(1, int(width)),
+            max(1, int(height)),
+        )
+        self._window = None
+        self._previous = None
+
+    def __enter__(self) -> None:
+        window = arcade.get_window()
+        self._window = window
+        self._previous = window.ctx.scissor
+        window.ctx.scissor = self._box
+
+    def __exit__(self, *_exc) -> None:
+        window = self._window
+        if window is not None:
+            window.ctx.scissor = self._previous
+
+    def __exit__(self, *_exc) -> None:
+        window = self._window
+        if window is not None:
+            window.ctx.scissor = self._previous
+
+
+def _marquee_offset(overflow: float) -> float:
+    """Aller-retour : pause, glisse, pause, revient."""
+    speed = settings.EDITOR_MARQUEE_SPEED
+    pause = settings.EDITOR_MARQUEE_PAUSE
+    travel = overflow / max(1.0, speed)
+    period = travel + pause * 2
+    loop = max(0.001, period * 2)
+    cursor = time.perf_counter() % loop
+    if cursor < pause:
+        return 0.0
+    cursor -= pause
+    if cursor < travel:
+        return cursor * speed
+    cursor -= travel
+    if cursor < pause:
+        return overflow
+    cursor -= pause
+    return max(0.0, overflow - cursor * speed)

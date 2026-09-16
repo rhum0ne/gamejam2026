@@ -20,8 +20,10 @@ from arcade.types import LBWH, Rect
 
 import settings
 from src.editor import icons, palette
+from src.editor.activators import Activator, cluster_targets
 from src.editor.document import CellState, EditorDocument
 from src.editor.selection import Block, GridRect
+from src.world.mechanisms import plate_geometry
 
 
 class GridCanvas:
@@ -114,11 +116,15 @@ class GridCanvas:
     # ------------------------------------------------------------------ #
 
     def pan_by(self, dx: float, dy: float) -> None:
-        """Deplace la camera de `dx`, `dy` pixels ecran."""
+        """Deplace la carte avec la souris : le decor suit le curseur."""
         zoom = self._camera.zoom
         position_x, position_y = self._camera.position
         self._camera.position = (position_x - dx / zoom, position_y - dy / zoom)
         self._clamp_position()
+
+    def nudge(self, dx: float, dy: float) -> None:
+        """Deplace la camera dans le sens des touches (Z haut, D droite)."""
+        self.pan_by(-dx, -dy)
 
     def zoom_by(self, factor: float, screen_x: float, screen_y: float) -> None:
         """Zoome en gardant le point ecran donne sur la meme cellule."""
@@ -207,6 +213,9 @@ class GridCanvas:
         hover: tuple[int, int] | None = None,
         preview: GridRect | None = None,
         clipboard: Block | None = None,
+        activators: tuple[Activator, ...] = (),
+        selected_activator: int | None = None,
+        preview_plate: Activator | None = None,
     ) -> None:
         """Dessine le fond de carte, les cellules, la grille et les reperes."""
         self._camera.use()
@@ -219,6 +228,7 @@ class GridCanvas:
         arcade.draw_lrbt_rectangle_outline(
             0, self.world_width, 0, self.world_height, settings.COLOR_EDITOR_BOUNDS, 2
         )
+        self._draw_activators(activators, selected_activator, preview_plate)
         if selection is not None:
             self._draw_rect(selection, settings.COLOR_EDITOR_SELECTION, settings.COLOR_EDITOR_SELECTION_BORDER)
         if preview is not None:
@@ -230,6 +240,70 @@ class GridCanvas:
             self._draw_rect(
                 clipboard.rect_at(*hover), settings.COLOR_EDITOR_PASTE, settings.COLOR_EDITOR_WARNING
             )
+
+    def _draw_activators(
+        self,
+        activators: tuple[Activator, ...],
+        selected_index: int | None,
+        preview: Activator | None,
+    ) -> None:
+        drawn = list(activators)
+        if preview is not None:
+            drawn.append(preview)
+        for index, activator in enumerate(drawn):
+            selected = index == selected_index or activator is preview
+            self._draw_plate(activator, selected)
+            self._draw_links(activator, selected)
+
+    def _draw_plate(self, activator: Activator, selected: bool) -> None:
+        fill = settings.COLOR_EDITOR_PLATE_SELECTED if selected else settings.COLOR_EDITOR_PLATE
+        border = (
+            settings.COLOR_EDITOR_WARNING if selected else settings.COLOR_EDITOR_PLATE_BORDER
+        )
+        rect = GridRect(
+            activator.column,
+            activator.row,
+            activator.last_column,
+            activator.row,
+        )
+        self._draw_rect(rect, fill, border)
+        center_x, center_y, width, height = plate_geometry(
+            activator.column,
+            activator.row,
+            activator.width,
+            self.document.tile_size,
+            self.document.rows,
+        )
+        arcade.draw_lrbt_rectangle_filled(
+            center_x - width / 2,
+            center_x + width / 2,
+            center_y - height / 2,
+            center_y + height / 2,
+            settings.COLOR_PRESSURE_PLATE_PRESSED if selected else settings.COLOR_PRESSURE_PLATE,
+        )
+
+    def _draw_links(self, activator: Activator, selected: bool) -> None:
+        if not activator.targets:
+            return
+        tile = self.document.tile_size
+        start_x, start_y, _width, _height = plate_geometry(
+            activator.column,
+            activator.row,
+            activator.width,
+            tile,
+            self.document.rows,
+        )
+        color = (
+            settings.COLOR_EDITOR_WARNING if selected else settings.COLOR_EDITOR_LINK
+        )
+        gated_fill = settings.COLOR_EDITOR_GATED
+        gated_border = settings.COLOR_EDITOR_GATED_BORDER
+        for column, row in activator.targets:
+            self._draw_rect(GridRect(column, row, column, row), gated_fill, gated_border)
+        for center_column, center_row in cluster_targets(activator.targets):
+            target_x = center_column * tile + tile / 2
+            target_y = (self.document.rows - 1 - center_row) * tile + tile / 2
+            arcade.draw_line(start_x, start_y, target_x, target_y, color, 2)
 
     def _draw_rect(
         self,
