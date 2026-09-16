@@ -120,9 +120,9 @@ class Mechanism:
             tile.show()
 
     def draw_soul(self, now: float) -> None:
-        """Plaque, paquets et vrille : auras en lot, ligne immediate courte."""
+        """Plaque lumineuse, vrille fantome, paquets discrets."""
         active = 1.0 + (settings.MECHANISM_PRESSED_GLOW - 1.0) * float(self.pressed)
-        draw_sprite_soul_aura(self.plate, now, seed=0, intensity=active)
+        draw_plate_glow(self.plate, now, intensity=active)
         start = (self.plate.center_x, self.plate.center_y)
         chunks = self.chunks or group_gated_chunks(self.targets, settings.TILE_SIZE)
         total = max(1, len(chunks))
@@ -189,24 +189,10 @@ def draw_organic_link(
     now: float,
     intensity: float = 1.0,
 ) -> None:
-    """Vrille en S : ruban + noyau, plus quelques blooms additifs deja en glow_pass."""
+    """Courbe fantome : ruban pale, noyau, lucioles qui glissent le long du brin."""
     points = _organic_link_points(start, end, strand, strand_count, now)
     if len(points) < 2:
         return
-    glow_count = max(2, settings.MECHANISM_LINK_GLOW_COUNT)
-    last = len(points) - 1
-    glow_alpha = max(1, min(255, int(settings.MECHANISM_LINK_GLOW_ALPHA * intensity)))
-    glow_size = settings.MECHANISM_LINK_GLOW_SIZE
-    for index in range(glow_count):
-        point = points[int(round(index * last / (glow_count - 1)))]
-        draw_glow(
-            point[0],
-            point[1],
-            glow_size,
-            glow_size * 0.7,
-            settings.COLOR_MECHANISM_LINK,
-            glow_alpha,
-        )
     color = settings.COLOR_MECHANISM_LINK
     alpha = max(1, min(255, int(settings.MECHANISM_LINK_ALPHA * intensity)))
     core_alpha = max(1, min(255, int(settings.MECHANISM_LINK_CORE_ALPHA * intensity)))
@@ -217,6 +203,43 @@ def draw_organic_link(
             (*settings.COLOR_MECHANISM_GLOW_CORE, core_alpha),
             settings.MECHANISM_LINK_CORE_WIDTH,
         )
+    flow_alpha = max(1, min(255, int(settings.MECHANISM_LINK_FLOW_ALPHA * intensity)))
+    flow_size = settings.MECHANISM_LINK_FLOW_SIZE
+    count = max(1, settings.MECHANISM_LINK_FLOW_COUNT)
+    phase = now * settings.MECHANISM_LINK_FLOW_SPEED + strand * 0.37
+    for index in range(count):
+        t = (phase + index / count) % 1.0
+        point_x, point_y = _point_along(points, t)
+        draw_glow(point_x, point_y, flow_size, flow_size * 0.72, color, flow_alpha)
+
+
+def draw_plate_glow(
+    plate: arcade.Sprite,
+    now: float,
+    *,
+    intensity: float = 1.0,
+) -> None:
+    """Halo circulaire de la plaque, independant de sa silhouette plate."""
+    pulse = 1.0 + settings.MECHANISM_AURA_PULSE * math.sin(
+        now * settings.MECHANISM_LINK_PULSE_SPEED
+    )
+    strength = pulse * intensity
+    draw_glow(
+        plate.center_x,
+        plate.center_y,
+        settings.MECHANISM_PLATE_GLOW_SIZE,
+        settings.MECHANISM_PLATE_GLOW_SIZE * 0.72,
+        settings.COLOR_MECHANISM_GLOW,
+        max(1, min(255, int(settings.MECHANISM_PLATE_GLOW_ALPHA * strength))),
+    )
+    draw_glow(
+        plate.center_x,
+        plate.center_y,
+        settings.MECHANISM_PLATE_GLOW_INNER,
+        settings.MECHANISM_PLATE_GLOW_INNER * 0.72,
+        settings.COLOR_MECHANISM_GLOW_CORE,
+        max(1, min(255, int(settings.MECHANISM_PLATE_GLOW_INNER_ALPHA * strength))),
+    )
 
 
 def draw_chunk_soul_aura(
@@ -232,30 +255,6 @@ def draw_chunk_soul_aura(
         chunk.center_y,
         chunk.width,
         chunk.height,
-        now,
-        seed=seed,
-        intensity=intensity,
-    )
-
-
-def draw_sprite_soul_aura(
-    sprite: arcade.Sprite,
-    now: float,
-    *,
-    seed: int,
-    intensity: float = 1.0,
-) -> None:
-    """Halo additif autour de la boite visuelle (plaque plate ou bloc)."""
-    width = abs(sprite.width)
-    height = abs(sprite.height)
-    if width < 1.0 or height < 1.0:
-        return
-    left, right, bottom, top = _visual_bounds(sprite)
-    _draw_box_aura(
-        (left + right) / 2.0,
-        (bottom + top) / 2.0,
-        width,
-        height,
         now,
         seed=seed,
         intensity=intensity,
@@ -378,6 +377,35 @@ def _organic_link_points(
     return points
 
 
+def _point_along(
+    points: Sequence[tuple[float, float]],
+    t: float,
+) -> tuple[float, float]:
+    """Point a la fraction `t` (0..1) le long d'une polyligne."""
+    if len(points) == 1:
+        return points[0]
+    total = 0.0
+    lengths = [0.0]
+    for index in range(1, len(points)):
+        total += math.hypot(
+            points[index][0] - points[index - 1][0],
+            points[index][1] - points[index - 1][1],
+        )
+        lengths.append(total)
+    if total < 1.0:
+        return points[0]
+    target = max(0.0, min(1.0, t)) * total
+    for index in range(1, len(points)):
+        if lengths[index] < target:
+            continue
+        span = lengths[index] - lengths[index - 1]
+        ratio = 0.0 if span < 0.001 else (target - lengths[index - 1]) / span
+        x0, y0 = points[index - 1]
+        x1, y1 = points[index]
+        return (x0 + (x1 - x0) * ratio, y0 + (y1 - y0) * ratio)
+    return points[-1]
+
+
 def _cubic_bezier(
     p0: tuple[float, float],
     p1: tuple[float, float],
@@ -410,20 +438,6 @@ def _strand_bias(x0: float, y0: float, x1: float, y1: float, strand: int) -> flo
     mixed = (mixed * 0x7FEB352D) & 0xFFFFFFFF
     mixed ^= mixed >> 15
     return (mixed & 0xFFFF) / 32767.5 - 1.0
-
-
-def _visual_bounds(sprite: arcade.Sprite) -> tuple[float, float, float, float]:
-    """Boite d'affichage (pas la hitbox) : left, right, bottom, top."""
-    half_w = abs(sprite.width) / 2.0
-    half_h = abs(sprite.height) / 2.0
-    center_x = sprite.center_x
-    center_y = sprite.center_y
-    return (
-        center_x - half_w,
-        center_x + half_w,
-        center_y - half_h,
-        center_y + half_h,
-    )
 
 
 def _axis_pad(size: float) -> float:
