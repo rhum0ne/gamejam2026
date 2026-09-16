@@ -118,6 +118,24 @@ def enemy_stomped_by_player(player: Player, enemies: arcade.SpriteList) -> Enemy
     return None
 
 
+def enemies_hit_by_player_attack(player: Player, enemies: arcade.SpriteList) -> list[Enemy]:
+    """Retourne les ennemis recouverts par la hitbox de la frappe frontale."""
+    bounds = player.attack_bounds
+    if bounds is None:
+        return []
+    left, bottom, right, top = bounds
+    return [
+        enemy
+        for enemy in enemies
+        if enemy.state is not EnemyState.DYING
+        and not player.attack_has_hit(enemy)
+        and enemy.right >= left
+        and enemy.left <= right
+        and enemy.top >= bottom
+        and enemy.bottom <= top
+    ]
+
+
 def plate_is_weighted(plate: arcade.Sprite, weights: Sequence[arcade.Sprite]) -> bool:
     """Un poids (corps, cadavre, ennemi) appuie-t-il sur la plaque ?"""
     return any(arcade.check_for_collision(plate, body) for body in weights)

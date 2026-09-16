@@ -180,6 +180,35 @@ def check_enemy_ai() -> None:
           "esquive, mort animee OK")
 
 
+def check_combat(window: arcade.Window) -> None:
+    """Un clic gauche declenche une frappe frontale et vainc un ennemi."""
+    view = PlayView(GameSession())
+    window.show_view(view)
+    advance(view, 2)
+
+    player = view.player
+    enemy = view.level.enemies[0]
+    player.facing = 1
+    enemy.center_x = player.right + abs(enemy.width) / 2 + 6
+    enemy.center_y = player.center_y
+
+    view.on_mouse_press(
+        view.camera.world.viewport_width / 2 + 100,
+        view.camera.world.viewport_height / 2,
+        arcade.MOUSE_BUTTON_LEFT,
+        0,
+    )
+    advance(view, 1)
+
+    assert enemy.state is EnemyState.DYING, "un clic gauche doit vaincre l'ennemi a portee"
+    assert any(item.kind is ItemKind.SOUL_ORB for item in view.level.items), (
+        "un ennemi vaincu doit laisser une bille bleue"
+    )
+    advance(view, 120)
+    assert enemy not in view.level.enemies, "un ennemi vaincu doit finir par disparaitre"
+    print("  combat -> clic gauche, ennemi vaincu, ame generee")
+
+
 def advance(view: arcade.View, frames: int) -> None:
     for _ in range(frames):
         view.on_update(FRAME)
@@ -545,15 +574,15 @@ def check_editor_views(window: arcade.Window) -> None:
 
 def main() -> int:
     print("Project Astral Platformer - smoke test")
-    print("[1/10] chargement des cartes")
+    print("[1/11] chargement des cartes")
     check_levels()
-    print("[2/10] progression et ameliorations")
+    print("[2/11] progression et ameliorations")
     check_progression()
-    print("[3/10] event manager")
+    print("[3/11] event manager")
     check_event_manager()
-    print("[4/10] modele de l'editeur")
+    print("[4/11] modele de l'editeur")
     check_editor_document()
-    print("[5/10] IA ennemie")
+    print("[5/11] IA ennemie")
     check_enemy_ai()
 
     window = arcade.Window(
@@ -567,15 +596,17 @@ def main() -> int:
     )
     assert window.vsync
     try:
-        print("[6/10] boucle de jeu")
+        print("[6/11] combat")
+        check_combat(window)
+        print("[7/11] boucle de jeu")
         check_gameplay_loop(window)
-        print("[7/10] defilement vertical de la camera")
+        print("[8/11] defilement vertical de la camera")
         check_vertical_scroll(window)
-        print("[8/10] solution du niveau tutoriel")
+        print("[9/11] solution du niveau tutoriel")
         check_tutorial_is_solvable(window)
-        print("[9/10] menus")
+        print("[10/11] menus")
         check_menus(window)
-        print("[10/10] vues de l'editeur")
+        print("[11/11] vues de l'editeur")
         check_editor_views(window)
     finally:
         window.close()

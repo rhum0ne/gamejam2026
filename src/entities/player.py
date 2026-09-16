@@ -84,6 +84,9 @@ class Player(arcade.Sprite):
             settings.COLOR_TRAIL_DASH,
             settings.COLOR_TRAIL_DASH_CORE,
         )
+        self._attack_time_left = 0.0
+        self._attack_cooldown_left = 0.0
+        self._attack_hit_targets: set[int] = set()
 
     # ------------------------------------------------------------------ #
     # Initialisation
@@ -143,6 +146,37 @@ class Player(arcade.Sprite):
             return 0.0
         return max(0.0, min(1.0, self._ready_flash / duration))
 
+    @property
+    def is_attacking(self) -> bool:
+        """Indique si la hitbox de l'attaque est actuellement active."""
+        return self.alive and self._attack_time_left > 0.0
+
+    @property
+    def attack_cooldown_left(self) -> float:
+        """Retourne le temps restant avant de pouvoir frapper a nouveau."""
+        return max(0.0, self._attack_cooldown_left)
+
+    @property
+    def attack_progress(self) -> float:
+        """Retourne l'avancement de la frappe entre 0.0 et 1.0."""
+        if not self.is_attacking or settings.PLAYER_ATTACK_DURATION <= 0.0:
+            return 1.0
+        return 1.0 - self._attack_time_left / settings.PLAYER_ATTACK_DURATION
+
+    @property
+    def attack_bounds(self) -> tuple[float, float, float, float] | None:
+        """Retourne la hitbox rectangulaire devant le joueur, si elle est active."""
+        if not self.is_attacking:
+            return None
+        if self.facing >= 0:
+            left = self.right
+            right = self.right + settings.PLAYER_ATTACK_RANGE
+        else:
+            left = self.left - settings.PLAYER_ATTACK_RANGE
+            right = self.left
+        vertical_padding = self.height * 0.1
+        return left, self.bottom + vertical_padding, right, self.top - vertical_padding
+
     def has_item(self, kind: ItemKind) -> bool:
         return kind in self.inventory
 
@@ -159,6 +193,8 @@ class Player(arcade.Sprite):
         self._landing_timer = 0.0
         self._dust.clear()
         self._dash_trail.clear()
+        self._attack_time_left = 0.0
+        self._attack_hit_targets.clear()
 
     def respawn_at(self, position: tuple[float, float]) -> None:
         """Fait reapparaitre le corps au checkpoint fourni."""
@@ -175,6 +211,9 @@ class Player(arcade.Sprite):
         self._ready_flash = 0.0
         self._dust.clear()
         self._dash_trail.clear()
+        self._attack_time_left = 0.0
+        self._attack_cooldown_left = 0.0
+        self._attack_hit_targets.clear()
 
     # ------------------------------------------------------------------ #
     # Commandes
@@ -213,6 +252,23 @@ class Player(arcade.Sprite):
         self._time_off_ground = settings.PLAYER_COYOTE_TIME + 1.0
         self._was_on_ground = False
         return True
+
+    def attack(self) -> bool:
+        """Declenche une attaque frontale si le delai de recuperation est ecoule."""
+        if not self.alive or self._attack_cooldown_left > 0.0:
+            return False
+        self._attack_time_left = settings.PLAYER_ATTACK_DURATION
+        self._attack_cooldown_left = settings.PLAYER_ATTACK_COOLDOWN
+        self._attack_hit_targets.clear()
+        return True
+
+    def attack_has_hit(self, target: object) -> bool:
+        """Indique si la frappe en cours a deja touche cette cible."""
+        return id(target) in self._attack_hit_targets
+
+    def mark_attack_hit(self, target: object) -> None:
+        """Enregistre une cible pour eviter les degats multiples d'une frappe."""
+        self._attack_hit_targets.add(id(target))
 
     def cut_jump(self) -> None:
         """Ecourte le saut quand la touche est relachee (saut a hauteur variable)."""
@@ -257,6 +313,8 @@ class Player(arcade.Sprite):
     # ------------------------------------------------------------------ #
 
     def update(self, delta_time: float = settings.FRAME_TIME, *args, **kwargs) -> None:
+        self._attack_time_left = max(0.0, self._attack_time_left - delta_time)
+        self._attack_cooldown_left = max(0.0, self._attack_cooldown_left - delta_time)
         if not self.alive or self._physics is None:
             return
         if abs(self.change_x) > 0.05:

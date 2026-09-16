@@ -194,6 +194,7 @@ _JUMP_KEYS = frozenset({arcade.key.SPACE}) | _UP_KEYS
 _PROJECT_KEY = arcade.key.F
 _RETURN_KEY = arcade.key.R
 _DASH_KEYS = frozenset({arcade.key.LSHIFT, arcade.key.RSHIFT})
+_ATTACK_BUTTON = arcade.MOUSE_BUTTON_LEFT
 
 
 class PlayView(arcade.View):
@@ -219,6 +220,8 @@ class PlayView(arcade.View):
         self._emergence: GhostEmergence | None = None
         self._rebirth: PlayerRebirth | None = None
         self.held_keys: set[int] = set()
+        self._hitstop_timer = 0.0
+        self._attack_sound = self._load_attack_sound()
         self._delivered_items: list[ItemKind] = []
         bind_play_view(self)
         self._fps = 0.0
@@ -253,9 +256,20 @@ class PlayView(arcade.View):
         self._emergence = None
         self._rebirth = None
         self.held_keys.clear()
+        self._hitstop_timer = 0.0
         self._delivered_items.clear()
         self.machine = GameStateMachine(GameState.MENU)
         self.machine.to(GameState.PLAYING)
+
+    @staticmethod
+    def _load_attack_sound() -> arcade.Sound | None:
+        """Charge le son du coup, avec un son Arcade de secours si besoin."""
+        custom_path = settings.SOUNDS_DIR / settings.ATTACK_SOUND_FILENAME
+        sound_path = custom_path if custom_path.exists() else settings.DEFAULT_ATTACK_SOUND
+        try:
+            return arcade.load_sound(sound_path)
+        except (FileNotFoundError, OSError):
+            return None
 
     @property
     def ghost_emerging(self) -> bool:
@@ -318,6 +332,7 @@ class PlayView(arcade.View):
             if self.player.alive and not defer_player:
                 self.player.draw_fx()
                 draw_pixel_sprite(self.player)
+                self._draw_player_attack()
                 self.player.draw_particles()
             # Premier plan : passe devant le monde, reste sous le voile fantome et le HUD.
             self.atmosphere.draw(self.camera.world)
@@ -349,6 +364,34 @@ class PlayView(arcade.View):
             if emergence is not None and emergence.active:
                 warp *= emergence.fog_strength
         self.camera.present(warp)
+
+    def _draw_player_attack(self) -> None:
+        """Dessine un slash lumineux pendant la fenetre active de la frappe."""
+        if self.player.attack_bounds is None:
+            return
+        progress = min(1.0, self.player.attack_progress * 1.8)
+        direction = 1 if self.player.facing >= 0 else -1
+        start_x = self.player.center_x + direction * (self.player.width / 2 + 2)
+        reach = max(10.0, settings.PLAYER_ATTACK_RANGE * progress)
+        tip_x = start_x + direction * reach
+        center_y = self.player.center_y
+        slash_height = self.player.height * 0.35
+        arcade.draw_line(
+            start_x,
+            center_y - slash_height,
+            tip_x,
+            center_y + slash_height,
+            settings.COLOR_ATTACK,
+            5,
+        )
+        arcade.draw_line(
+            start_x + direction * 4,
+            center_y - slash_height + 4,
+            tip_x + direction * 4,
+            center_y + slash_height - 4,
+            settings.COLOR_ATTACK_GLOW,
+            2,
+        )
 
     def _draw_hud_layer(self, fade: float = 1.0) -> None:
         self.hud.draw(self._hud_data(), fade=fade)
@@ -533,6 +576,9 @@ class PlayView(arcade.View):
             ),
             pressed_keys=frozenset(self.held_keys),
             show_esprit=self.session.knows_esprit,
+            attack_cooldown_left=self.player.attack_cooldown_left
+            if state is GameState.PLAYING
+            else None,
         )
 
     def _hint_for(self, state: GameState) -> str:
@@ -601,6 +647,9 @@ class PlayView(arcade.View):
     # ------------------------------------------------------------------ #
 
     def on_update(self, delta_time: float) -> None:
+        if self._hitstop_timer > 0.0:
+            self._hitstop_timer = max(0.0, self._hitstop_timer - delta_time)
+            return
         state = self.machine.state
         attractor: arcade.Sprite | None = None
         if state is GameState.PLAYING and self.player.alive:
@@ -744,6 +793,16 @@ class PlayView(arcade.View):
                 self.level.spawn_item(orb)
             self.player.change_y = settings.PLAYER_JUMP_SPEED * 0.6
 
+        for enemy in collisions.enemies_hit_by_player_attack(self.player, self.level.enemies):
+            self.player.mark_attack_hit(enemy)
+            orb = enemy.take_damage(
+                settings.PLAYER_ATTACK_DAMAGE,
+                knockback=settings.ENEMY_KNOCKBACK_SPEED * self.player.facing,
+            )
+            if orb is not None:
+                self.level.spawn_item(orb)
+            self._hitstop_timer = settings.COMBAT_HITSTOP_DURATION
+
         for item in collisions.items_reachable_by_body(self.player, self.level):
             self._collect(item.kind)
             item.remove_from_sprite_lists()
@@ -853,6 +912,17 @@ class PlayView(arcade.View):
                 return
             if self.ghost is not None:
                 self.ghost.start_vanish()
+
+    def on_mouse_press(self, x: float, y: float, button: int, modifiers: int) -> None:
+        """Oriente le corps vers le curseur et lance une attaque au clic gauche."""
+        if button != _ATTACK_BUTTON or self.machine.state is not GameState.PLAYING:
+            return
+        camera_x, _ = self.camera.world.position
+        world_x = x + camera_x - self.camera.world.viewport_width / 2
+        if abs(world_x - self.player.center_x) > 2:
+            self.player.facing = 1 if world_x > self.player.center_x else -1
+        if self.player.attack() and self._attack_sound is not None:
+            arcade.play_sound(self._attack_sound, volume=settings.ATTACK_SOUND_VOLUME)
 
     def on_key_release(self, symbol: int, modifiers: int) -> None:
         self.held_keys.discard(symbol)

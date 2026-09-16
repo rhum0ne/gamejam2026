@@ -102,6 +102,9 @@ class Enemy(arcade.Sprite):
         self.hit_points = 1
         self.max_hit_points = self.hit_points
         self._attack_cooldown = 0.0
+        self._base_color = self.color
+        self._hit_flash_left = 0.0
+        self._knockback_x = 0.0
         self._physics: arcade.PhysicsEnginePlatformer | None = None
         self._ground: arcade.SpriteList | None = None
         self._glow_time = (center_x * 0.13 + center_y * 0.07) % math.tau
@@ -147,7 +150,12 @@ class Enemy(arcade.Sprite):
     # Mort
     # ------------------------------------------------------------------ #
 
-    def take_damage(self, amount: int = 1) -> Item | None:
+    @property
+    def is_defeated(self) -> bool:
+        """Indique si l'ennemi est vaincu mais encore visible."""
+        return self.state is EnemyState.DYING
+
+    def take_damage(self, amount: int = 1, knockback: float = 0.0) -> Item | None:
         """Applique des degats. Retourne la bille bleue si l'ennemi meurt.
 
         Un ennemi deja en train de mourir (`DYING`) ignore tout nouveau coup :
@@ -159,10 +167,15 @@ class Enemy(arcade.Sprite):
         if self.state is EnemyState.DYING:
             return None
         self.hit_points -= amount
+        self._hit_flash_left = settings.ENEMY_HIT_FLASH_DURATION
+        self.color = settings.COLOR_ENEMY_HIT
+        self._knockback_x = knockback
+        self.change_x = knockback
         if self.hit_points > 0:
             return None
         orb = make_soul_orb(self.center_x, self.center_y)
         self._start_dying()
+        self.change_x = knockback
         return orb
 
     def _start_dying(self) -> None:
@@ -191,6 +204,9 @@ class Enemy(arcade.Sprite):
         self.hit_points = self.max_hit_points
         self.state = EnemyState.PATROL
         self._attack_cooldown = 0.0
+        self._hit_flash_left = 0.0
+        self._knockback_x = 0.0
+        self.color = self._base_color
         self.facing = -1
         self._animator.play(self._idle)
         self.texture = self._animator.animation.textures[0]
@@ -236,10 +252,18 @@ class Enemy(arcade.Sprite):
         corpses: arcade.SpriteList | None = None,
         **kwargs,
     ) -> None:
+        self._hit_flash_left = max(0.0, self._hit_flash_left - delta_time)
+        self.color = settings.COLOR_ENEMY_HIT if self._hit_flash_left > 0.0 else self._base_color
         self._attack_cooldown = max(0.0, self._attack_cooldown - delta_time)
         if self.state is EnemyState.ATTACK and self._animator.finished:
             self._end_swing()
-        if self.state is EnemyState.ATTACK:
+        if self.state is EnemyState.DYING:
+            self.change_x = self._knockback_x
+            self._knockback_x *= settings.ENEMY_KNOCKBACK_FRICTION
+        elif self._hit_flash_left > 0.0:
+            self.change_x = self._knockback_x
+            self._knockback_x *= settings.ENEMY_KNOCKBACK_FRICTION
+        elif self.state is EnemyState.ATTACK:
             # Coup engage : l'ennemi reste immobile et ne se retourne pas tant
             # que l'animation n'est pas finie, ce qui laisse le joueur esquiver.
             self.change_x = 0.0

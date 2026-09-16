@@ -22,6 +22,9 @@ UI_DIR = ASSETS_DIR / "ui"
 SOUNDS_DIR = ASSETS_DIR / "sons"
 MAPS_DIR = ASSETS_DIR / "maps"
 FONTS_DIR = ASSETS_DIR / "fonts"
+ATTACK_SOUND_FILENAME = "attack.wav"
+DEFAULT_ATTACK_SOUND = ":resources:sounds/hit1.wav"
+ATTACK_SOUND_VOLUME = 0.45
 
 # --------------------------------------------------------------------------- #
 # Police
@@ -173,6 +176,12 @@ PLAYER_DASH_GLOW_SCALE = 3.4
 PLAYER_DASH_GLOW_ALPHA = 34
 PLAYER_DASH_GLOW_STRETCH = 1.55  # etirement du halo dans l'axe du dash
 PLAYER_DASH_GLOW_OFFSET = 0.32  # recul du halo, en fractions de PLAYER_WIDTH
+# Attaque de melee du joueur (clic gauche).
+PLAYER_ATTACK_RANGE = 42.0  # longueur de la hitbox frontale, en pixels
+PLAYER_ATTACK_DURATION = 0.12  # duree pendant laquelle la hitbox est active
+PLAYER_ATTACK_COOLDOWN = 0.35  # delai minimal entre deux frappes
+PLAYER_ATTACK_DAMAGE = 1
+COMBAT_HITSTOP_DURATION = 0.05  # micro-pause lors d'un impact reussi
 # Trainee de points (fantome cyan / dash jaune).
 TRAIL_SPACING = 6.5
 TRAIL_MOTES = 2
@@ -334,6 +343,9 @@ ENEMY_ATTACK_VERTICAL_RANGE = 40.0  # tolerance verticale (doit etre a peu pres 
 ENEMY_ATTACK_HIT_FRAMES: tuple[int, int] = (5, 7)
 ENEMY_ATTACK_COOLDOWN = 0.4  # secondes de pause entre deux coups
 ENEMY_CORPSE_SMELL_RANGE = 320.0  # distance d'attraction vers un cadavre
+ENEMY_HIT_FLASH_DURATION = 0.18
+ENEMY_KNOCKBACK_SPEED = 5.0
+ENEMY_KNOCKBACK_FRICTION = 0.72
 ANIM_ENEMY_IDLE_FRAME_TIME = 0.12
 ANIM_ENEMY_WALK_FRAME_TIME = 0.07
 ANIM_ENEMY_ATTACK_FRAME_TIME = 0.05
@@ -386,6 +398,8 @@ COLOR_MECHANISM_LINK = (150, 214, 255)
 COLOR_MECHANISM_GLOW = (160, 226, 255)
 COLOR_MECHANISM_GLOW_CORE = (230, 246, 255)
 COLOR_PLAYER = (232, 232, 240)
+COLOR_ATTACK = (255, 214, 112)
+COLOR_ATTACK_GLOW = (255, 238, 160)
 COLOR_GHOST = (128, 200, 255)
 COLOR_GHOST_GLOW = (110, 190, 255)
 COLOR_TRAIL_GHOST = (132, 214, 255)
@@ -394,6 +408,7 @@ COLOR_DEATH_PARTICLE = (150, 214, 255)
 COLOR_DEATH_PARTICLE_CORE = (245, 252, 255)
 COLOR_CORPSE = (140, 120, 120)
 COLOR_ENEMY = (188, 92, 160)
+COLOR_ENEMY_HIT = (255, 155, 155)
 COLOR_ENEMY_GLOW = (255, 28, 22)
 COLOR_ENEMY_GLOW_CORE = (255, 92, 64)
 COLOR_KEY = (232, 204, 96)
