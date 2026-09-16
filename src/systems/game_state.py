@@ -42,6 +42,16 @@ from src.systems.upgrades import SoulProgression
 from src.ui.debug import DebugOverlay, DebugSnapshot
 from src.ui.display import handle_display_key
 from src.ui.hud import Hud, HudData
+from src.ui.sfx import (
+    play_attack,
+    play_checkpoint,
+    play_dash,
+    play_key_found,
+    play_menu_click,
+    play_mob_hit,
+    play_respawn,
+    play_soul_get,
+)
 from src.ui.sprites import draw_pixel_sprite
 from src.world.atmosphere import ForegroundAtmosphere
 from src.world.camera import CameraRig
@@ -240,7 +250,6 @@ class PlayView(arcade.View):
         self.held_keys: set[int] = set()
         self._hitstop_timer = 0.0
         self._blood = BloodBurst()
-        self._attack_sound = self._load_attack_sound()
         self._delivered_items: list[ItemKind] = []
         self._pause_menu = None
         self._paused_from = GameState.PLAYING
@@ -286,26 +295,10 @@ class PlayView(arcade.View):
         self.machine = GameStateMachine(GameState.MENU)
         self.machine.to(GameState.PLAYING)
 
-    @staticmethod
-    def _load_attack_sound() -> arcade.Sound | None:
-        """Charge le son du coup, avec un son Arcade de secours si besoin."""
-        custom_path = settings.SOUNDS_DIR / settings.ATTACK_SOUND_FILENAME
-        sound_path = custom_path if custom_path.exists() else settings.DEFAULT_ATTACK_SOUND
-        try:
-            return arcade.load_sound(sound_path)
-        except (FileNotFoundError, OSError):
-            return None
-
     def _play_attack_sound_events(self) -> None:
-        """Joue le son au moment d'impact visuel, combo compris."""
-        if self._attack_sound is None:
-            self.player.consume_attack_sound_events()
-            return
+        """Joue le whoosh au moment d'impact visuel, combo compris."""
         for stage in self.player.consume_attack_sound_events():
-            # Le finisher est legerement plus present, tout en reutilisant le
-            # son fourni par le projet plutot que de forcer un nouvel asset.
-            volume = settings.ATTACK_SOUND_VOLUME * (1.0 + 0.06 * (stage - 1))
-            arcade.play_sound(self._attack_sound, volume=min(1.0, volume))
+            play_attack(stage)
 
     @property
     def ghost_emerging(self) -> bool:
@@ -770,6 +763,8 @@ class PlayView(arcade.View):
         weights = self._mechanism_weights()
         for mechanism in self.level.mechanisms:
             pressed = collisions.plate_is_weighted(mechanism.plate, weights)
+            if pressed != mechanism.pressed:
+                play_menu_click()
             mechanism.set_pressed(pressed, weights)
 
     def _update_playing(self, delta_time: float) -> None:
@@ -888,6 +883,7 @@ class PlayView(arcade.View):
         checkpoint = self.level.checkpoint_at(self.player.respawn_point)
         if checkpoint is not None:
             checkpoint.play_respawn()
+        play_respawn()
         rebirth = self._rebirth
         if rebirth is not None:
             rebirth.particles.emit_cloud(origin_x, origin_y)
@@ -935,6 +931,7 @@ class PlayView(arcade.View):
             )
             if orb is not None:
                 self.level.spawn_item(orb)
+            play_mob_hit()
             stage = max(1, self.player.attack_stage)
             hitstop = settings.COMBAT_HITSTOP_DURATION * (1.0 + 0.25 * (stage - 1))
             self._hitstop_timer = max(self._hitstop_timer, hitstop)
@@ -949,8 +946,11 @@ class PlayView(arcade.View):
 
         checkpoint = collisions.checkpoint_touched_by_player(self.player, self.level)
         if checkpoint is not None:
+            newly_lit = not checkpoint.active
             self.player.respawn_point = checkpoint.spawn_point
             self.level.activate_checkpoint(checkpoint)
+            if newly_lit:
+                play_checkpoint()
 
         door = collisions.door_touched_by_player(self.player, self.level)
         if door is not None and self.player.has_item(ItemKind.KEY):
@@ -1029,7 +1029,10 @@ class PlayView(arcade.View):
         """
         if kind is ItemKind.SOUL_ORB:
             self.session.progression.absorb_orb()
+            play_soul_get()
             return
+        if kind is ItemKind.KEY:
+            play_key_found()
         if self.machine.state is GameState.GHOST:
             self._delivered_items.append(kind)
         else:
@@ -1078,6 +1081,7 @@ class PlayView(arcade.View):
                 self.player.jump()
             elif symbol in _DASH_KEYS:
                 if self.player.dash():
+                    play_dash()
                     self.camera.shake(
                         settings.CAMERA_DASH_SHAKE, settings.CAMERA_DASH_SHAKE_TIME
                     )

@@ -14,6 +14,7 @@ from src.entities.corpse import Corpse
 from src.entities.ghost import Ghost
 from src.systems.event_manager import event_manager
 from src.systems.events import PLAYER_DEATH, PLAYER_GHOST_END, PLAYER_WIN
+from src.ui.sfx import play_ghost_end, play_ghost_start, play_level_win
 
 if TYPE_CHECKING:
     from src.systems.game_state import PlayView
@@ -95,6 +96,7 @@ def on_player_death_enter_ghost(view: PlayView, data: dict) -> None:
     view.ghost = Ghost(spawn_x, spawn_y, stats, anchor=(spawn_x, spawn_y))
     view.ghost.bind_world(view.level.walls)
     view.session.knows_esprit = True
+    play_ghost_start()
     view.start_ghost_emergence(spawn_x, spawn_y)
     view.machine.to(GameState.GHOST)
 
@@ -107,6 +109,7 @@ def on_player_ghost_end(view: PlayView, data: dict) -> None:
         for item in view.ghost.release_all():
             item.drop_at(item.center_x, item.center_y)
         view.ghost.start_vanish()
+    play_ghost_end()
     for wall in view.level.spectral_walls:
         wall.set_revealed(False)
     view.anchor_corpse = None
@@ -120,5 +123,6 @@ def on_player_win(view: PlayView, data: dict) -> None:
     from src.systems.game_state import GameState
     from src.ui.menus import VictoryView
 
+    play_level_win()
     view.machine.try_to(GameState.VICTORY)
     view.window.show_view(VictoryView(view.session))

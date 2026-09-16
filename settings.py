@@ -22,10 +22,35 @@ UI_DIR = ASSETS_DIR / "ui"
 SOUNDS_DIR = ASSETS_DIR / "sons"
 MAPS_DIR = ASSETS_DIR / "maps"
 FONTS_DIR = ASSETS_DIR / "fonts"
-# Version nettoyee du son fourni : l'original a ~570 ms de silence en tete.
-ATTACK_SOUND_FILENAME = "attack_sword_sync.wav"
-DEFAULT_ATTACK_SOUND = ":resources:sounds/hit1.wav"
-ATTACK_SOUND_VOLUME = 0.45
+
+# Bruitages (`assets/sons/`). Fichier manquant = silence, pas de crash.
+# Version nettoyee du coup d'epee : l'original a ~570 ms de silence en tete.
+SOUND_ATTACK = "attack_sword_sync.wav"
+SOUND_ATTACK_FALLBACK = ":resources:sounds/hit1.wav"
+SOUND_LEVEL_WIN = "level-win.wav"
+SOUND_SOUL_GET = "soul_get.wav"
+SOUND_CHECKPOINT = "checkpoint_set.wav"
+SOUND_KEY_FOUND = "key_found.wav"
+SOUND_MENU_CLICK = "menu-click.wav"
+SOUND_MENU_HOVER = "menu_hover.wav"
+SOUND_MOB_HIT = "mob_hit.wav"
+SOUND_GHOST_START = "ghost_start.wav"
+SOUND_GHOST_END = "ghost_end.wav"
+SOUND_DASH = "dash.wav"
+SOUND_RESPAWN = "respawn.wav"
+# `boss-fire.wav` est dans le dossier mais pas encore branche.
+SOUND_VOLUME_ATTACK = 0.45
+SOUND_VOLUME_LEVEL_WIN = 0.6
+SOUND_VOLUME_SOUL_GET = 0.7
+SOUND_VOLUME_CHECKPOINT = 0.65
+SOUND_VOLUME_KEY_FOUND = 0.65
+SOUND_VOLUME_MENU_CLICK = 0.5
+SOUND_VOLUME_MENU_HOVER = 0.35
+SOUND_VOLUME_MOB_HIT = 0.55
+SOUND_VOLUME_GHOST_START = 0.65
+SOUND_VOLUME_GHOST_END = 0.65
+SOUND_VOLUME_DASH = 0.55
+SOUND_VOLUME_RESPAWN = 0.65
 
 # --------------------------------------------------------------------------- #
 # Police

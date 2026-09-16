@@ -12,6 +12,7 @@ import arcade
 
 import settings
 from src.ui.fonts import PIXEL_FONT
+from src.ui.sfx import play_menu_click, play_menu_hover
 
 _Activate = Callable[[], None]
 
@@ -89,6 +90,7 @@ class TextButton:
         return False
 
     def activate(self) -> None:
+        play_menu_click()
         if self.on_activate is not None:
             self.on_activate()
 
@@ -138,6 +140,7 @@ class LevelCell:
         return self.left <= x <= self.right and self.bottom <= y <= self.top
 
     def activate(self) -> None:
+        play_menu_click()
         self.on_activate()
 
     def draw(self) -> None:
@@ -209,8 +212,12 @@ class LevelGrid:
         col = max(0, min(cols - 1, col + dx))
         row = max(0, min(rows - 1, row + dy))
         index = min(count - 1, row * cols + col)
-        self.focus_index = index
-        self._sync()
+        if index != self.focus_index:
+            self.focus_index = index
+            self._sync()
+            play_menu_hover()
+        else:
+            self._sync()
         return True
 
     def focus_last_row(self) -> None:
@@ -227,6 +234,7 @@ class LevelGrid:
 
     def on_hover(self, x: float, y: float) -> bool:
         hit = False
+        previous = self.focus_index
         for index, cell in enumerate(self.cells):
             inside = cell.contains(x, y)
             cell.hovered = inside
@@ -235,6 +243,8 @@ class LevelGrid:
                 hit = True
         if hit:
             self._sync()
+            if self.focus_index != previous:
+                play_menu_hover()
         return hit
 
     def on_press(self, x: float, y: float) -> None:
@@ -289,8 +299,11 @@ class ButtonColumn:
     def move(self, delta: int) -> None:
         if not self.buttons:
             return
+        previous = self.focus_index
         self.focus_index = (self.focus_index + delta) % len(self.buttons)
         self._sync()
+        if self.focus_index != previous:
+            play_menu_hover()
 
     def activate_focused(self) -> None:
         if self.buttons:
@@ -309,11 +322,14 @@ class ButtonColumn:
         return False
 
     def on_mouse_motion(self, x: float, y: float) -> None:
+        previous = self.focus_index
         for index, button in enumerate(self.buttons):
             button.on_hover(x, y)
             if button.hovered:
                 self.focus_index = index
         self._sync()
+        if self.focus_index != previous:
+            play_menu_hover()
 
     def on_mouse_press(self, x: float, y: float) -> None:
         for button in self.buttons:

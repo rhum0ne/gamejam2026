@@ -16,6 +16,7 @@ from src.ui import keys
 from src.ui.display import handle_display_key, use_default_camera
 from src.ui.fonts import PIXEL_FONT
 from src.ui.menu_kit import ButtonColumn, LevelCell, LevelGrid, TextButton, draw_panel
+from src.ui.sfx import play_menu_hover
 from src.ui.title_fx import TitleStage
 from src.world.level import peek_level_info, LevelFormatError
 
@@ -235,6 +236,7 @@ class TitleView(_HeldKeysMixin, arcade.View):
                 self._on_quit = False
                 self.grid.focus_last_row()
                 self._sync_chrome()
+                play_menu_hover()
             elif symbol in (arcade.key.ENTER, arcade.key.RETURN, arcade.key.NUM_ENTER, arcade.key.SPACE):
                 self._quit_game()
             return
@@ -247,16 +249,21 @@ class TitleView(_HeldKeysMixin, arcade.View):
         elif down:
             if not self.grid.move(0, 1):
                 self._on_quit = True
+                play_menu_hover()
         elif symbol in (arcade.key.ENTER, arcade.key.RETURN, arcade.key.NUM_ENTER, arcade.key.SPACE):
             self.grid.activate_focused()
         self._sync_chrome()
 
     def on_mouse_motion(self, x: float, y: float, dx: float, dy: float) -> None:
+        was_quit = self._on_quit
+        previous_focus = self.grid.focus_index
         if self.grid.on_hover(x, y):
             self._on_quit = False
         self.quit_button.on_hover(x, y)
         if self.quit_button.hovered:
             self._on_quit = True
+        if self._on_quit != was_quit and self.grid.focus_index == previous_focus:
+            play_menu_hover()
         self._sync_chrome()
 
     def on_mouse_press(self, x: float, y: float, button: int, modifiers: int) -> None:

@@ -60,6 +60,7 @@ def check_levels() -> None:
     check_invalid_activator()
     check_inverted_activator()
     check_ground_theme()
+    check_sfx_files()
 
 
 def check_invalid_activator() -> None:
@@ -172,6 +173,28 @@ def check_ground_theme() -> None:
     assert ground_key != sand_key, "sand doit lire une autre planche que ground"
     assert sand_key != rock_key, "rock doit lire une autre planche que sand"
     print(f"  theme terrain -> defaut {default.theme}, sand/rock distincts, cycle OK")
+
+
+def check_sfx_files() -> None:
+    """Les bruitages branches dans le jeu sont bien presents sur disque."""
+    names = (
+        settings.SOUND_ATTACK,
+        settings.SOUND_LEVEL_WIN,
+        settings.SOUND_SOUL_GET,
+        settings.SOUND_CHECKPOINT,
+        settings.SOUND_KEY_FOUND,
+        settings.SOUND_MENU_CLICK,
+        settings.SOUND_MENU_HOVER,
+        settings.SOUND_MOB_HIT,
+        settings.SOUND_GHOST_START,
+        settings.SOUND_GHOST_END,
+        settings.SOUND_DASH,
+        settings.SOUND_RESPAWN,
+    )
+    for name in names:
+        path = settings.SOUNDS_DIR / name
+        assert path.is_file(), f"bruitage manquant : {path}"
+    print(f"  bruitages -> {len(names)} fichiers")
 
 
 def check_progression() -> None:
