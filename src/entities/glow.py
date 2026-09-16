@@ -1,9 +1,7 @@
 """Halo additif doux, partage par le fantome et la trainee de dash.
 
 `draw_glow` en mode immediat (`arcade.draw_texture_rect`) coute un draw call
-GPU par halo. Les vrilles de plaques en mode fantome en emettent des
-centaines : d'ou le passage a ~25 FPS. `glow_pass` agrege les halos dans une
-`SpriteList` (une seule soumission).
+GPU par halo. `glow_pass` agrege les halos dans une `SpriteList`.
 """
 
 from __future__ import annotations
@@ -114,6 +112,7 @@ class _GlowBatch:
             sprite = self._sprites[self._count]
             sprite.center_x = center_x
             sprite.center_y = center_y
+        sprite.angle = 0.0
         sprite.visible = True
         sprite.width = width
         sprite.height = height

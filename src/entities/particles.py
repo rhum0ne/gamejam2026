@@ -6,10 +6,9 @@ import math
 import random
 from dataclasses import dataclass
 
-import arcade
-
 import settings
-from src.entities.glow import additive_blend, draw_glow
+from src.entities.batch_draw import QuadBatch
+from src.entities.glow import draw_glow, glow_pass
 
 
 @dataclass(slots=True)
@@ -32,6 +31,7 @@ class DustParticles:
         self._grains: list[_Grain] = []
         self._rng = rng if rng is not None else random.Random()
         self._run_timer = 0.0
+        self._quads = QuadBatch(capacity=max(8, settings.PARTICLE_MAX))
 
     def clear(self) -> None:
         self._grains.clear()
@@ -103,20 +103,15 @@ class DustParticles:
 
     def draw(self) -> None:
         min_size = settings.PARTICLE_MIN_DRAW_SIZE
+        self._quads.begin()
         for grain in self._grains:
             fade = max(0.0, min(1.0, grain.life / grain.max_life))
             size = max(min_size, grain.size * (0.55 + 0.45 * fade))
             alpha = int(230 * fade)
             if alpha <= 0:
                 continue
-            half = size / 2
-            arcade.draw_lrbt_rectangle_filled(
-                grain.x - half,
-                grain.x + half,
-                grain.y - half,
-                grain.y + half,
-                (*grain.color, alpha),
-            )
+            self._quads.add(grain.x, grain.y, size, grain.color, alpha)
+        self._quads.flush()
 
     def _emit_run(self, x: float, y: float, facing: int) -> None:
         direction = -1.0 if facing >= 0 else 1.0
@@ -166,6 +161,7 @@ class SoulBurst:
     def __init__(self, rng: random.Random | None = None) -> None:
         self._grains: list[_Grain] = []
         self._rng = rng if rng is not None else random.Random()
+        self._quads = QuadBatch(capacity=max(8, settings.CHECKPOINT_BURST_MAX))
 
     def clear(self) -> None:
         self._grains.clear()
@@ -219,37 +215,14 @@ class SoulBurst:
         self._grains = alive
 
     def draw(self) -> None:
-        if not self._grains:
-            return
-        core = settings.CHECKPOINT_BURST_CORE_SIZE
-        with additive_blend():
-            for grain in self._grains:
-                fade = max(0.0, min(1.0, grain.life / grain.max_life))
-                alpha = int(settings.CHECKPOINT_BURST_GLOW_ALPHA * fade)
-                if alpha <= 0:
-                    continue
-                draw_glow(
-                    grain.x,
-                    grain.y,
-                    grain.size,
-                    grain.size,
-                    grain.color,
-                    alpha,
-                    bind_blend=False,
-                )
-        for grain in self._grains:
-            fade = max(0.0, min(1.0, grain.life / grain.max_life))
-            alpha = int(settings.CHECKPOINT_BURST_CORE_ALPHA * fade)
-            if alpha <= 0:
-                continue
-            half = core * (0.45 + 0.55 * fade) / 2
-            arcade.draw_lrbt_rectangle_filled(
-                grain.x - half,
-                grain.x + half,
-                grain.y - half,
-                grain.y + half,
-                (*settings.COLOR_CHECKPOINT_PARTICLE_CORE, alpha),
-            )
+        _draw_glow_motes(
+            self._grains,
+            self._quads,
+            glow_alpha=settings.CHECKPOINT_BURST_GLOW_ALPHA,
+            core_size=settings.CHECKPOINT_BURST_CORE_SIZE,
+            core_alpha=settings.CHECKPOINT_BURST_CORE_ALPHA,
+            core_color=settings.COLOR_CHECKPOINT_PARTICLE_CORE,
+        )
 
 
 class EmergenceBurst:
@@ -259,6 +232,7 @@ class EmergenceBurst:
         self._grains: list[_Grain] = []
         self._rng = rng if rng is not None else random.Random()
         self._stream_timer = 0.0
+        self._quads = QuadBatch(capacity=max(8, settings.DEATH_PARTICLE_MAX))
 
     def clear(self) -> None:
         self._grains.clear()
@@ -293,37 +267,14 @@ class EmergenceBurst:
         self._grains = alive[-settings.DEATH_PARTICLE_MAX :]
 
     def draw(self) -> None:
-        if not self._grains:
-            return
-        core = settings.DEATH_PARTICLE_CORE_SIZE
-        with additive_blend():
-            for grain in self._grains:
-                fade = max(0.0, min(1.0, grain.life / grain.max_life))
-                alpha = int(settings.DEATH_PARTICLE_GLOW_ALPHA * fade)
-                if alpha <= 0:
-                    continue
-                draw_glow(
-                    grain.x,
-                    grain.y,
-                    grain.size,
-                    grain.size,
-                    grain.color,
-                    alpha,
-                    bind_blend=False,
-                )
-        for grain in self._grains:
-            fade = max(0.0, min(1.0, grain.life / grain.max_life))
-            alpha = int(settings.DEATH_PARTICLE_CORE_ALPHA * fade)
-            if alpha <= 0:
-                continue
-            half = core * (0.45 + 0.55 * fade) / 2
-            arcade.draw_lrbt_rectangle_filled(
-                grain.x - half,
-                grain.x + half,
-                grain.y - half,
-                grain.y + half,
-                (*settings.COLOR_DEATH_PARTICLE_CORE, alpha),
-            )
+        _draw_glow_motes(
+            self._grains,
+            self._quads,
+            glow_alpha=settings.DEATH_PARTICLE_GLOW_ALPHA,
+            core_size=settings.DEATH_PARTICLE_CORE_SIZE,
+            core_alpha=settings.DEATH_PARTICLE_CORE_ALPHA,
+            core_color=settings.COLOR_DEATH_PARTICLE_CORE,
+        )
 
     def _spawn_mote(self, x: float, y: float, *, burst: bool) -> None:
         if burst:
@@ -370,6 +321,7 @@ class ReformBurst:
         self._stream_timer = 0.0
         self._home_x = 0.0
         self._home_y = 0.0
+        self._quads = QuadBatch(capacity=max(8, settings.REBIRTH_PARTICLE_MAX))
 
     def clear(self) -> None:
         self._grains.clear()
@@ -423,37 +375,14 @@ class ReformBurst:
         self._grains = alive[-settings.REBIRTH_PARTICLE_MAX :]
 
     def draw(self) -> None:
-        if not self._grains:
-            return
-        core = settings.REBIRTH_PARTICLE_CORE_SIZE
-        with additive_blend():
-            for grain in self._grains:
-                fade = max(0.0, min(1.0, grain.life / grain.max_life))
-                alpha = int(settings.REBIRTH_PARTICLE_GLOW_ALPHA * fade)
-                if alpha <= 0:
-                    continue
-                draw_glow(
-                    grain.x,
-                    grain.y,
-                    grain.size,
-                    grain.size,
-                    grain.color,
-                    alpha,
-                    bind_blend=False,
-                )
-        for grain in self._grains:
-            fade = max(0.0, min(1.0, grain.life / grain.max_life))
-            alpha = int(settings.REBIRTH_PARTICLE_CORE_ALPHA * fade)
-            if alpha <= 0:
-                continue
-            half = core * (0.45 + 0.55 * fade) / 2
-            arcade.draw_lrbt_rectangle_filled(
-                grain.x - half,
-                grain.x + half,
-                grain.y - half,
-                grain.y + half,
-                (*settings.COLOR_REBIRTH_PARTICLE_CORE, alpha),
-            )
+        _draw_glow_motes(
+            self._grains,
+            self._quads,
+            glow_alpha=settings.REBIRTH_PARTICLE_GLOW_ALPHA,
+            core_size=settings.REBIRTH_PARTICLE_CORE_SIZE,
+            core_alpha=settings.REBIRTH_PARTICLE_CORE_ALPHA,
+            core_color=settings.COLOR_REBIRTH_PARTICLE_CORE,
+        )
 
     def _spawn_inward(
         self,
@@ -508,3 +437,33 @@ class ReformBurst:
             )
         )
         self._grains = self._grains[-settings.REBIRTH_PARTICLE_MAX :]
+
+
+def _draw_glow_motes(
+    grains: list[_Grain],
+    quads: QuadBatch,
+    *,
+    glow_alpha: int,
+    core_size: float,
+    core_alpha: int,
+    core_color: tuple[int, int, int],
+) -> None:
+    """Halo additif en un glow_pass, noyaux carres en un QuadBatch."""
+    if not grains:
+        return
+    with glow_pass():
+        for grain in grains:
+            fade = max(0.0, min(1.0, grain.life / grain.max_life))
+            alpha = int(glow_alpha * fade)
+            if alpha <= 0:
+                continue
+            draw_glow(grain.x, grain.y, grain.size, grain.size, grain.color, alpha)
+    quads.begin()
+    for grain in grains:
+        fade = max(0.0, min(1.0, grain.life / grain.max_life))
+        alpha = int(core_alpha * fade)
+        if alpha <= 0:
+            continue
+        size = core_size * (0.45 + 0.55 * fade)
+        quads.add(grain.x, grain.y, size, core_color, alpha)
+    quads.flush()

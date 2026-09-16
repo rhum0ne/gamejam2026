@@ -57,7 +57,13 @@ import settings
 from src.entities.enemy import Enemy
 from src.entities.glow import glow_pass
 from src.entities.item import Item, ItemKind
-from src.world.mechanisms import GatedTile, Mechanism, PressurePlate, plate_geometry
+from src.world.mechanisms import (
+    GatedTile,
+    Mechanism,
+    PressurePlate,
+    group_gated_chunks,
+    plate_geometry,
+)
 from src.world.obstacles import (
     TILE_SPECS,
     Checkpoint,
@@ -118,6 +124,7 @@ class Level:
     falling_spikes: arcade.SpriteList = field(default_factory=_dynamic_sprite_list)
     mechanisms: list[Mechanism] = field(default_factory=list)
     torches: arcade.SpriteList = field(default_factory=_dynamic_sprite_list)
+    torch_stems: arcade.SpriteList = field(default_factory=_dynamic_sprite_list)
     player_spawn: tuple[float, float] = (0.0, 0.0)
     checkpoint_spawn: tuple[float, float] = (0.0, 0.0)
     tiles_drawn: int = 0
@@ -267,7 +274,11 @@ class Level:
         ]
         if not targets:
             raise LevelFormatError("activate.setBlock ne cible aucun bloc")
-        return Mechanism(plate=plate, targets=targets)
+        return Mechanism(
+            plate=plate,
+            targets=targets,
+            chunks=group_gated_chunks(targets, self.tile_size),
+        )
 
     def _gated_tile_at(self, column: int, row: int) -> GatedTile:
         self._ensure_in_bounds(column, row)
@@ -333,23 +344,28 @@ class Level:
     def spawn_item(self, item: Item) -> None:
         self.items.append(item)
 
-    def draw(self, view_rect=None) -> None:
+    def draw(self, view_rect=None, *, tight_cull: bool = False) -> None:
         """Dessine le decor puis les entites, dans l'ordre d'empilement voulu.
 
-        `view_rect` (camera) ne soumet que les chunks de terrain visibles.
-        Sans rectangle, tout le decor est dessine (outils / secours).
+        En mode corps, les trois SpriteList maitres suffisent : Arcade 3.3
+        ignore les sprites hors viewport cote GPU. En mode fantome,
+        `tight_cull` restreint aux chunks du trou de vision (le voile cache
+        le reste, inutile de le remplir).
         """
-        if view_rect is None or not self._wall_chunks:
+        if tight_cull and view_rect is not None and self._wall_chunks:
+            self.walls_drawn, self.tiles_drawn = self._draw_visible_terrain(view_rect)
+        else:
             self.walls.draw()
             self.spectral_walls.draw()
             self.hazards.draw()
-            self.walls_drawn = len(self.walls)
-            self.tiles_drawn = (
-                len(self.walls) + len(self.spectral_walls) + len(self.hazards)
-            )
-            self.chunks_drawn = self.chunks_total
-        else:
-            self.walls_drawn, self.tiles_drawn = self._draw_visible_terrain(view_rect)
+            if view_rect is not None and self._wall_chunks:
+                self.walls_drawn, self.tiles_drawn = self._count_visible_terrain(view_rect)
+            else:
+                self.walls_drawn = len(self.walls)
+                self.tiles_drawn = (
+                    len(self.walls) + len(self.spectral_walls) + len(self.hazards)
+                )
+                self.chunks_drawn = self.chunks_total
         self.plates.draw()
         self.falling_spikes.draw()
         self.checkpoints.draw(pixelated=True)
@@ -357,7 +373,11 @@ class Level:
             checkpoint.draw_fx()
         self.doors.draw()
         with glow_pass():
-            self._draw_torches(view_rect)
+            self._queue_torch_glows(view_rect, layer="bloom")
+        self.torch_stems.draw()
+        self.torches.draw()
+        with glow_pass():
+            self._queue_torch_glows(view_rect, layer="core")
             for item in self.items:
                 item.draw_fx()
         self.corpses.draw()
@@ -401,6 +421,28 @@ class Level:
         self._fill_chunks(self.spectral_walls, self._spectral_chunks)
         self._fill_chunks(self.hazards, self._hazard_chunks)
 
+    def prepare_draw(self) -> None:
+        """Alloue les buffers GPU une fois, avant le jeu (Arcade 3.3 lazy init)."""
+        for sprite_list in (
+            self.walls,
+            self.spectral_walls,
+            self.hazards,
+            self.doors,
+            self.checkpoints,
+            self.items,
+            self.enemies,
+            self.corpses,
+            self.plates,
+            self.falling_spikes,
+            self.torches,
+            self.torch_stems,
+        ):
+            sprite_list.initialize()
+        for chunks in (self._wall_chunks, self._spectral_chunks, self._hazard_chunks):
+            for chunk in chunks:
+                if chunk:
+                    chunk.initialize()
+
     def _fill_chunks(self, sprites: arcade.SpriteList, chunks: list[arcade.SpriteList]) -> None:
         for sprite in sprites:
             chunks[self._chunk_index(sprite.center_x, sprite.center_y)].append(sprite)
@@ -437,11 +479,18 @@ class Level:
                 if chunk:
                     yield chunk
 
-    def _draw_visible_terrain(self, view_rect) -> tuple[int, int]:
-        """Dessine les chunks de terrain qui chevauchent `view_rect`."""
+    def _count_visible_terrain(self, view_rect) -> tuple[int, int]:
+        """Compte les tuiles des chunks visibles, sans les dessiner."""
         walls_drawn = 0
         tiles_drawn = 0
         self.chunks_drawn = 0
+        for walls, spectral, hazards in self._iter_visible_chunk_triple(view_rect):
+            self.chunks_drawn += 1
+            walls_drawn += len(walls)
+            tiles_drawn += len(walls) + len(spectral) + len(hazards)
+        return walls_drawn, tiles_drawn
+
+    def _iter_visible_chunk_triple(self, view_rect):
         col0, col1, row0, row1 = self._visible_chunk_range(view_rect)
         columns = self._chunk_columns
         for row in range(row0, row1 + 1):
@@ -451,21 +500,28 @@ class Level:
                 walls = self._wall_chunks[index]
                 spectral = self._spectral_chunks[index]
                 hazards = self._hazard_chunks[index]
-                if not (walls or spectral or hazards):
-                    continue
-                self.chunks_drawn += 1
-                if walls:
-                    walls.draw()
-                    walls_drawn += len(walls)
-                if spectral:
-                    spectral.draw()
-                if hazards:
-                    hazards.draw()
-                tiles_drawn += len(walls) + len(spectral) + len(hazards)
+                if walls or spectral or hazards:
+                    yield walls, spectral, hazards
+
+    def _draw_visible_terrain(self, view_rect) -> tuple[int, int]:
+        """Dessine les chunks de terrain qui chevauchent `view_rect`."""
+        walls_drawn = 0
+        tiles_drawn = 0
+        self.chunks_drawn = 0
+        for walls, spectral, hazards in self._iter_visible_chunk_triple(view_rect):
+            self.chunks_drawn += 1
+            if walls:
+                walls.draw()
+                walls_drawn += len(walls)
+            if spectral:
+                spectral.draw()
+            if hazards:
+                hazards.draw()
+            tiles_drawn += len(walls) + len(spectral) + len(hazards)
         return walls_drawn, tiles_drawn
 
-    def _draw_torches(self, view_rect) -> None:
-        """Halo puis placeholder, seulement si la torche (plus son halo) touche la vue."""
+    def _queue_torch_glows(self, view_rect, *, layer: str) -> None:
+        """Empile les halos de torche visibles (marge = rayon du bloom)."""
         margin = settings.TORCH_GLOW_OUTER
         for torch in self.torches:
             if view_rect is not None:
@@ -476,8 +532,7 @@ class Level:
                     or torch.center_y > view_rect.top + margin
                 ):
                     continue
-            torch.draw_fx()
-            arcade.draw_sprite(torch)
+            torch.draw_fx(layer=layer)
 
     def update(self, delta_time: float, attractor: arcade.Sprite | None = None) -> None:
         """Met a jour les elements dont la logique ne depend pas de l'etat de jeu.
@@ -489,7 +544,6 @@ class Level:
         self.checkpoints.update(delta_time)
         for item in self.items:
             item.update(delta_time, attractor=attractor)
-        self.torches.update(delta_time)
 
     def update_spikes(self) -> None:
         """Detache les piques sans plafond, puis les fait tomber jusqu'au sol."""
@@ -603,7 +657,9 @@ def _parse_set_blocks(activate: object) -> list[tuple[int, int]]:
         tiles.append((_coord(entry, "x"), _coord(entry, "y")))
     return tiles
 def _add_torch(level: Level, x: float, y: float) -> None:
-    level.torches.append(Torch(x, y))
+    torch = Torch(x, y)
+    level.torches.append(torch)
+    level.torch_stems.append(torch.stem)
 
 
 _FACTORIES: dict[str, Callable[[Level, float, float], None]] = {

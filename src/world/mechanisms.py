@@ -4,8 +4,9 @@ Une plaque reagit a un poids (corps, cadavre, ennemi) : tant qu'elle est
 enfoncee, les tuiles `setBlock type=void` disparaissent. Des qu'elle est
 relachee, les blocs reviennent, sauf s'ils recouvriraient encore un corps.
 
-Le fantome ne pese pas. Les liens plaque -> cibles se dessinent dans
-`PlayView`, uniquement en mode fantome.
+Le fantome ne pese pas. Les liens plaque -> paquets de blocs se dessinent
+dans `PlayView`, uniquement en mode fantome : un brin par groupe connexe,
+pas une ligne par tuile.
 """
 
 from __future__ import annotations
@@ -85,12 +86,24 @@ class GatedTile:
         return any(arcade.check_for_collision(self.sprite, other) for other in sprites)
 
 
+@dataclass(frozen=True, slots=True)
+class GatedChunk:
+    """Groupe connexe de tuiles commandees : un seul lien vers son centre."""
+
+    tiles: tuple[GatedTile, ...]
+    center_x: float
+    center_y: float
+    width: float
+    height: float
+
+
 @dataclass(slots=True)
 class Mechanism:
     """Une plaque et les blocs qu'elle commande."""
 
     plate: PressurePlate
     targets: list[GatedTile] = field(default_factory=list)
+    chunks: tuple[GatedChunk, ...] = ()
     pressed: bool = False
 
     def set_pressed(self, pressed: bool, occupants: Sequence[arcade.Sprite]) -> None:
@@ -107,21 +120,47 @@ class Mechanism:
             tile.show()
 
     def draw_soul(self, now: float) -> None:
-        """Aura silhouette + vrilles d'ame, uniquement en mode fantome."""
-        with additive_blend():
-            draw_sprite_soul_aura(self.plate, now, seed=0)
-            for index, tile in enumerate(self.targets):
-                draw_sprite_soul_aura(tile.sprite, now, seed=index + 1)
-            start = (self.plate.center_x, self.plate.center_y)
-            total = len(self.targets)
-            for index, tile in enumerate(self.targets):
-                draw_organic_link(
-                    start,
-                    (tile.sprite.center_x, tile.sprite.center_y),
-                    strand=index,
-                    strand_count=total,
-                    now=now,
-                )
+        """Plaque, paquets et vrille : auras en lot, ligne immediate courte."""
+        active = 1.0 + (settings.MECHANISM_PRESSED_GLOW - 1.0) * float(self.pressed)
+        draw_sprite_soul_aura(self.plate, now, seed=0, intensity=active)
+        start = (self.plate.center_x, self.plate.center_y)
+        chunks = self.chunks or group_gated_chunks(self.targets, settings.TILE_SIZE)
+        total = max(1, len(chunks))
+        for index, chunk in enumerate(chunks):
+            draw_chunk_soul_aura(chunk, now, seed=index + 1, intensity=active)
+            draw_organic_link(
+                start,
+                (chunk.center_x, chunk.center_y),
+                strand=index,
+                strand_count=total,
+                now=now,
+                intensity=active,
+            )
+
+
+def group_gated_chunks(
+    tiles: Sequence[GatedTile],
+    tile_size: float,
+) -> tuple[GatedChunk, ...]:
+    """Regroupe les tuiles 4-connexes : un paquet = un lien, pas 10000 lignes."""
+    remaining = list(tiles)
+    chunks: list[GatedChunk] = []
+    while remaining:
+        seed = remaining.pop()
+        cluster = [seed]
+        stack = [seed]
+        while stack:
+            current = stack.pop()
+            still: list[GatedTile] = []
+            for other in remaining:
+                if _tiles_adjacent(current, other, tile_size):
+                    cluster.append(other)
+                    stack.append(other)
+                else:
+                    still.append(other)
+            remaining = still
+        chunks.append(_chunk_from_tiles(cluster))
+    return tuple(chunks)
 
 
 def plate_geometry(
@@ -148,209 +187,140 @@ def draw_organic_link(
     strand: int,
     strand_count: int,
     now: float,
+    intensity: float = 1.0,
 ) -> None:
-    """Trainee d'ame : ruban continu (toujours lisible) + quelques motes lumineuses."""
+    """Vrille en S : ruban + noyau, plus quelques blooms additifs deja en glow_pass."""
     points = _organic_link_points(start, end, strand, strand_count, now)
     if len(points) < 2:
         return
-    color = settings.COLOR_MECHANISM_LINK
-    arcade.draw_line_strip(
-        points,
-        (*color, settings.MECHANISM_LINK_ALPHA),
-        settings.MECHANISM_LINK_WIDTH,
-    )
-    arcade.draw_line_strip(
-        points,
-        (*settings.COLOR_DEATH_PARTICLE_CORE, settings.MECHANISM_LINK_CORE_ALPHA),
-        settings.MECHANISM_LINK_CORE_WIDTH,
-    )
+    glow_count = max(2, settings.MECHANISM_LINK_GLOW_COUNT)
     last = len(points) - 1
-    mote_count = settings.MECHANISM_LINK_MOTE_COUNT
-    for mote in range(mote_count):
-        travel = (now * settings.MECHANISM_LINK_MOTE_SPEED + (mote + strand * 0.17) / mote_count) % 1.0
-        index = max(0, min(last, int(travel * last)))
-        x, y = points[index]
-        pulse = 0.55 + 0.45 * math.sin(now * 3.1 + mote + strand)
-        size = settings.MECHANISM_LINK_MOTE_SIZE * pulse
+    glow_alpha = max(1, min(255, int(settings.MECHANISM_LINK_GLOW_ALPHA * intensity)))
+    glow_size = settings.MECHANISM_LINK_GLOW_SIZE
+    for index in range(glow_count):
+        point = points[int(round(index * last / (glow_count - 1)))]
         draw_glow(
-            x,
-            y,
-            size,
-            size,
-            color,
-            int(settings.MECHANISM_LINK_MOTE_ALPHA * pulse),
-            bind_blend=False,
+            point[0],
+            point[1],
+            glow_size,
+            glow_size * 0.7,
+            settings.COLOR_MECHANISM_LINK,
+            glow_alpha,
+        )
+    color = settings.COLOR_MECHANISM_LINK
+    alpha = max(1, min(255, int(settings.MECHANISM_LINK_ALPHA * intensity)))
+    core_alpha = max(1, min(255, int(settings.MECHANISM_LINK_CORE_ALPHA * intensity)))
+    with additive_blend():
+        arcade.draw_line_strip(points, (*color, alpha), settings.MECHANISM_LINK_WIDTH)
+        arcade.draw_line_strip(
+            points,
+            (*settings.COLOR_MECHANISM_GLOW_CORE, core_alpha),
+            settings.MECHANISM_LINK_CORE_WIDTH,
         )
 
 
-def draw_sprite_soul_aura(sprite: arcade.Sprite, now: float, *, seed: int) -> None:
-    """Detourage lumineux de `sprite` : voile flou + motes le long du contour.
+def draw_chunk_soul_aura(
+    chunk: GatedChunk,
+    now: float,
+    *,
+    seed: int,
+    intensity: float = 1.0,
+) -> None:
+    """Un halo pour tout le paquet, meme si les tuiles sont deja cachees."""
+    _draw_box_aura(
+        chunk.center_x,
+        chunk.center_y,
+        chunk.width,
+        chunk.height,
+        now,
+        seed=seed,
+        intensity=intensity,
+    )
 
-    Arcade `Sprite.top/bottom/left/right` suivent la *hitbox*. La plaque a une
-    hitbox d'une tuile pour le poids, mais sa lamelle visuelle n'a que
-    `PLATE_HEIGHT` : on detoure donc `width`/`height` autour du centre.
-    """
+
+def draw_sprite_soul_aura(
+    sprite: arcade.Sprite,
+    now: float,
+    *,
+    seed: int,
+    intensity: float = 1.0,
+) -> None:
+    """Halo additif autour de la boite visuelle (plaque plate ou bloc)."""
     width = abs(sprite.width)
     height = abs(sprite.height)
     if width < 1.0 or height < 1.0:
         return
-    color = settings.COLOR_MECHANISM_GLOW
+    left, right, bottom, top = _visual_bounds(sprite)
+    _draw_box_aura(
+        (left + right) / 2.0,
+        (bottom + top) / 2.0,
+        width,
+        height,
+        now,
+        seed=seed,
+        intensity=intensity,
+    )
+
+
+def _draw_box_aura(
+    center_x: float,
+    center_y: float,
+    width: float,
+    height: float,
+    now: float,
+    *,
+    seed: int,
+    intensity: float,
+) -> None:
+    if width < 1.0 or height < 1.0:
+        return
     pulse = 1.0 + settings.MECHANISM_AURA_PULSE * math.sin(
         now * settings.MECHANISM_LINK_PULSE_SPEED + seed
     )
+    strength = pulse * intensity
     pad_x = _axis_pad(width)
     pad_y = _axis_pad(height)
-    fill_alpha = int(settings.MECHANISM_AURA_FILL_ALPHA * pulse)
-    left, right, bottom, top = _visual_bounds(sprite)
-    center_x = (left + right) / 2.0
-    center_y = (bottom + top) / 2.0
     outer = settings.MECHANISM_AURA_OUTER_SCALE
     draw_glow(
         center_x,
         center_y,
         width + pad_x * outer,
         height + pad_y * outer,
-        color,
-        max(1, fill_alpha // 2),
-        bind_blend=False,
+        settings.COLOR_MECHANISM_GLOW,
+        max(1, min(255, int(settings.MECHANISM_AURA_FILL_ALPHA * strength))),
     )
     draw_glow(
         center_x,
         center_y,
-        width + pad_x * 0.35,
-        height + pad_y * 0.35,
-        color,
-        fill_alpha,
-        bind_blend=False,
-    )
-    if max(width, height) >= settings.TILE_SIZE:
-        _draw_silhouette_motes(left, right, bottom, top, now, seed, color, pulse, pad_x, pad_y)
-
-
-def _visual_bounds(sprite: arcade.Sprite) -> tuple[float, float, float, float]:
-    """Boite d'affichage (pas la hitbox) : left, right, bottom, top."""
-    half_w = abs(sprite.width) / 2.0
-    half_h = abs(sprite.height) / 2.0
-    center_x = sprite.center_x
-    center_y = sprite.center_y
-    return (
-        center_x - half_w,
-        center_x + half_w,
-        center_y - half_h,
-        center_y + half_h,
+        width + pad_x * 0.45,
+        height + pad_y * 0.45,
+        settings.COLOR_MECHANISM_GLOW_CORE,
+        max(1, min(255, int(settings.MECHANISM_AURA_CORE_ALPHA * strength))),
     )
 
 
-def _axis_pad(size: float) -> float:
-    """Pad d'un axe, borne par la taille reelle du sprite (plaque plate vs bloc)."""
-    return min(
-        settings.MECHANISM_AURA_EDGE,
-        max(settings.MECHANISM_AURA_MIN_PAD, size * settings.MECHANISM_AURA_AXIS_RATIO),
+def _tiles_adjacent(left: GatedTile, right: GatedTile, tile_size: float) -> bool:
+    """Voisins ortho (4-connexes), avec un slop d'un pixel sur le centrage."""
+    delta_x = abs(left.sprite.center_x - right.sprite.center_x)
+    delta_y = abs(left.sprite.center_y - right.sprite.center_y)
+    slop = 1.0
+    same_row = delta_y <= slop and delta_x <= tile_size + slop
+    same_col = delta_x <= slop and delta_y <= tile_size + slop
+    return same_row or same_col
+
+
+def _chunk_from_tiles(tiles: Sequence[GatedTile]) -> GatedChunk:
+    left = min(tile.sprite.center_x - abs(tile.sprite.width) / 2.0 for tile in tiles)
+    right = max(tile.sprite.center_x + abs(tile.sprite.width) / 2.0 for tile in tiles)
+    bottom = min(tile.sprite.center_y - abs(tile.sprite.height) / 2.0 for tile in tiles)
+    top = max(tile.sprite.center_y + abs(tile.sprite.height) / 2.0 for tile in tiles)
+    return GatedChunk(
+        tiles=tuple(tiles),
+        center_x=(left + right) / 2.0,
+        center_y=(bottom + top) / 2.0,
+        width=max(1.0, right - left),
+        height=max(1.0, top - bottom),
     )
-
-
-def _draw_silhouette_motes(
-    left: float,
-    right: float,
-    bottom: float,
-    top: float,
-    now: float,
-    seed: int,
-    color: tuple[int, int, int],
-    pulse: float,
-    pad_x: float,
-    pad_y: float,
-) -> None:
-    width = max(1.0, right - left)
-    height = max(1.0, top - bottom)
-    perimeter = 2.0 * (width + height)
-    count = max(4, int(perimeter / settings.MECHANISM_AURA_MOTE_SPACING))
-    center_x = (left + right) / 2.0
-    center_y = (bottom + top) / 2.0
-    mote_size_cap = min(settings.MECHANISM_AURA_MOTE_SIZE, min(width, height) * 0.7 + 2.0)
-    max_top = top + pad_y * 0.5
-    min_bottom = bottom - pad_y * 0.5
-    for index in range(count):
-        t = (
-            now * settings.MECHANISM_AURA_MOTE_SPEED
-            + index / count
-            + seed * 0.07
-        ) % 1.0
-        x, y = _perimeter_point(left, right, bottom, top, t)
-        away_x = x - center_x
-        away_y = y - center_y
-        length = math.hypot(away_x, away_y) or 1.0
-        drift = settings.MECHANISM_AURA_MOTE_DRIFT * (
-            0.65 + 0.35 * math.sin(now * 2.4 + index + seed)
-        )
-        scale_x = min(1.0, pad_x / max(settings.MECHANISM_AURA_MIN_PAD, pad_y))
-        scale_y = min(1.0, pad_y / max(settings.MECHANISM_AURA_MIN_PAD, pad_x))
-        x += away_x / length * drift * scale_x
-        y += away_y / length * drift * scale_y
-        y = min(max_top, max(min_bottom, y))
-        size = mote_size_cap * (
-            0.55 + 0.45 * math.sin(now * 3.3 + index * 1.7)
-        )
-        draw_glow(
-            x,
-            y,
-            size,
-            size,
-            color,
-            int(settings.MECHANISM_AURA_MOTE_ALPHA * pulse),
-            bind_blend=False,
-        )
-
-
-def _perimeter_point(
-    left: float,
-    right: float,
-    bottom: float,
-    top: float,
-    t: float,
-) -> tuple[float, float]:
-    width = max(1.0, right - left)
-    height = max(1.0, top - bottom)
-    distance = (t % 1.0) * 2.0 * (width + height)
-    if distance <= width:
-        return left + distance, top
-    distance -= width
-    if distance <= height:
-        return right, top - distance
-    distance -= height
-    if distance <= width:
-        return right - distance, bottom
-    distance -= width
-    return left, bottom + distance
-
-
-def _even_points(
-    points: Sequence[tuple[float, float]],
-    spacing: float,
-) -> list[tuple[float, float]]:
-    """Reechantillonne une polyligne a intervalle `spacing`."""
-    if len(points) < 2 or spacing <= 0:
-        return list(points)
-    sampled: list[tuple[float, float]] = [points[0]]
-    remaining = spacing
-    previous = points[0]
-    for current in points[1:]:
-        dx = current[0] - previous[0]
-        dy = current[1] - previous[1]
-        dist = math.hypot(dx, dy)
-        while dist >= remaining and dist > 0:
-            ratio = remaining / dist
-            previous = (previous[0] + dx * ratio, previous[1] + dy * ratio)
-            sampled.append(previous)
-            dx = current[0] - previous[0]
-            dy = current[1] - previous[1]
-            dist = math.hypot(dx, dy)
-            remaining = spacing
-        remaining -= dist
-        previous = current
-    if sampled[-1] != points[-1]:
-        sampled.append(points[-1])
-    return sampled
 
 
 def _organic_link_points(
@@ -375,7 +345,6 @@ def _organic_link_points(
     fan = 0.0
     if strand_count > 1:
         fan = (strand - (strand_count - 1) / 2) / (strand_count - 1)
-    # S : un controle d'un cote, l'autre de l'oppose, plus un eventail entre brins.
     bulge = length * settings.MECHANISM_LINK_CURVE
     side = 1.0 if bias >= 0 else -1.0
     offset_a = side * bulge + fan * settings.MECHANISM_LINK_FAN
@@ -388,9 +357,12 @@ def _organic_link_points(
         x0 + dir_x * length * 0.72 + perp_x * offset_b,
         y0 + dir_y * length * 0.72 + perp_y * offset_b,
     )
-    segments = max(
-        settings.MECHANISM_LINK_MIN_SEGMENTS,
-        int(length / settings.MECHANISM_LINK_SPACING),
+    segments = min(
+        settings.MECHANISM_LINK_MAX_SEGMENTS,
+        max(
+            settings.MECHANISM_LINK_MIN_SEGMENTS,
+            int(length / settings.MECHANISM_LINK_SPACING),
+        ),
     )
     phase = now * settings.MECHANISM_LINK_PULSE_SPEED + bias * math.pi
     points: list[tuple[float, float]] = []
@@ -401,11 +373,7 @@ def _organic_link_points(
         wave = math.sin(
             2.0 * math.pi * settings.MECHANISM_LINK_WIGGLE_WAVES * t + phase
         )
-        harmonic = math.sin(
-            2.0 * math.pi * settings.MECHANISM_LINK_WIGGLE_WAVES * 2.15 * t
-            + phase * 0.6
-        )
-        wiggle = settings.MECHANISM_LINK_WIGGLE * envelope * (wave + 0.32 * harmonic)
+        wiggle = settings.MECHANISM_LINK_WIGGLE * envelope * wave
         points.append((point_x + perp_x * wiggle, point_y + perp_y * wiggle))
     return points
 
@@ -442,3 +410,25 @@ def _strand_bias(x0: float, y0: float, x1: float, y1: float, strand: int) -> flo
     mixed = (mixed * 0x7FEB352D) & 0xFFFFFFFF
     mixed ^= mixed >> 15
     return (mixed & 0xFFFF) / 32767.5 - 1.0
+
+
+def _visual_bounds(sprite: arcade.Sprite) -> tuple[float, float, float, float]:
+    """Boite d'affichage (pas la hitbox) : left, right, bottom, top."""
+    half_w = abs(sprite.width) / 2.0
+    half_h = abs(sprite.height) / 2.0
+    center_x = sprite.center_x
+    center_y = sprite.center_y
+    return (
+        center_x - half_w,
+        center_x + half_w,
+        center_y - half_h,
+        center_y + half_h,
+    )
+
+
+def _axis_pad(size: float) -> float:
+    """Pad d'un axe, borne par la taille reelle du sprite (plaque plate vs bloc)."""
+    return min(
+        settings.MECHANISM_AURA_EDGE,
+        max(settings.MECHANISM_AURA_MIN_PAD, size * settings.MECHANISM_AURA_AXIS_RATIO),
+    )

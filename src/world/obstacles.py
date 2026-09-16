@@ -182,7 +182,7 @@ class Spike(arcade.Sprite):
         sprites.apply_rect_hit_box(self, size, hit_height, offset_y=offset_y)
 
     def draw_ghost_glow(self, *, bind_blend: bool = True) -> None:
-        """Halo rouge, visible a travers le voile du fantome."""
+        """Halo rouge, dessine sous le voile pour fondre avec le terrain."""
         pulse = 1.0 + settings.SPIKE_GHOST_GLOW_PULSE * math.sin(
             time.perf_counter() * settings.SPIKE_GHOST_GLOW_PULSE_SPEED
             + self.center_x * 0.11
@@ -249,47 +249,51 @@ class Torch(arcade.SpriteSolidColor):
             center_y=center_y + settings.TORCH_STEM_HEIGHT / 2,
             color=settings.COLOR_TORCH_FLAME,
         )
-        self._time = 0.0
         self._phase = (center_x * 0.17 + center_y * 0.09) % math.tau
+        self.stem = arcade.SpriteSolidColor(
+            settings.TORCH_STEM_WIDTH,
+            settings.TORCH_STEM_HEIGHT,
+            center_x=center_x,
+            center_y=self.bottom - settings.TORCH_STEM_HEIGHT / 2,
+            color=settings.COLOR_TORCH_STEM,
+        )
 
-    def update(self, delta_time: float = settings.FRAME_TIME, *args, **kwargs) -> None:
-        self._time += max(0.0, delta_time)
-
-    def draw_fx(self) -> None:
-        """Halo chaud, puis le baton du placeholder (la flamme est le sprite)."""
+    def draw_fx(self, *, layer: str = "all") -> None:
+        """Halo chaud : bloom large sur le decor, noyau chaud sur la flamme."""
         flicker = self._flicker()
         flame_x = self.center_x
         flame_y = self.center_y
-        draw_glow(
-            flame_x,
-            flame_y,
-            settings.TORCH_GLOW_OUTER * flicker,
-            settings.TORCH_GLOW_OUTER * flicker * 1.15,
-            settings.COLOR_TORCH_GLOW,
-            int(settings.TORCH_GLOW_ALPHA * flicker),
-        )
-        draw_glow(
-            flame_x,
-            flame_y,
-            settings.TORCH_GLOW_INNER * flicker,
-            settings.TORCH_GLOW_INNER * flicker,
-            settings.COLOR_TORCH_GLOW_CORE,
-            int(settings.TORCH_GLOW_INNER_ALPHA * flicker),
-        )
-        stem_top = self.bottom
-        stem_bottom = stem_top - settings.TORCH_STEM_HEIGHT
-        half = settings.TORCH_STEM_WIDTH / 2
-        arcade.draw_lrbt_rectangle_filled(
-            self.center_x - half,
-            self.center_x + half,
-            stem_bottom,
-            stem_top,
-            settings.COLOR_TORCH_STEM,
-        )
+        if layer in ("all", "bloom"):
+            draw_glow(
+                flame_x,
+                flame_y,
+                settings.TORCH_GLOW_OUTER * flicker,
+                settings.TORCH_GLOW_OUTER * flicker * 1.2,
+                settings.COLOR_TORCH_GLOW,
+                int(settings.TORCH_GLOW_ALPHA * flicker),
+            )
+            draw_glow(
+                flame_x,
+                flame_y,
+                settings.TORCH_GLOW_MID * flicker,
+                settings.TORCH_GLOW_MID * flicker,
+                settings.COLOR_TORCH_GLOW,
+                int(settings.TORCH_GLOW_MID_ALPHA * flicker),
+            )
+        if layer in ("all", "core"):
+            draw_glow(
+                flame_x,
+                flame_y,
+                settings.TORCH_GLOW_INNER * flicker,
+                settings.TORCH_GLOW_INNER * flicker,
+                settings.COLOR_TORCH_GLOW_CORE,
+                int(settings.TORCH_GLOW_INNER_ALPHA * flicker),
+            )
 
     def _flicker(self) -> float:
-        slow = math.sin(self._time * settings.TORCH_FLICKER_SPEED + self._phase)
-        fast = math.sin(self._time * settings.TORCH_FLICKER_SPEED_FAST + self._phase * 1.7)
+        now = time.perf_counter()
+        slow = math.sin(now * settings.TORCH_FLICKER_SPEED + self._phase)
+        fast = math.sin(now * settings.TORCH_FLICKER_SPEED_FAST + self._phase * 1.7)
         return 1.0 + settings.TORCH_FLICKER * (0.65 * slow + 0.35 * fast)
 
 
