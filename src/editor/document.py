@@ -1,7 +1,7 @@
 """Carte en cours d'edition : grille de types, metadonnees, lecture/ecriture JSON.
 
 Le document ne manipule **pas** de symboles : chaque cellule contient le nom du
-type (`"rock"`, `"enemy"`, `""` pour du vide). Les symboles de legende ne sont
+type (`"wall"`, `"enemy"`, `""` pour du vide). Les symboles de legende ne sont
 choisis qu'a l'ecriture, ce qui evite les collisions et permet de changer un
 symbole sans toucher a la carte. Les symboles lus dans un fichier sont
 conserves pour que reecrire une carte existante ne bouleverse pas son diff.
@@ -97,16 +97,16 @@ class EditorDocument:
         rows: int = settings.EDITOR_NEW_ROWS,
         tile_size: int = settings.TILE_SIZE,
     ) -> "EditorDocument":
-        """Carte vide, entouree d'un cadre de roche pour ne pas tomber hors monde."""
+        """Carte vide, entouree d'un cadre de terre pour ne pas tomber hors monde."""
         columns = max(settings.EDITOR_MIN_COLUMNS, min(settings.EDITOR_MAX_COLUMNS, columns))
         rows = max(settings.EDITOR_MIN_ROWS, min(settings.EDITOR_MAX_ROWS, rows))
         cells = [[palette.EMPTY] * columns for _ in range(rows)]
         for column in range(columns):
-            cells[0][column] = "rock"
+            cells[0][column] = "wall"
             cells[rows - 1][column] = "bedrock"
         for row in range(rows):
-            cells[row][0] = "rock"
-            cells[row][columns - 1] = "rock"
+            cells[row][0] = "wall"
+            cells[row][columns - 1] = "wall"
         cells[rows - 2][2] = "player_spawn"
         return cls(name=name, hint="", tile_size=tile_size, cells=cells)
 

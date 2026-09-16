@@ -69,19 +69,10 @@ RENDER_CHUNK_TILES = 16
 # chunk de 512 px apparait d'un coup au bord de l'ecran.
 RENDER_CULL_PAD = 120.0
 
-# Noms de fichiers dans SPRITES_DIR, sans extension. La legende d'une carte
-# JSON reprend ces noms (ou un alias : rock, dirt). Le chargeur ajoute `.png`.
-SPRITE_DIRT = "dirt_1"
-SPRITE_BEDROCK = "bedrock"
-SPRITE_ROCK_1 = "rock_1"
-SPRITE_ROCK_2 = "rock_2"
-SPRITE_GRASS = "grass"
-SPRITE_GRASS_VARIANT = "grass_1"
-SPRITE_GRASS_CORNER = "grass_corner"
-SPRITE_DIRT_TOP = "dirt_top"
-SPRITE_DIRT_CORNER = "dirt_corner"
-SPRITE_DIRT_CORNER_RIGHT = "dirt_corner_right"
-SPRITE_DIRT_FLOATING = "dirt_floating_block"
+# Noms de fichiers dans SPRITES_DIR, sans extension. Le chargeur ajoute `.png`.
+# Le terrain (dirt/grass/...) vient desormais de `SHEET_GROUND` plus bas
+# (planche "new_textures") : les anciens PNG individuels (dirt_1.png,
+# grass.png, ...) restent dans `assets/sprites/` mais ne sont plus charges.
 SPRITE_SPIKE = "spike"
 SPRITE_SPIKE_HANGING = "spike_up"
 # Bandeaux d'entites (fichiers tels quels, y compris le typo "gost").
@@ -120,6 +111,119 @@ TORCH_FLICKER = 0.16
 TORCH_FLICKER_SPEED = 8.4
 TORCH_FLICKER_SPEED_FAST = 19.0
 
+# --------------------------------------------------------------------------- #
+# Planches "new_textures" (pack de remplacement des tuiles de terrain)
+# --------------------------------------------------------------------------- #
+
+NEW_TEXTURES_DIR = SPRITES_DIR / "new_textures"
+SHEET_GROUND = NEW_TEXTURES_DIR / "TX Tileset Ground.png"
+SHEET_PROPS = NEW_TEXTURES_DIR / "TX Village Props.png"
+SHEET_CHEST = NEW_TEXTURES_DIR / "TX Chest Animation.png"
+
+# Taille native d'une case de `SHEET_GROUND` (planche a grille reguliere).
+GROUND_CELL = 32
+
+# Auto-tiling du terrain ("wall" : seule matiere terre/roche du jeu, symbole
+# "#" dans une carte). `obstacles.terrain_texture` choisit la case a afficher
+# selon les 8 voisines : voir `obstacles.compute_ground_cells`. Le level
+# designer ne pose qu'un seul type de mur ; le rendu se charge du reste.
+#
+# Toutes les coordonnees ci-dessous sont des cases (colonne, ligne) de
+# GROUND_CELL px, (0,0) = coin haut-gauche de la planche `SHEET_GROUND`.
+# La planche est une fresque 16x16 : beaucoup de cases "de scene" sont vides
+# ou entaillees et ne tuilent pas. Cases du mapping absentes de ce PNG :
+# (4,2), (5,3), (5,5), (6,0), (6,1), (6,2), (6,4), (7,4), (8,0), (9,4), (9,6),
+# (1,8), (1,9), (1,10), (1,11), (3,8), (3,9), (0,11), (4,4).
+#
+# 1) Carre 3x3 en haut a gauche = case CANONIQUE de la masse profonde :
+#
+#            colonne 0          colonne 1           colonne 2
+#            (rien a gauche)    (encadree)          (rien a droite)
+#   rangee 0 : Coin Sombre HG   Bord Sombre Haut    Coin Sombre HD
+#   rangee 1 : Bord Sombre G    Centre Sombre       Bord Sombre D
+#   rangee 2 : Coin Sombre BG   Bord Sombre Bas     Coin Sombre BD
+#
+# 2) Terre, dessous et plateformes ont un POOL de variantes (position
+#    deterministe, meme rendu jeu/editeur). La crete de pelouse reste
+#    Bord Sombre Haut, sans fragment de fresque.
+GROUND_ROW_GRASS = 0  # rien au-dessus -> Bord Sombre Haut
+GROUND_ROW_DIRT = 1  # enterree des deux cotes -> Centre Sombre
+GROUND_ROW_BOTTOM = 2  # rien en dessous -> Bord Sombre Bas
+GROUND_COL_LEFT = 0  # rien a gauche
+GROUND_COL_MID = 1  # encadree des deux cotes
+GROUND_COL_RIGHT = 2  # rien a droite
+
+# Cas particuliers hors du carre 3x3, cf. `obstacles._base_ground_cell`.
+# (4,2) Petit Bloc Herbe est vide : (4,3) est le bloc herbe isole disponible.
+GROUND_SOLO = (4, 3)
+
+# Colonne d'UNE tuile de large. (6,0)/(6,1)/(6,2) Sommet/Milieu/Base Fine
+# Colonne sont vides : on prend le pilier gauche, deja un sprite d'une tuile
+# de large (bords arrondis). (0,11) Base Pilier est vide, (0,10) sert de pied.
+GROUND_PILLAR_TOP = (0, 8)
+GROUND_PILLAR_MID = (0, 9)
+GROUND_PILLAR_BOTTOM = (0, 10)
+
+# Plateforme fine (une seule tuile de haut).
+GROUND_PLATFORM_LEFT = (0, 12)
+GROUND_PLATFORM_MID = (1, 12)
+GROUND_PLATFORM_RIGHT = (2, 12)
+
+# Bloc creux / tunnel (anneau 0-2 x 4-6, trou en (1,5)).
+GROUND_CAVE_CEILING_LEFT = (0, 4)  # Coin Plafond HG
+GROUND_CAVE_CEILING = (1, 4)  # Plafond Tunnel
+GROUND_CAVE_CEILING_RIGHT = (2, 4)  # Coin Plafond HD
+GROUND_CAVE_WALL_LEFT = (0, 5)  # Mur Tunnel Gauche
+GROUND_CAVE_WALL_RIGHT = (2, 5)  # Mur Tunnel Droit
+GROUND_CAVE_FLOOR_LEFT = (0, 6)  # Coin Sol Herbe BG
+GROUND_CAVE_FLOOR = (1, 6)  # Sol Herbe Tunnel
+GROUND_CAVE_FLOOR_RIGHT = (2, 6)  # Coin Sol Herbe BD
+
+# Coins interieurs d'un trou enterre (memes sprites que le tunnel).
+GROUND_INNER_BOTTOM_RIGHT = GROUND_CAVE_CEILING_LEFT  # trou en SE
+GROUND_INNER_BOTTOM_LEFT = GROUND_CAVE_CEILING_RIGHT  # trou en SW
+GROUND_INNER_TOP_RIGHT = GROUND_CAVE_FLOOR_LEFT  # trou en NE, grotte seulement
+GROUND_INNER_TOP_LEFT = GROUND_CAVE_FLOOR_RIGHT  # trou en NW, grotte seulement
+
+# Ilot 2x2 flottant (coins arrondis, transparence volontaire).
+GROUND_ISLAND_TL = (12, 0)
+GROUND_ISLAND_TR = (13, 0)
+GROUND_ISLAND_BL = (12, 1)
+GROUND_ISLAND_BR = (13, 1)
+
+# La crete marchable d'une masse profonde est TOUJOURS Bord Sombre Haut
+# (1,0). Les cases (8,3)/(10,3)/(11,3)/(12,3)/(13,3) ont de l'herbe mais
+# un profil different (fresque) : en variante, elles cassent la ligne de
+# surface. Pas de pool : `_pick_variant` laisse (1,0) tel quel.
+GROUND_SURFACE_VARIANTS = ((1, 0),)
+# Terre pleine uniforme : aucun caillou, aucune herbe, aucun plafond estompe.
+# (10,5) a des rochers jaunes : en variante de fill, ca poivrait la masse.
+GROUND_DIRT_VARIANTS = (
+    (1, 1),
+    (11, 4),
+    (12, 4),
+    (12, 7),
+    (5, 10),
+)
+# Dessous a l'air libre, sans herbe (les cases (5,15)/(9,15) sont des sols
+# herbeux de la fresque : au plafond du monde elles affichaient de l'herbe).
+GROUND_BOTTOM_VARIANTS = ((1, 2), (7, 15), (14, 15))
+# Plafond de grotte : uniquement le sprite du bloc creux, pas la fresque.
+GROUND_CAVE_CEILING_VARIANTS = (GROUND_CAVE_CEILING,)
+GROUND_SOLO_VARIANTS = (GROUND_SOLO, (9, 0))
+GROUND_PLATFORM_LEFT_VARIANTS = ((0, 12), (0, 14))
+GROUND_PLATFORM_MID_VARIANTS = ((1, 12), (1, 14))
+GROUND_PLATFORM_RIGHT_VARIANTS = ((2, 12), (2, 14))
+
+GROUND_BEDROCK = (11, 8)
+# Le socle (bordure indestructible) reprend une tuile hors du carre 3x3 de
+# "wall" et se voit assombri d'un cran : lisible comme "plus dur", distinct
+# du mur normal, sans nouvel asset.
+COLOR_BEDROCK_TINT = (176, 176, 184)
+
+# Les decoupages des props vivent dans `world/decorations.py`. Un pixel de
+# `SHEET_PROPS` vaut un pixel de `SHEET_GROUND` ; le jeu les affiche via
+# `TILE_SIZE / GROUND_CELL` (1.0 tant que les tuiles font 32 px).
 # Lance-flammes : le jet est un quad shader, pas des particules.
 FLAMETHROWER_RANGE = 4  # portee par defaut, en tuiles
 FLAMETHROWER_RANGE_MIN = 1
