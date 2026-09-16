@@ -1089,7 +1089,13 @@ class PlayView(arcade.View):
                 self.ghost.start_vanish()
 
     def on_mouse_press(self, x: float, y: float, button: int, modifiers: int) -> None:
-        """Oriente le corps vers le curseur et lance une attaque au clic gauche."""
+        """Clic gauche : menu pause, ou attaque oriente vers le curseur."""
+        if self.machine.state is GameState.PAUSED:
+            if button != arcade.MOUSE_BUTTON_LEFT:
+                return
+            ui_x, ui_y = self.camera.window_to_ui(x, y)
+            self._pause_overlay().on_mouse_press(ui_x, ui_y)
+            return
         if button != _ATTACK_BUTTON or self.machine.state is not GameState.PLAYING:
             return
         world_x = self.camera.screen_to_world_x(x)
@@ -1109,14 +1115,6 @@ class PlayView(arcade.View):
             return
         ui_x, ui_y = self.camera.window_to_ui(x, y)
         self._pause_overlay().on_mouse_motion(ui_x, ui_y)
-
-    def on_mouse_press(self, x: float, y: float, button: int, modifiers: int) -> None:
-        if self.machine.state is not GameState.PAUSED:
-            return
-        if button != arcade.MOUSE_BUTTON_LEFT:
-            return
-        ui_x, ui_y = self.camera.window_to_ui(x, y)
-        self._pause_overlay().on_mouse_press(ui_x, ui_y)
 
     def on_mouse_release(self, x: float, y: float, button: int, modifiers: int) -> None:
         if self.machine.state is not GameState.PAUSED:

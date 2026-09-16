@@ -56,8 +56,10 @@ def check_levels() -> None:
             extra = f", {len(level.mechanisms)} plaque(s), {hanging} pique(s) plafond"
         print(f"  carte '{name}' -> {level.name}: {level.columns}x{level.rows} tuiles, "
               f"{len(level.walls)} murs, {len(level.items)} objets, {len(level.enemies)} ennemis{extra}")
+        assert level.theme in settings.GROUND_THEMES, f"{name} : theme inconnu '{level.theme}'"
     check_invalid_activator()
     check_inverted_activator()
+    check_ground_theme()
 
 
 def check_invalid_activator() -> None:
@@ -125,6 +127,51 @@ def check_inverted_activator() -> None:
     mechanism.set_pressed(False, ())
     assert all(tile.hidden for tile in mechanism.targets), "le relachement doit recacher les blocs"
     print("  plaque inversee -> cachee au repos, visible a l'activation")
+
+
+def check_ground_theme() -> None:
+    """Le champ optionnel `theme` choisit la planche, ou ground par defaut."""
+    from src.world.themes import next_theme, sheet_for, theme_ids
+
+    data = {
+        "name": "theme",
+        "tile_size": settings.TILE_SIZE,
+        "legend": {"#": "wall", "P": "player_spawn"},
+        "rows": ["####", "#P.#", "####"],
+    }
+    default = Level.from_dict(data)
+    assert default.theme == settings.GROUND_THEME_DEFAULT
+    empty = Level.from_dict({**data, "theme": ""})
+    assert empty.theme == settings.GROUND_THEME_DEFAULT
+    sand = Level.from_dict({**data, "theme": "sand"})
+    assert sand.theme == "sand"
+    rock = Level.from_dict({**data, "theme": "ROCK"})
+    assert rock.theme == "rock"
+    try:
+        Level.from_dict({**data, "theme": "lava"})
+    except LevelFormatError as error:
+        message = str(error)
+        assert "theme inconnu" in message, message
+    else:
+        raise AssertionError("un theme inconnu aurait du etre refuse")
+    try:
+        Level.from_dict({**data, "theme": 1})
+    except LevelFormatError as error:
+        assert "theme" in str(error)
+    else:
+        raise AssertionError("un theme non chaine aurait du etre refuse")
+    for theme_id in theme_ids():
+        path = sheet_for(theme_id)
+        assert path.is_file(), f"planche manquante pour '{theme_id}' : {path}"
+    assert next_theme("ground") == "sand"
+    assert next_theme("sand") == "rock"
+    assert next_theme("rock") == "ground"
+    ground_key = next(iter(default.walls)).texture.cache_name
+    sand_key = next(iter(sand.walls)).texture.cache_name
+    rock_key = next(iter(rock.walls)).texture.cache_name
+    assert ground_key != sand_key, "sand doit lire une autre planche que ground"
+    assert sand_key != rock_key, "rock doit lire une autre planche que sand"
+    print(f"  theme terrain -> defaut {default.theme}, sand/rock distincts, cycle OK")
 
 
 def check_progression() -> None:
@@ -933,7 +980,7 @@ def check_editor_document() -> None:
     import tempfile
 
     from src.editor import palette
-    from src.editor.document import EditorDocument
+    from src.editor.document import DocumentError, EditorDocument
     from src.editor.selection import GridRect
     from src.world.level import gameplay_kinds
 
@@ -944,6 +991,7 @@ def check_editor_document() -> None:
 
     document = EditorDocument.from_file("level_1_tuto.json")
     assert document.columns > 0 and document.rows > 0
+    assert document.theme == settings.GROUND_THEME_DEFAULT
     assert document.counts().get("player_spawn", 0) >= 1
     assert len(document.activators) == 2
     assert document.activators[0].width == 4
@@ -981,6 +1029,20 @@ def check_editor_document() -> None:
     payload = json.loads(saved.read_text(encoding="utf-8"))
     assert payload["rows"], "la carte reecrite doit avoir des lignes"
     assert "player_spawn" in payload["legend"].values()
+    assert "theme" not in payload, "le theme par defaut ne s'ecrit pas"
+    document.set_metadata(theme="sand")
+    sand_payload = document.to_dict()
+    assert sand_payload["theme"] == "sand"
+    restored_theme = EditorDocument.from_dict(sand_payload)
+    assert restored_theme.theme == "sand"
+    document.set_metadata(theme=settings.GROUND_THEME_DEFAULT)
+    assert "theme" not in document.to_dict()
+    try:
+        EditorDocument.from_dict({**payload, "theme": "lava"})
+    except DocumentError as error:
+        assert "theme inconnu" in str(error)
+    else:
+        raise AssertionError("l'editeur doit refuser un theme inconnu")
     assert len(payload.get("activators", [])) == 2
     first = payload["activators"][0]
     assert first["x"] == 13 and first["width"] == 4
@@ -1309,6 +1371,7 @@ def check_editor_views(window: arcade.Window) -> None:
     from src.editor.browser import BrowserView
     from src.editor.document import EditorDocument
     from src.editor.edit_view import EditView, Tool
+    from src.world.themes import next_theme
 
     browser = BrowserView()
     window.show_view(browser)
@@ -1327,6 +1390,10 @@ def check_editor_views(window: arcade.Window) -> None:
     view.on_mouse_press(screen_x, screen_y, arcade.MOUSE_BUTTON_LEFT, 0)
     view.on_mouse_release(screen_x, screen_y, arcade.MOUSE_BUTTON_LEFT, 0)
     view.on_key_press(arcade.key.Z, arcade.key.MOD_CTRL)
+    before_theme = view.document.theme
+    view.on_key_press(arcade.key.F5, 0)
+    assert view.document.theme == next_theme(before_theme)
+    view.on_draw()
     view.on_key_press(arcade.key.Z, arcade.key.MOD_CTRL | arcade.key.MOD_SHIFT)
     view.tool = Tool.LINK
     view._link_index = 0

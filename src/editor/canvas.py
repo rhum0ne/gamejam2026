@@ -222,11 +222,12 @@ class GridCanvas:
         center_x, center_y = self.cell_center(column, row)
         if kind in DECORATION_SPECS:
             sprite = Decoration(kind, center_x, center_y)
-        elif item.spec is not None and item.spec.autotile:
+        elif item.spec is not None and item.spec.sheet is not None:
             texture = terrain_texture(
                 item.spec,
                 self.document.tile_size,
                 cell=self._ground_cells.get((column, row)),
+                theme=self.document.theme,
             )
             sprite = arcade.Sprite(texture, center_x=center_x, center_y=center_y)
             if item.spec.tint is not None:

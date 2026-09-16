@@ -5,6 +5,7 @@ Format attendu (voir `assets/maps/level_1_tuto.json`) :
     {
       "name": "Le Puits Mortel",
       "hint": "texte affiche dans le HUD",
+      "theme": "sand",
       "tile_size": 32,
       "legend": {"#": "wall", "^": "spike", "B": "bedrock", ...},
       "rows": ["####...", "#.P....#", ...]
@@ -15,12 +16,10 @@ l'ecran. Chaque caractere est traduit via `legend` :
     - un type de gameplay (`door`, `key`, `player_spawn`, `spectral_wall`, ...) ;
     - ou le nom d'un sprite de terrain (`wall`, `spike`, `bedrock`, ...).
 
-`wall` est la seule matiere terre/roche : il suffit de dessiner sa forme dans
-`rows`, l'apparence (herbe en surface, coin, terre enterree, pilier, coin
-interieur...) est deduite de la grille entiere a chaque chargement
-(auto-tiling, cf. `world/obstacles.py` :: `compute_ground_cells`). Pas de
-symbole dedie a l'herbe : ne jamais en ajouter un, ce serait de nouveau au
-level designer de la placer a la main.
+`wall` est la seule matiere auto-tilee : il suffit de dessiner sa forme dans
+`rows`, l'apparence est deduite de la grille (`compute_ground_cells`). Le
+champ optionnel `theme` (`ground`, `sand`, `rock`) choisit la planche ; s'il
+est absent, on utilise la terre par defaut.
 
 Les plaques d'activation sont declarees a part, en coordonnees de grille
 (x = colonne, y = ligne depuis le haut, comme `rows`) :
@@ -104,6 +103,7 @@ from src.world.obstacles import (
     compute_ground_cells,
     tile_spec,
 )
+from src.world.themes import parse_theme
 
 
 def _static_sprite_list() -> arcade.SpriteList:
@@ -164,6 +164,7 @@ class Level:
     # Nom court affiche en plus du titre sur l'ecran de transition (ex: le nom
     # d'ambiance du niveau, une fois que `name` se limitera a "Niveau N").
     subtitle: str = ""
+    theme: str = settings.GROUND_THEME_DEFAULT
     walls: arcade.SpriteList = field(default_factory=_static_sprite_list)
     spectral_walls: arcade.SpriteList = field(default_factory=_static_sprite_list)
     hazards: arcade.SpriteList = field(default_factory=_static_sprite_list)
@@ -233,6 +234,10 @@ class Level:
 
         legend: dict[str, str] = data.get("legend", {})
         tile_size = int(data.get("tile_size", settings.TILE_SIZE))
+        try:
+            theme = parse_theme(data.get("theme"))
+        except (TypeError, ValueError) as error:
+            raise LevelFormatError(str(error)) from error
         level = cls(
             name=data.get("name", "Niveau sans nom"),
             hint=data.get("hint", ""),
@@ -240,6 +245,7 @@ class Level:
             columns=widths.pop(),
             rows=len(grid),
             subtitle=data.get("subtitle", ""),
+            theme=theme,
         )
         try:
             level._flame_specs = parse_flame_specs(data.get("flamethrowers"))
@@ -734,7 +740,9 @@ def _add_terrain(
     if spec.role == "ice":
         level.walls.append(IceBlock(x, y, size=level.tile_size, tile=kind))
         return
-    level.walls.append(Wall(x, y, size=level.tile_size, tile=kind, cell=cell))
+    level.walls.append(
+        Wall(x, y, size=level.tile_size, tile=kind, cell=cell, theme=level.theme)
+    )
 
 
 def _compute_ground_cells(
@@ -779,7 +787,9 @@ def _compute_ground_cells(
 
 
 def _add_spectral_wall(level: Level, x: float, y: float, cell: GroundCell | None = None) -> None:
-    level.spectral_walls.append(SpectralWall(x, y, size=level.tile_size, cell=cell))
+    level.spectral_walls.append(
+        SpectralWall(x, y, size=level.tile_size, cell=cell, theme=level.theme)
+    )
 
 
 def _add_door(level: Level, x: float, y: float) -> None:

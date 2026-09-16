@@ -32,6 +32,7 @@ from src.editor.history import CellChange, Edit, GridState, History
 from src.editor.selection import Block, GridRect
 from src.world.falling_block import FallingSpec, dump_falling_specs, parse_falling_specs
 from src.world.flamethrower import FlameSpec, dump_flame_specs, parse_flame_specs
+from src.world.themes import normalize_theme, parse_theme
 
 # (colonne, ligne, type present apres l'operation)
 CellState = tuple[int, int, str]
@@ -59,6 +60,7 @@ class EditorDocument:
         activators: Sequence[Activator] = (),
         flames: dict[tuple[int, int], FlameSpec] | None = None,
         fallings: dict[tuple[int, int], FallingSpec] | None = None,
+        theme: str = settings.GROUND_THEME_DEFAULT,
     ) -> None:
         if not cells or not cells[0]:
             raise DocumentError("une carte doit avoir au moins une cellule")
@@ -70,6 +72,7 @@ class EditorDocument:
         self.name = name
         self.hint = hint
         self.tile_size = tile_size
+        self.theme = normalize_theme(theme)
         self.path = path
         self.history = History()
         self._cells: list[list[str]] = [list(row) for row in cells]
@@ -168,6 +171,10 @@ class EditorDocument:
             fallings = parse_falling_specs(data.get("falling_blocks"))
         except ValueError as error:
             raise DocumentError(str(error)) from error
+        try:
+            theme = parse_theme(data.get("theme"))
+        except (TypeError, ValueError) as error:
+            raise DocumentError(str(error)) from error
         return cls(
             name=str(data.get("name", "Niveau sans nom")),
             hint=str(data.get("hint", "")),
@@ -178,6 +185,7 @@ class EditorDocument:
             activators=activators,
             flames=flames,
             fallings=fallings,
+            theme=theme,
         )
 
     # ------------------------------------------------------------------ #
@@ -567,8 +575,9 @@ class EditorDocument:
         name: str | None = None,
         hint: str | None = None,
         tile_size: int | None = None,
+        theme: str | None = None,
     ) -> None:
-        """Change le nom, l'indice ou la taille de tuile (hors historique)."""
+        """Change le nom, l'indice, la taille de tuile ou le theme (hors historique)."""
         if name is not None:
             self.name = name
         if hint is not None:
@@ -577,6 +586,9 @@ class EditorDocument:
             if tile_size <= 0:
                 raise ValueError("tile_size doit etre strictement positif")
             self.tile_size = tile_size
+            self._layout_version += 1
+        if theme is not None:
+            self.theme = normalize_theme(theme)
             self._layout_version += 1
         self._version += 1
 
@@ -615,6 +627,8 @@ class EditorDocument:
             "legend": legend,
             "rows": rows,
         }
+        if self.theme != settings.GROUND_THEME_DEFAULT:
+            payload["theme"] = self.theme
         activators = dump_activators(self._activators)
         if activators:
             payload["activators"] = activators

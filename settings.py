@@ -145,8 +145,24 @@ TORCH_FLICKER_SPEED_FAST = 19.0
 
 NEW_TEXTURES_DIR = SPRITES_DIR / "new_textures"
 SHEET_GROUND = NEW_TEXTURES_DIR / "TX Tileset Ground.png"
+SHEET_GROUND_SAND = NEW_TEXTURES_DIR / "TX Tileset Sand.png"
+SHEET_GROUND_ROCK = NEW_TEXTURES_DIR / "TX Tileset Rock.png"
 SHEET_PROPS = NEW_TEXTURES_DIR / "TX Village Props.png"
 SHEET_CHEST = NEW_TEXTURES_DIR / "TX Chest Animation.png"
+
+# Theme de terrain d'une carte (`"theme"` dans le JSON). Meme grille 16x16,
+# seule la planche change. Absent ou vide -> ground.
+GROUND_THEME_DEFAULT = "ground"
+GROUND_THEMES: dict[str, Path] = {
+    "ground": SHEET_GROUND,
+    "sand": SHEET_GROUND_SAND,
+    "rock": SHEET_GROUND_ROCK,
+}
+GROUND_THEME_LABELS: dict[str, str] = {
+    "ground": "terre",
+    "sand": "sable",
+    "rock": "roche",
+}
 
 # Taille native d'une case de `SHEET_GROUND` (planche a grille reguliere).
 GROUND_CELL = 32
