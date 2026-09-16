@@ -128,6 +128,11 @@ class Player(arcade.Sprite):
         return self._dash_timer > 0.0
 
     @property
+    def is_high_speed(self) -> bool:
+        """True tant que la vitesse horizontale reste proche d'un dash."""
+        return abs(self.change_x) >= settings.PLAYER_DASH_SPEED * settings.PARTICLE_HIGH_SPEED_RATIO
+
+    @property
     def dash_ratio(self) -> float:
         """1.0 = dash pret, 0.0 = vient d'etre utilise."""
         cooldown = settings.PLAYER_DASH_COOLDOWN
@@ -336,7 +341,7 @@ class Player(arcade.Sprite):
             self.change_x,
             self.change_y,
             delta_time,
-            active=self.is_dashing,
+            active=self.is_dashing or self.is_high_speed,
         )
         self._dust.update(delta_time)
 
@@ -367,11 +372,8 @@ class Player(arcade.Sprite):
             self.change_y = -max_fall
 
     def _tick_run_dust(self, delta_time: float) -> None:
-        if self.is_dashing:
-            self._dust.stop_run()
-            return
         full_speed = abs(self.change_x) >= settings.PLAYER_SPEED * settings.PARTICLE_RUN_SPEED_RATIO
-        if not full_speed or self._move_dir == 0:
+        if not full_speed:
             self._dust.stop_run()
             return
         behind_x = self.center_x - self.facing * (self.width * 0.55)

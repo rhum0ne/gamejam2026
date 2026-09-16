@@ -211,6 +211,8 @@ PARTICLE_LAND_GRAVITY = 480.0
 PARTICLE_LAND_SIZE_MIN = 3.5
 PARTICLE_LAND_SIZE_MAX = 7.5
 PARTICLE_RUN_SPEED_RATIO = 0.88  # fraction de PLAYER_SPEED pour declencher
+# Trainee de dash tant que la vitesse reste nettement au-dessus de la course.
+PARTICLE_HIGH_SPEED_RATIO = 0.45  # fraction de PLAYER_DASH_SPEED
 PARTICLE_RUN_INTERVAL = 0.040  # secondes entre deux grains
 PARTICLE_RUN_LIFE = 0.28
 PARTICLE_RUN_SPEED_X = 55.0
