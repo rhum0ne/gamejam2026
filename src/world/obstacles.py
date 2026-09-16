@@ -20,7 +20,7 @@ from dataclasses import dataclass
 import arcade
 
 import settings
-from src.entities.glow import draw_glow
+from src.entities.glow import draw_glow, draw_threat_glow
 from src.entities.particles import SoulBurst
 from src.ui import sprites
 
@@ -182,31 +182,8 @@ class Spike(arcade.Sprite):
         sprites.apply_rect_hit_box(self, size, hit_height, offset_y=offset_y)
 
     def draw_ghost_glow(self, *, bind_blend: bool = True) -> None:
-        """Halo rouge, dessine sous le voile pour fondre avec le terrain."""
-        pulse = 1.0 + settings.SPIKE_GHOST_GLOW_PULSE * math.sin(
-            time.perf_counter() * settings.SPIKE_GHOST_GLOW_PULSE_SPEED
-            + self.center_x * 0.11
-            + self.center_y * 0.07
-        )
-        size = self._tile_size
-        draw_glow(
-            self.center_x,
-            self.center_y,
-            size * settings.SPIKE_GHOST_GLOW_SCALE,
-            size * settings.SPIKE_GHOST_GLOW_SCALE,
-            settings.COLOR_SPIKE_GLOW,
-            int(settings.SPIKE_GHOST_GLOW_ALPHA * pulse),
-            bind_blend=bind_blend,
-        )
-        draw_glow(
-            self.center_x,
-            self.center_y,
-            size * settings.SPIKE_GHOST_GLOW_INNER_SCALE,
-            size * settings.SPIKE_GHOST_GLOW_INNER_SCALE,
-            settings.COLOR_SPIKE_GLOW_CORE,
-            int(settings.SPIKE_GHOST_GLOW_INNER_ALPHA * pulse),
-            bind_blend=bind_blend,
-        )
+        """Halo rouge identique aux ennemis, visible a travers le voile."""
+        draw_threat_glow(self.center_x, self.center_y, bind_blend=bind_blend)
 
     def start_fall(self) -> None:
         """Detache la pique du plafond : elle devient un projectile mortel."""
