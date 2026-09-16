@@ -354,7 +354,8 @@ PLAYER_AIR_CONTROL = 1.15
 PLAYER_LANDING_SLOW_TIME = 0.12
 PLAYER_LANDING_SPEED_SCALE = 0.86
 # Dash horizontal (Shift), vitesse en px/frame, duree et recharge en secondes.
-PLAYER_DASH_SPEED = 30.0
+# ~2x la course : un burst court, pas une teleportation.
+PLAYER_DASH_SPEED = 22.0
 PLAYER_DASH_DURATION = 0.12
 PLAYER_DASH_COOLDOWN = 3.0
 PLAYER_DASH_READY_FLASH = 0.38
@@ -416,7 +417,7 @@ PARTICLE_LAND_SIZE_MIN = 3.5
 PARTICLE_LAND_SIZE_MAX = 7.5
 PARTICLE_RUN_SPEED_RATIO = 0.88  # fraction de PLAYER_SPEED pour declencher
 # Trainee de dash tant que la vitesse reste nettement au-dessus de la course.
-PARTICLE_HIGH_SPEED_RATIO = 0.45  # fraction de PLAYER_DASH_SPEED
+PARTICLE_HIGH_SPEED_RATIO = 0.70  # fraction de PLAYER_DASH_SPEED (au-dessus de la course)
 PARTICLE_RUN_INTERVAL = 0.040  # secondes entre deux grains
 PARTICLE_RUN_LIFE = 0.28
 PARTICLE_RUN_SPEED_X = 55.0
@@ -708,9 +709,14 @@ CAMERA_DASH_SHAKE_TIME = 0.18
 # Zoom : > 1.0 rapproche (corps), < 1.0 eloigne (fantome). La transition entre
 # les deux, lissee par CAMERA_ZOOM_SMOOTH_TIME, donne l'effet de projection
 # hors du corps (la camera recule) quand on passe humain -> fantome.
-CAMERA_ZOOM_PLAYER = 2.4
+CAMERA_ZOOM_PLAYER = 1.9
+# Leger recul pendant le dash (plus petit = plus de monde a l'ecran).
+CAMERA_ZOOM_DASH = 2.08
 CAMERA_ZOOM_GHOST = 0.92
 CAMERA_ZOOM_SMOOTH_TIME = 0.55
+# Zoom du dash : plus vif que la transition corps/fantome, pour que le recul
+# se lise sur les ~0.12 s du burst.
+CAMERA_DASH_ZOOM_TIME = 0.09
 # Mort -> fantome : gros plan rapide, secousse + particules, puis recul.
 CAMERA_ZOOM_DEATH = 3.0
 DEATH_ZOOM_IN_TIME = 0.28
