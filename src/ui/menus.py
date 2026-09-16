@@ -15,7 +15,7 @@ from src.systems.game_state import GameSession, PlayView
 from src.ui import keys
 from src.ui.display import handle_display_key, use_default_camera
 from src.ui.fonts import PIXEL_FONT
-from src.world.level import LevelFormatError
+from src.world.level import peek_level_info, LevelFormatError
 
 _TEXT_CACHE: dict[tuple, arcade.Text] = {}
 _TEXT_CACHE_LIMIT = 256
@@ -126,9 +126,103 @@ class TitleView(_HeldKeysMixin, arcade.View):
             return
         if symbol in (arcade.key.ENTER, arcade.key.RETURN, arcade.key.NUM_ENTER, arcade.key.SPACE):
             self.session.restart()
+            self.window.show_view(LevelIntroView(self.session))
             open_play_view(self.window, self.session)
         elif symbol == arcade.key.ESCAPE:
             self.window.close()
+
+
+class LevelIntroView(_HeldKeysMixin, arcade.View):
+    """Ecran noir affichant le nom (et le sous-titre) du niveau a venir.
+
+    Insere entre deux niveaux (et avant le tout premier) : le nom vient de
+    `session.level_file`, lu via `peek_level_info` pour ne pas construire tout
+    le niveau juste pour afficher son titre. Un appui sur une touche saute le
+    fondu et enchaine directement sur `PlayView`, qui charge le niveau pour de
+    vrai.
+    """
+
+    def __init__(self, session: GameSession) -> None:
+        super().__init__()
+        self.background_color = (0, 0, 0)
+        self.session = session
+        self.title, self.subtitle = peek_level_info(session.level_file)
+        self._elapsed = 0.0
+        self._title_text = arcade.Text(
+            self.title,
+            0,
+            0,
+            settings.COLOR_MENU_TITLE,
+            font_size=settings.LEVEL_INTRO_TITLE_SIZE,
+            anchor_x="center",
+            anchor_y="center",
+            font_name=PIXEL_FONT,
+        )
+        self._subtitle_text = (
+            arcade.Text(
+                self.subtitle,
+                0,
+                0,
+                settings.COLOR_MENU_HINT,
+                font_size=settings.LEVEL_INTRO_SUBTITLE_SIZE,
+                anchor_x="center",
+                anchor_y="center",
+                font_name=PIXEL_FONT,
+            )
+            if self.subtitle
+            else None
+        )
+
+    def on_show_view(self) -> None:
+        use_default_camera(self.window)
+
+    @property
+    def _duration(self) -> float:
+        return settings.LEVEL_INTRO_FADE_TIME * 2 + settings.LEVEL_INTRO_HOLD_TIME
+
+    def _alpha(self) -> float:
+        fade = max(settings.LEVEL_INTRO_FADE_TIME, 0.001)
+        hold_end = fade + settings.LEVEL_INTRO_HOLD_TIME
+        if self._elapsed < fade:
+            return self._elapsed / fade
+        if self._elapsed < hold_end:
+            return 1.0
+        return max(0.0, (self._duration - self._elapsed) / fade)
+
+    def on_draw(self) -> None:
+        self.clear()
+        width, height = self.window.width, self.window.height
+        alpha = int(255 * self._alpha())
+        self._title_text.x = width / 2
+        self._title_text.y = height * 0.54
+        self._title_text.color = (*settings.COLOR_MENU_TITLE, alpha)
+        self._title_text.draw()
+        if self._subtitle_text is not None:
+            self._subtitle_text.x = width / 2
+            self._subtitle_text.y = height * 0.46
+            self._subtitle_text.color = (*settings.COLOR_MENU_HINT, alpha)
+            self._subtitle_text.draw()
+
+    def on_update(self, delta_time: float) -> None:
+        self._elapsed += delta_time
+        if self._elapsed >= self._duration:
+            self._advance()
+
+    def on_key_press(self, symbol: int, modifiers: int) -> None:
+        self.held_keys.add(symbol)
+        if handle_display_key(self.window, symbol, modifiers):
+            return
+        if symbol in (
+            arcade.key.ENTER,
+            arcade.key.RETURN,
+            arcade.key.NUM_ENTER,
+            arcade.key.SPACE,
+            arcade.key.ESCAPE,
+        ):
+            self._advance()
+
+    def _advance(self) -> None:
+        self.window.show_view(PlayView(self.session))
 
 
 class GameOverView(_HeldKeysMixin, arcade.View):
