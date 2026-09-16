@@ -1,0 +1,29 @@
+{
+  "name": "Niveau 2",
+  "hint": "",
+  "tile_size": 32,
+  "legend": {
+    ".": "vide",
+    "[": "wall",
+    "]": "wall",
+    "-": "wall",
+    "D": "door",
+    "K": "key",
+    "P": "player_spawn",
+    "i": "torch",
+    "T": "wall"
+  },
+  "rows": [
+    "[TTTTTTTTTTTTT]",
+    "T.............T",
+    "T.............T",
+    "T......TTT....T",
+    "T......TKT....T",
+    "T......TTT....T",
+    "T.............T",
+    "T..i...i...i..T",
+    "T.............T",
+    "T.P..........DT",
+    "T-------------T"
+  ]
+}

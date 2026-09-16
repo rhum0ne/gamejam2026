@@ -15,6 +15,7 @@ from collections import deque
 from dataclasses import dataclass, field
 
 import settings
+from src.editor.activators import Activator
 
 
 @dataclass(frozen=True, slots=True)
@@ -50,16 +51,23 @@ class Edit:
     changes: tuple[CellChange, ...] = ()
     before: GridState | None = None
     after: GridState | None = None
+    activators_before: tuple[Activator, ...] | None = None
+    activators_after: tuple[Activator, ...] | None = None
 
     @property
     def reshapes(self) -> bool:
         """Indique si l'action change la forme de la grille."""
         return self.before is not None and self.after is not None
 
+    @property
+    def retargets(self) -> bool:
+        """Indique si l'action change les plaques / liens."""
+        return self.activators_before is not None and self.activators_after is not None
+
     def __post_init__(self) -> None:
         if not self.label:
             raise ValueError("label ne doit pas etre vide")
-        if not self.changes and not self.reshapes:
+        if not self.changes and not self.reshapes and not self.retargets:
             raise ValueError("une action doit changer au moins une cellule")
 
 

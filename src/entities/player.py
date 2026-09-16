@@ -22,12 +22,21 @@ from src.entities.trail import PointTrail
 from src.ui import sprites
 
 
-def _idle_animation() -> sprites.StripAnimation:
-    frames = sprites.load_strip(
+def _idle_frames() -> tuple[arcade.Texture, ...]:
+    return sprites.load_strip(
         settings.SPRITE_PLAYER_IDLE,
         settings.SPRITE_FRAME_SIZE,
         scale=settings.ENTITY_SCALE,
     )
+
+
+def _idle_still_animation(frames: tuple[arcade.Texture, ...]) -> sprites.StripAnimation:
+    """Pose figee : premiere frame, sans respiration."""
+    return sprites.StripAnimation((frames[0],), settings.ANIM_IDLE_FRAME_TIME, loop=True)
+
+
+def _idle_breathe_animation(frames: tuple[arcade.Texture, ...]) -> sprites.StripAnimation:
+    """Idle qui respire, reserve au cooldown du dash."""
     return sprites.StripAnimation(frames, settings.ANIM_IDLE_FRAME_TIME, loop=True)
 
 
@@ -65,30 +74,37 @@ class Player(arcade.Sprite):
     """Corps physique controle au clavier."""
 
     def __init__(self, center_x: float, center_y: float) -> None:
-        self._idle = _idle_animation()
+        idle_frames = _idle_frames()
+        self._idle_still = _idle_still_animation(idle_frames)
+        self._idle_breathe = _idle_breathe_animation(idle_frames)
         self._walk = _walk_animation()
         self._attack = _attack_animation()
-        super().__init__(self._idle.textures[0], center_x=center_x, center_y=center_y)
+        super().__init__(self._idle_still.textures[0], center_x=center_x, center_y=center_y)
         sprites.apply_rect_hit_box(
             self,
-            settings.PLAYER_WIDTH * settings.ENTITY_SCALE,
+            settings.PLAYER_HITBOX_WIDTH * settings.ENTITY_SCALE,
             settings.PLAYER_HEIGHT * settings.ENTITY_SCALE,
         )
-        self._animator = sprites.Animator(self._idle)
+        self._animator = sprites.Animator(self._idle_still)
         self._attack_animator = sprites.Animator(self._attack, speed=1.0)
         self.alive = True
         self.facing = 1
         self.inventory: set[ItemKind] = set()
         self.respawn_point: tuple[float, float] = (center_x, center_y)
         self._physics: arcade.PhysicsEnginePlatformer | None = None
+        self._solids: list[arcade.SpriteList] = []
         self._time_off_ground = 0.0
         self._place_on_tile(center_x, center_y)
         self._was_on_ground = True
+        self._jump_held = False
+        self._jump_buffer = 0.0
         self._move_dir = 0
         self._landing_timer = 0.0
         self._dash_timer = 0.0
         self._dash_dir = 1
         self._dash_cooldown = 0.0
+        self._dash_from_ground = False
+        self._dash_jump = False
         self._ready_flash = 0.0
         self._dust = DustParticles()
         self._dash_trail = PointTrail(
@@ -124,6 +140,9 @@ class Player(arcade.Sprite):
             platforms=list(platforms) if platforms else None,
             gravity_constant=settings.PLAYER_GRAVITY,
         )
+        self._solids = list(walls)
+        if platforms:
+            self._solids.extend(platforms)
 
     def _place_on_tile(self, center_x: float, center_y: float) -> None:
         """Pose les pieds sur le bas de la tuile dont `center` est le milieu."""
@@ -141,6 +160,11 @@ class Player(arcade.Sprite):
     @property
     def is_dashing(self) -> bool:
         return self._dash_timer > 0.0
+
+    @property
+    def is_high_speed(self) -> bool:
+        """True tant que la vitesse horizontale reste proche d'un dash."""
+        return abs(self.change_x) >= settings.PLAYER_DASH_SPEED * settings.PARTICLE_HIGH_SPEED_RATIO
 
     @property
     def dash_ratio(self) -> float:
@@ -246,7 +270,11 @@ class Player(arcade.Sprite):
         self.change_x = 0.0
         self.change_y = 0.0
         self._move_dir = 0
+        self._jump_held = False
+        self._jump_buffer = 0.0
         self._dash_timer = 0.0
+        self._dash_from_ground = False
+        self._dash_jump = False
         self._landing_timer = 0.0
         self._dust.clear()
         self._dash_trail.clear()
@@ -266,10 +294,14 @@ class Player(arcade.Sprite):
         self.change_y = 0.0
         self._time_off_ground = 0.0
         self._was_on_ground = True
+        self._jump_held = False
+        self._jump_buffer = 0.0
         self._move_dir = 0
         self._landing_timer = 0.0
         self._dash_timer = 0.0
         self._dash_cooldown = 0.0
+        self._dash_from_ground = False
+        self._dash_jump = False
         self._ready_flash = 0.0
         self._dust.clear()
         self._dash_trail.clear()
@@ -303,22 +335,26 @@ class Player(arcade.Sprite):
         else:
             self._dash_dir = self.facing
         self.facing = self._dash_dir
+        self._dash_from_ground = self._time_off_ground <= settings.PLAYER_COYOTE_TIME
+        self._dash_jump = False
         self._dash_timer = settings.PLAYER_DASH_DURATION
         self._dash_cooldown = settings.PLAYER_DASH_COOLDOWN
         self._ready_flash = 0.0
         self.change_x = self._dash_dir * settings.PLAYER_DASH_SPEED
+        if self._dash_from_ground and self._jump_held and self._can_start_jump():
+            self._start_jump()
         return True
 
     def jump(self) -> bool:
-        """Tente un saut. Retourne True si le saut a ete declenche."""
+        """Tente un saut, ou le met en buffer si on est encore en l'air."""
         if not self.alive or self._physics is None:
             return False
-        if self._time_off_ground > settings.PLAYER_COYOTE_TIME:
-            return False
-        self._physics.jump(settings.PLAYER_JUMP_SPEED)
-        self._time_off_ground = settings.PLAYER_COYOTE_TIME + 1.0
-        self._was_on_ground = False
-        return True
+        self._jump_held = True
+        if self._can_start_jump():
+            self._start_jump()
+            return True
+        self._jump_buffer = settings.PLAYER_JUMP_BUFFER
+        return False
 
     def attack(self) -> bool:
         """Lance un coup ou memorise le clic pour enchainer le suivant."""
@@ -383,9 +419,27 @@ class Player(arcade.Sprite):
         sprites.apply_facing(self, self.facing)
 
     def cut_jump(self) -> None:
-        """Ecourte le saut quand la touche est relachee (saut a hauteur variable)."""
-        if self.change_y > 0 and not self.is_dashing:
-            self.change_y *= 0.4
+        """Arrete de maintenir : la gravite de coupe ecourte la montee."""
+        self._jump_held = False
+
+    def _can_start_jump(self) -> bool:
+        if self._physics is None:
+            return False
+        return self._time_off_ground <= settings.PLAYER_COYOTE_TIME
+
+    def _start_jump(self) -> None:
+        if self._physics is None:
+            return
+        speed = settings.PLAYER_JUMP_SPEED
+        max_speed = max(settings.PLAYER_SPEED, 0.001)
+        run = min(1.0, abs(self.change_x) / max_speed)
+        speed += settings.PLAYER_JUMP_RUN_BONUS * run
+        self._physics.jump(speed)
+        self._jump_buffer = 0.0
+        self._time_off_ground = settings.PLAYER_COYOTE_TIME + 1.0
+        self._was_on_ground = False
+        if self.is_dashing and self._dash_from_ground:
+            self._dash_jump = True
 
     def draw_fx(self) -> None:
         """Trainee de points du dash, halo, et anneau 'dash pret'."""
@@ -440,23 +494,28 @@ class Player(arcade.Sprite):
                 self._attack_sound_events.append(self._attack_stage)
         elif abs(self.change_x) > 0.05:
             self._animator.play(self._walk)
-            self.texture = self._animator.update(delta_time)
+        elif self._dash_cooldown > 0.0:
+            self._animator.play(self._idle_breathe)
         else:
-            self._animator.play(self._idle)
-            self.texture = self._animator.update(delta_time)
+            self._animator.play(self._idle_still)
+        self.texture = self._animator.update(delta_time)
         sprites.apply_facing(self, self.facing)
         self._tick_dash(delta_time)
         if self.is_dashing:
             self.change_x = self._dash_dir * settings.PLAYER_DASH_SPEED
         else:
             self._apply_horizontal(delta_time)
+        if self._jump_buffer > 0.0 and self._can_start_jump():
+            self._start_jump()
+        self._apply_jump_gravity()
         self._cap_fall_speed()
         fall_speed = max(0.0, -self.change_y)
         self._physics.update()
         self._cap_fall_speed()
         grounded = self._physics.can_jump()
         if grounded and not self._was_on_ground:
-            self._landing_timer = settings.PLAYER_LANDING_SLOW_TIME
+            if not self._standing_on_ice():
+                self._landing_timer = settings.PLAYER_LANDING_SLOW_TIME
             self._dust.emit_landing(
                 self.center_x,
                 self.bottom,
@@ -466,20 +525,42 @@ class Player(arcade.Sprite):
         self._was_on_ground = grounded
         if grounded:
             self._time_off_ground = 0.0
+            self._dash_jump = False
             self._landing_timer = max(0.0, self._landing_timer - delta_time)
             self._tick_run_dust(delta_time)
         else:
             self._time_off_ground += delta_time
             self._dust.stop_run()
+        self._tick_jump_buffer(delta_time)
         self._dash_trail.follow(
             self.center_x,
             self.center_y,
             self.change_x,
             self.change_y,
             delta_time,
-            active=self.is_dashing,
+            active=self.is_dashing or self.is_high_speed,
         )
         self._dust.update(delta_time)
+
+    def _tick_jump_buffer(self, delta_time: float) -> None:
+        if self._jump_buffer > 0.0:
+            self._jump_buffer = max(0.0, self._jump_buffer - delta_time)
+
+    def _apply_jump_gravity(self) -> None:
+        """Arc Mario : montee tenue, coupe analogique, descente un peu plus lourde."""
+        if self.is_dashing and not self._dash_jump:
+            return
+        if self.change_y > 0:
+            target = (
+                settings.PLAYER_JUMP_RISE_GRAVITY
+                if self._jump_held
+                else settings.PLAYER_JUMP_CUT_GRAVITY
+            )
+        else:
+            target = settings.PLAYER_JUMP_FALL_GRAVITY
+        extra = target - settings.PLAYER_GRAVITY
+        if extra > 0.0:
+            self.change_y -= extra
 
     def _cap_fall_speed(self) -> None:
         """Plafonne la vitesse de chute (change_y negatif)."""
@@ -488,11 +569,8 @@ class Player(arcade.Sprite):
             self.change_y = -max_fall
 
     def _tick_run_dust(self, delta_time: float) -> None:
-        if self.is_dashing:
-            self._dust.stop_run()
-            return
         full_speed = abs(self.change_x) >= settings.PLAYER_SPEED * settings.PARTICLE_RUN_SPEED_RATIO
-        if not full_speed or self._move_dir == 0:
+        if not full_speed or self._standing_on_ice():
             self._dust.stop_run()
             return
         behind_x = self.center_x - self.facing * (self.width * 0.55)
@@ -501,7 +579,7 @@ class Player(arcade.Sprite):
     def _tick_dash(self, delta_time: float) -> None:
         if self._dash_timer > 0.0:
             self._dash_timer = max(0.0, self._dash_timer - delta_time)
-            if self._dash_timer == 0.0:
+            if self._dash_timer == 0.0 and not self._dash_jump:
                 self.change_x = self._dash_dir * settings.PLAYER_SPEED
         was_cooling = self._dash_cooldown > 0.0
         if was_cooling:
@@ -513,18 +591,25 @@ class Player(arcade.Sprite):
 
     def _apply_horizontal(self, delta_time: float) -> None:
         grounded = self._was_on_ground
-        landing = grounded and self._landing_timer > 0.0
+        on_ice = grounded and self._standing_on_ice()
+        landing = grounded and self._landing_timer > 0.0 and not on_ice
         max_speed = settings.PLAYER_SPEED * (
             settings.PLAYER_LANDING_SPEED_SCALE if landing else 1.0
         )
         accel = max_speed / max(settings.PLAYER_ACCEL_TIME, 0.001)
+        if on_ice:
+            accel *= settings.PLAYER_ICE_ACCEL_SCALE
         direction = self._move_dir
         if grounded:
             if direction == 0:
-                self.change_x += (0.0 - self.change_x) * _exp_alpha(
-                    delta_time, settings.PLAYER_SLIDE_TIME
+                slide = (
+                    settings.PLAYER_ICE_SLIDE_TIME if on_ice else settings.PLAYER_SLIDE_TIME
                 )
-                if abs(self.change_x) < 0.18:
+                self.change_x += (0.0 - self.change_x) * _exp_alpha(delta_time, slide)
+                stop = (
+                    settings.PLAYER_ICE_STOP_SPEED if on_ice else 0.18
+                )
+                if abs(self.change_x) < stop:
                     self.change_x = 0.0
                 return
             if self.change_x * direction < 0.0:
@@ -532,8 +617,33 @@ class Player(arcade.Sprite):
             self.change_x = _approach(self.change_x, direction * max_speed, accel * delta_time)
             return
         if direction == 0:
+            if not self._dash_jump:
+                self.change_x += (0.0 - self.change_x) * _exp_alpha(
+                    delta_time, settings.PLAYER_AIR_BRAKE_TIME
+                )
             return
-        air_accel = accel * settings.PLAYER_AIR_CONTROL
-        self.change_x = _approach(
-            self.change_x, direction * settings.PLAYER_SPEED, air_accel * delta_time
+        air_cap = (
+            settings.PLAYER_DASH_SPEED if self._dash_jump else settings.PLAYER_SPEED
         )
+        air_accel = accel * settings.PLAYER_AIR_CONTROL
+        if self.change_x * direction < 0.0:
+            air_accel *= settings.PLAYER_AIR_TURN_BOOST
+        self.change_x = _approach(
+            self.change_x, direction * air_cap, air_accel * delta_time
+        )
+
+    def _standing_on_ice(self) -> bool:
+        """True si un pied repose sur un bloc `slippery`."""
+        if not self._solids:
+            return False
+        probes = (
+            (self.center_x, self.bottom - 2),
+            (self.center_x - self.width * 0.28, self.bottom - 2),
+            (self.center_x + self.width * 0.28, self.bottom - 2),
+        )
+        for group in self._solids:
+            for probe_x, probe_y in probes:
+                for sprite in arcade.get_sprites_at_point((probe_x, probe_y), group):
+                    if getattr(sprite, "slippery", False):
+                        return True
+        return False

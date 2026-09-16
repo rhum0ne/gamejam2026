@@ -39,7 +39,12 @@ FONT_FILE = FONTS_DIR / "PressStart2P-Regular.ttf"
 FONT_PIXEL = "Press Start 2P"
 
 # Ordre de parcours des niveaux : le nom du fichier dans assets/maps/.
-LEVEL_SEQUENCE: tuple[str, ...] = ("level_1_tuto.json",)
+LEVEL_SEQUENCE: tuple[str, ...] = (
+    "level_1_tuto.json",
+    "Niveau_1.json",
+    "Niveau_2.json",
+    "Niveau_3.json",
+)
 
 # --------------------------------------------------------------------------- #
 # Fenetre
@@ -73,19 +78,14 @@ RENDER_CHUNK_TILES = 16
 # chunk de 512 px apparait d'un coup au bord de l'ecran.
 RENDER_CULL_PAD = 120.0
 
-# Noms de fichiers dans SPRITES_DIR, sans extension. La legende d'une carte
-# JSON reprend ces noms (ou un alias : rock, dirt). Le chargeur ajoute `.png`.
-SPRITE_DIRT = "dirt_1"
-SPRITE_BEDROCK = "bedrock"
-SPRITE_ROCK_1 = "rock_1"
-SPRITE_ROCK_2 = "rock_2"
-SPRITE_GRASS = "grass"
-SPRITE_GRASS_VARIANT = "grass_1"
-SPRITE_GRASS_CORNER = "grass_corner"
-SPRITE_DIRT_TOP = "dirt_top"
-SPRITE_DIRT_CORNER = "dirt_corner"
-SPRITE_DIRT_CORNER_RIGHT = "dirt_corner_right"
-SPRITE_DIRT_FLOATING = "dirt_floating_block"
+# Identifiants de TYPE de tuile (legende JSON / TILE_SPECS). Ce ne sont PAS
+# des noms de fichiers sprite : les confondre cassait le chargeur.
+TILE_KIND_ICE = "ice_block"
+
+# Noms de fichiers dans SPRITES_DIR, sans extension. Le chargeur ajoute `.png`.
+# Le terrain (dirt/grass/...) vient desormais de `SHEET_GROUND` plus bas
+# (planche "new_textures") : les anciens PNG individuels (dirt_1.png,
+# grass.png, ...) restent dans `assets/sprites/` mais ne sont plus charges.
 SPRITE_SPIKE = "spike"
 SPRITE_SPIKE_HANGING = "spike_up"
 # Bandeaux d'entites (fichiers tels quels, y compris le typo "gost").
@@ -95,10 +95,11 @@ SPRITE_PLAYER_ATTACK = "player_attack_1"
 SPRITE_GHOST_WALK = "gost_walk"
 SPRITE_GHOST_DISAPPEAR = "gost_disappears"
 SPRITE_KEY = "key"
-SPRITE_CHECKPOINT = "Check_Point"
-SPRITE_CHECKPOINT_ACTIVE = "Check_Point_actif"
-# PNG natif 32 px, agrandi x2 en nearest-neighbor (pas de flou).
-CHECKPOINT_SIZE = TILE_SIZE * 2
+SPRITE_CHECKPOINT = "phoenix_resurrection-desactive"
+SPRITE_CHECKPOINT_ACTIVE = "phoenix_resurrection-active"
+SPRITE_FLAMETHROWER = "Lance_flamme"
+# Art natif 125 px ; affiche ~3 tuiles, pieds cales sur la case.
+CHECKPOINT_SIZE = TILE_SIZE * 3
 SPRITE_FRAME_SIZE = 32
 # Taille a l'ecran des sprites joueur / fantome (1.0 = 32 px).
 # L'agrandissement est fait en nearest-neighbor dans `load_strip`.
@@ -125,6 +126,135 @@ TORCH_FLICKER = 0.16
 TORCH_FLICKER_SPEED = 8.4
 TORCH_FLICKER_SPEED_FAST = 19.0
 
+# --------------------------------------------------------------------------- #
+# Planches "new_textures" (pack de remplacement des tuiles de terrain)
+# --------------------------------------------------------------------------- #
+
+NEW_TEXTURES_DIR = SPRITES_DIR / "new_textures"
+SHEET_GROUND = NEW_TEXTURES_DIR / "TX Tileset Ground.png"
+SHEET_PROPS = NEW_TEXTURES_DIR / "TX Village Props.png"
+SHEET_CHEST = NEW_TEXTURES_DIR / "TX Chest Animation.png"
+
+# Taille native d'une case de `SHEET_GROUND` (planche a grille reguliere).
+GROUND_CELL = 32
+
+# Auto-tiling du terrain ("wall" : seule matiere terre/roche du jeu, symbole
+# "#" dans une carte). `obstacles.terrain_texture` choisit la case a afficher
+# selon les 8 voisines : voir `obstacles.compute_ground_cells`. Le level
+# designer ne pose qu'un seul type de mur ; le rendu se charge du reste.
+#
+# Toutes les coordonnees ci-dessous sont des cases (colonne, ligne) de
+# GROUND_CELL px, (0,0) = coin haut-gauche de la planche `SHEET_GROUND`.
+# La planche est une fresque 16x16 : beaucoup de cases "de scene" sont vides
+# ou entaillees et ne tuilent pas. Cases du mapping absentes de ce PNG :
+# (4,2), (5,3), (5,5), (6,0), (6,1), (6,2), (6,4), (7,4), (8,0), (9,4), (9,6),
+# (1,8), (1,9), (1,10), (1,11), (3,8), (3,9), (0,11), (4,4).
+#
+# 1) Carre 3x3 en haut a gauche = case CANONIQUE de la masse profonde :
+#
+#            colonne 0          colonne 1           colonne 2
+#            (rien a gauche)    (encadree)          (rien a droite)
+#   rangee 0 : Coin Sombre HG   Bord Sombre Haut    Coin Sombre HD
+#   rangee 1 : Bord Sombre G    Centre Sombre       Bord Sombre D
+#   rangee 2 : Coin Sombre BG   Bord Sombre Bas     Coin Sombre BD
+#
+# 2) Terre, dessous et plateformes ont un POOL de variantes (position
+#    deterministe, meme rendu jeu/editeur). La crete de pelouse reste
+#    Bord Sombre Haut, sans fragment de fresque.
+GROUND_ROW_GRASS = 0  # rien au-dessus -> Bord Sombre Haut
+GROUND_ROW_DIRT = 1  # enterree des deux cotes -> Centre Sombre
+GROUND_ROW_BOTTOM = 2  # rien en dessous -> Bord Sombre Bas
+GROUND_COL_LEFT = 0  # rien a gauche
+GROUND_COL_MID = 1  # encadree des deux cotes
+GROUND_COL_RIGHT = 2  # rien a droite
+
+# Cas particuliers hors du carre 3x3, cf. `obstacles._base_ground_cell`.
+# (4,2) Petit Bloc Herbe est vide : (4,3) est le bloc herbe isole disponible.
+GROUND_SOLO = (4, 3)
+
+# Colonne d'UNE tuile de large. (6,0)/(6,1)/(6,2) Sommet/Milieu/Base Fine
+# Colonne sont vides : on prend le pilier gauche, deja un sprite d'une tuile
+# de large (bords arrondis). (0,11) Base Pilier est vide, (0,10) sert de pied.
+GROUND_PILLAR_TOP = (0, 8)
+GROUND_PILLAR_MID = (0, 9)
+GROUND_PILLAR_BOTTOM = (0, 10)
+
+# Plateforme fine (une seule tuile de haut).
+GROUND_PLATFORM_LEFT = (0, 12)
+GROUND_PLATFORM_MID = (1, 12)
+GROUND_PLATFORM_RIGHT = (2, 12)
+
+# Bloc creux / tunnel (anneau 0-2 x 4-6, trou en (1,5)).
+GROUND_CAVE_CEILING_LEFT = (0, 4)  # Coin Plafond HG
+GROUND_CAVE_CEILING = (1, 4)  # Plafond Tunnel
+GROUND_CAVE_CEILING_RIGHT = (2, 4)  # Coin Plafond HD
+GROUND_CAVE_WALL_LEFT = (0, 5)  # Mur Tunnel Gauche
+GROUND_CAVE_WALL_RIGHT = (2, 5)  # Mur Tunnel Droit
+GROUND_CAVE_FLOOR_LEFT = (0, 6)  # Coin Sol Herbe BG
+GROUND_CAVE_FLOOR = (1, 6)  # Sol Herbe Tunnel
+GROUND_CAVE_FLOOR_RIGHT = (2, 6)  # Coin Sol Herbe BD
+
+# Coins interieurs d'un trou enterre (memes sprites que le tunnel).
+GROUND_INNER_BOTTOM_RIGHT = GROUND_CAVE_CEILING_LEFT  # trou en SE
+GROUND_INNER_BOTTOM_LEFT = GROUND_CAVE_CEILING_RIGHT  # trou en SW
+GROUND_INNER_TOP_RIGHT = GROUND_CAVE_FLOOR_LEFT  # trou en NE, grotte seulement
+GROUND_INNER_TOP_LEFT = GROUND_CAVE_FLOOR_RIGHT  # trou en NW, grotte seulement
+
+# Ilot 2x2 flottant (coins arrondis, transparence volontaire).
+GROUND_ISLAND_TL = (12, 0)
+GROUND_ISLAND_TR = (13, 0)
+GROUND_ISLAND_BL = (12, 1)
+GROUND_ISLAND_BR = (13, 1)
+
+# La crete marchable d'une masse profonde est TOUJOURS Bord Sombre Haut
+# (1,0). Les cases (8,3)/(10,3)/(11,3)/(12,3)/(13,3) ont de l'herbe mais
+# un profil different (fresque) : en variante, elles cassent la ligne de
+# surface. Pas de pool : `_pick_variant` laisse (1,0) tel quel.
+GROUND_SURFACE_VARIANTS = ((1, 0),)
+# Terre pleine uniforme : aucun caillou, aucune herbe, aucun plafond estompe.
+# (10,5) a des rochers jaunes : en variante de fill, ca poivrait la masse.
+GROUND_DIRT_VARIANTS = (
+    (1, 1),
+    (11, 4),
+    (12, 4),
+    (12, 7),
+    (5, 10),
+)
+# Dessous a l'air libre, sans herbe (les cases (5,15)/(9,15) sont des sols
+# herbeux de la fresque : au plafond du monde elles affichaient de l'herbe).
+GROUND_BOTTOM_VARIANTS = ((1, 2), (7, 15), (14, 15))
+# Plafond de grotte : uniquement le sprite du bloc creux, pas la fresque.
+GROUND_CAVE_CEILING_VARIANTS = (GROUND_CAVE_CEILING,)
+GROUND_SOLO_VARIANTS = (GROUND_SOLO, (9, 0))
+GROUND_PLATFORM_LEFT_VARIANTS = ((0, 12), (0, 14))
+GROUND_PLATFORM_MID_VARIANTS = ((1, 12), (1, 14))
+GROUND_PLATFORM_RIGHT_VARIANTS = ((2, 12), (2, 14))
+
+GROUND_BEDROCK = (11, 8)
+# Le socle (bordure indestructible) reprend une tuile hors du carre 3x3 de
+# "wall" et se voit assombri d'un cran : lisible comme "plus dur", distinct
+# du mur normal, sans nouvel asset.
+COLOR_BEDROCK_TINT = (176, 176, 184)
+
+# Les decoupages des props vivent dans `world/decorations.py`. Un pixel de
+# `SHEET_PROPS` vaut un pixel de `SHEET_GROUND` ; le jeu les affiche via
+# `TILE_SIZE / GROUND_CELL` (1.0 tant que les tuiles font 32 px).
+# Lance-flammes : le jet est un quad shader, pas des particules.
+FLAMETHROWER_RANGE = 4  # portee par defaut, en tuiles
+FLAMETHROWER_RANGE_MIN = 1
+FLAMETHROWER_RANGE_MAX = 12
+FLAMETHROWER_INTERVAL = 2.0  # periode complete allume/eteint, en secondes
+FLAMETHROWER_INTERVAL_MIN = 0.4
+FLAMETHROWER_INTERVAL_MAX = 8.0
+FLAMETHROWER_INTERVAL_STEP = 0.2
+FLAMETHROWER_ON_RATIO = 0.42  # fraction de la periode ou le jet est allume
+FLAMETHROWER_RAMP = 0.14  # fondu d'allumage / extinction
+FLAMETHROWER_LETHAL_INTENSITY = 0.28
+FLAMETHROWER_HEIGHT = 42.0  # epaisseur du jet, en pixels (braises, pas un laser)
+FLAMETHROWER_NOZZLE = 0.5  # depart du jet, en fraction de tuile depuis le centre (face avant)
+FLAMETHROWER_VISUAL_PAD = 32.0  # marge du quad (pointe et cotes) pour la calotte et le halo
+FLAMETHROWER_ALWAYS_ON = 0.0  # intervalle 0 = jet permanent
+
 
 # --------------------------------------------------------------------------- #
 # Physique du corps physique (joueur vivant)
@@ -133,6 +263,7 @@ TORCH_FLICKER_SPEED_FAST = 19.0
 GRAVITY = 1.0
 SPIKE_FALL_GRAVITY = GRAVITY
 SPIKE_FALL_MAX_SPEED = 14.0
+SPIKE_HITBOX_WIDTH_RATIO = 0.6
 # Halo des piques en mode fantome (visible a travers le voile).
 SPIKE_GHOST_GLOW_SCALE = 3.4
 SPIKE_GHOST_GLOW_ALPHA = 110
@@ -140,15 +271,44 @@ SPIKE_GHOST_GLOW_INNER_SCALE = 1.7
 SPIKE_GHOST_GLOW_INNER_ALPHA = 180
 SPIKE_GHOST_GLOW_PULSE = 0.14
 SPIKE_GHOST_GLOW_PULSE_SPEED = 3.2
+
+# Halo rouge des menaces (piques et ennemis), perce le voile fantome.
+# Gros, saturé, identique pour les deux : un signal DANGER, pas un point.
+HAZARD_GHOST_GLOW_SIZE = 260.0
+HAZARD_GHOST_GLOW_MID_SIZE = 128.0
+HAZARD_GHOST_GLOW_INNER_SIZE = 58.0
+HAZARD_GHOST_GLOW_ALPHA = 175
+HAZARD_GHOST_GLOW_MID_ALPHA = 210
+HAZARD_GHOST_GLOW_INNER_ALPHA = 245
+HAZARD_GHOST_GLOW_PULSE = 0.28
+HAZARD_GHOST_GLOW_PULSE_SPEED = 4.8
 PLAYER_WIDTH = SPRITE_FRAME_SIZE
 PLAYER_HEIGHT = SPRITE_FRAME_SIZE
-PLAYER_GRAVITY = 1  # un peu plus leger : saut legerement plus haut et plus lent
+# Largeur de hitbox (physique), plus etroite que PLAYER_WIDTH : le moteur ne
+# fait tomber le joueur qu'une fois la hitbox entiere passee du bord (les 2
+# "pieds" dans le vide) ; la caler sur toute la largeur des epaules (~18 px)
+# laisse pendre la moitie du sprite au-dessus du vide avant de tomber. Mesure
+# des pieds au sol sur player_idle/walk.png (dernieres lignes de la frame,
+# pose de repos) : x=[10,22] sur 32 (largeur ~13 px).
+# La hauteur reste PLAYER_HEIGHT (le saut/la gravite n'y touchent pas).
+PLAYER_HITBOX_WIDTH = 14
+PLAYER_GRAVITY = 0.40  # gravite de montee maintenue (le moteur l'applique toujours)
 PLAYER_SPEED = 5.5
-PLAYER_JUMP_SPEED = 18.0
-PLAYER_MAX_FALL_SPEED = 14.0  # px/frame, vitesse verticale max en chute
-PLAYER_COYOTE_TIME = 0.10  # secondes de tolerance pour sauter apres une chute
+# NSMB DS : impulsion nette, puis arc lent (~0.45 s au pic, ~4.5 tuiles).
+PLAYER_JUMP_SPEED = 8.8
+PLAYER_JUMP_RUN_BONUS = 1.8  # impulsion extra a pleine vitesse, comme un saut de course
+PLAYER_JUMP_RISE_GRAVITY = 0.40
+# Relacher augmente la gravite, sans ecraser la vitesse (hauteur analogique).
+PLAYER_JUMP_CUT_GRAVITY = 0.88
+PLAYER_JUMP_FALL_GRAVITY = 0.52  # un peu plus lourd a la descente
+PLAYER_MAX_FALL_SPEED = 6.5
+PLAYER_COYOTE_TIME = 0.12
+PLAYER_JUMP_BUFFER = 0.12
+# En l'air, on garde l'elan ; inverser la direction reste possible.
+PLAYER_AIR_BRAKE_TIME = 0.90
+PLAYER_AIR_TURN_BOOST = 1.35
 # PLAYER_RESPAWN_DELAY est la somme des phases REBIRTH_* (plus bas).
-# Eclat d'ames bleues sur le totem au moment du respawn.
+# Eclat d'ames bleues sur la statue au moment du respawn.
 CHECKPOINT_BURST_COUNT = 22
 CHECKPOINT_BURST_LIFE = 0.9
 CHECKPOINT_BURST_SPEED_X = 70.0
@@ -161,12 +321,35 @@ CHECKPOINT_BURST_GLOW_ALPHA = 150
 CHECKPOINT_BURST_CORE_ALPHA = 220
 CHECKPOINT_BURST_SPREAD = 10.0
 CHECKPOINT_BURST_MAX = 48
+# Halo de la statue : eteint au repos, flash a l'activation, pulse tant qu'elle est active.
+CHECKPOINT_GLOW_LIFT = 0.10  # fraction de la hauteur, vers le phenix
+CHECKPOINT_GLOW_WASH = 340.0  # nappe large, derriere la statue
+CHECKPOINT_GLOW_OUTER = 240.0
+CHECKPOINT_GLOW_MID = 118.0
+CHECKPOINT_GLOW_INNER = 44.0
+CHECKPOINT_GLOW_WIDTH_SCALE = 1.38  # halo plus large que haut
+CHECKPOINT_GLOW_WASH_ALPHA = 52
+CHECKPOINT_GLOW_ALPHA = 70
+CHECKPOINT_GLOW_MID_ALPHA = 108
+CHECKPOINT_GLOW_INNER_ALPHA = 145
+CHECKPOINT_GLOW_PULSE = 0.14
+CHECKPOINT_GLOW_PULSE_SPEED = 2.15
+CHECKPOINT_IGNITE_TIME = 0.9
+CHECKPOINT_IGNITE_PEAK = 2.15  # taille au pic du flash
+CHECKPOINT_IGNITE_ALPHA = 2.4
+CHECKPOINT_IGNITE_FLASH_SIZE = 380.0
+CHECKPOINT_IGNITE_FLASH_ALPHA = 180
+CHECKPOINT_IGNITE_RISE = 0.18  # part du flash consacree a la montee
 # Temps pour atteindre PLAYER_SPEED en maintenant une direction au sol.
 PLAYER_ACCEL_TIME = 0.25
 # Glissade a l'arret (sol) : 2-3 frames, quelques pixels tout au plus.
 PLAYER_SLIDE_TIME = 0.01
-# Fraction de l'acceleration au sol quand le joueur est en l'air.
-PLAYER_AIR_CONTROL = 5.0
+# Glace : le corps conserve son elan, acceleration et demi-tour sont mous.
+PLAYER_ICE_SLIDE_TIME = 1.7
+PLAYER_ICE_ACCEL_SCALE = 0.38
+PLAYER_ICE_STOP_SPEED = 0.06
+# Fraction de l'acceleration au sol quand le joueur est en l'air (1 = aussi vif qu'au sol).
+PLAYER_AIR_CONTROL = 1.15
 # Ralentissement juste apres l'atterrissage.
 PLAYER_LANDING_SLOW_TIME = 0.12
 PLAYER_LANDING_SPEED_SCALE = 0.86
@@ -232,6 +415,8 @@ PARTICLE_LAND_GRAVITY = 480.0
 PARTICLE_LAND_SIZE_MIN = 3.5
 PARTICLE_LAND_SIZE_MAX = 7.5
 PARTICLE_RUN_SPEED_RATIO = 0.88  # fraction de PLAYER_SPEED pour declencher
+# Trainee de dash tant que la vitesse reste nettement au-dessus de la course.
+PARTICLE_HIGH_SPEED_RATIO = 0.45  # fraction de PLAYER_DASH_SPEED
 PARTICLE_RUN_INTERVAL = 0.040  # secondes entre deux grains
 PARTICLE_RUN_LIFE = 0.28
 PARTICLE_RUN_SPEED_X = 55.0
@@ -295,30 +480,41 @@ CORPSE_EAT_TIME = 4.0  # secondes pour qu'un ennemi devore un cadavre
 PLATE_HEIGHT = 8
 # Retrait horizontal de chaque cote, en pixels (la hitbox suit la plaque).
 PLATE_INSET = 4
-# Halo spectral : deux blobs additifs par plaque / paquet de blocs.
-MECHANISM_AURA_EDGE = 28.0
+# Halo spectral : plaque en nappe floue, lien en brume (pas de trait net).
+MECHANISM_PLATE_GLOW_SIZE = 200.0
+MECHANISM_PLATE_GLOW_MID = 110.0
+MECHANISM_PLATE_GLOW_INNER = 44.0
+MECHANISM_PLATE_GLOW_ALPHA = 130
+MECHANISM_PLATE_GLOW_MID_ALPHA = 165
+MECHANISM_PLATE_GLOW_INNER_ALPHA = 220
+MECHANISM_AURA_EDGE = 22.0
 MECHANISM_AURA_MIN_PAD = 6.0
-MECHANISM_AURA_AXIS_RATIO = 0.55
-MECHANISM_AURA_FILL_ALPHA = 120
-MECHANISM_AURA_CORE_ALPHA = 190
-MECHANISM_AURA_OUTER_SCALE = 2.6
-MECHANISM_AURA_PULSE = 0.16
-MECHANISM_PRESSED_GLOW = 1.28  # plaque et cibles plus vives une fois actives
-MECHANISM_LINK_CURVE = 0.22  # amplitude du S, fraction de la longueur
-MECHANISM_LINK_FAN = 12.0  # px : ecarte les brins d'une meme plaque
-MECHANISM_LINK_WIGGLE = 4.5  # px d'ondulation orthogonale
-MECHANISM_LINK_WIGGLE_WAVES = 1.6
-MECHANISM_LINK_PULSE_SPEED = 1.15
-MECHANISM_LINK_SPACING = 48.0  # px entre deux samples de la courbe
-MECHANISM_LINK_MIN_SEGMENTS = 8
-MECHANISM_LINK_MAX_SEGMENTS = 16
-MECHANISM_LINK_WIDTH = 6.0
-MECHANISM_LINK_CORE_WIDTH = 2.0
-MECHANISM_LINK_ALPHA = 130
-MECHANISM_LINK_CORE_ALPHA = 200
-MECHANISM_LINK_GLOW_SIZE = 42.0
+MECHANISM_AURA_AXIS_RATIO = 0.45
+MECHANISM_AURA_FILL_ALPHA = 55
+MECHANISM_AURA_CORE_ALPHA = 90
+MECHANISM_AURA_OUTER_SCALE = 2.2
+MECHANISM_AURA_PULSE = 0.22
+MECHANISM_PRESSED_GLOW = 1.25
+MECHANISM_LINK_CURVE = 0.34
+MECHANISM_LINK_FAN = 14.0
+MECHANISM_LINK_WIGGLE = 16.0
+MECHANISM_LINK_WIGGLE_WAVES = 2.15
+MECHANISM_LINK_WIGGLE_SLOW = 7.0  # seconde ondulation, plus lente
+MECHANISM_LINK_WIGGLE_SLOW_WAVES = 0.7
+MECHANISM_LINK_PULSE_SPEED = 0.85
+MECHANISM_LINK_FLOW_SPEED = 0.42
+MECHANISM_LINK_FLOW_COUNT = 4
+MECHANISM_LINK_FLOW_SIZE = 78.0
+MECHANISM_LINK_FLOW_ALPHA = 90
+MECHANISM_LINK_FLOW_CORE_SIZE = 28.0
+MECHANISM_LINK_FLOW_CORE_ALPHA = 160
+MECHANISM_LINK_SPACING = 20.0
+MECHANISM_LINK_MIN_SEGMENTS = 12
+MECHANISM_LINK_MAX_SEGMENTS = 24
+MECHANISM_LINK_GLOW_SIZE = 70.0
 MECHANISM_LINK_GLOW_ALPHA = 70
-MECHANISM_LINK_GLOW_COUNT = 3  # bloom le long du brin, pas une chaine de tampons
+MECHANISM_LINK_CORE_SIZE = 30.0
+MECHANISM_LINK_CORE_ALPHA = 95
 
 # --------------------------------------------------------------------------- #
 # Ennemis
@@ -372,12 +568,6 @@ ANIM_ENEMY_IDLE_FRAME_TIME = 0.12
 ANIM_ENEMY_WALK_FRAME_TIME = 0.07
 ANIM_ENEMY_ATTACK_FRAME_TIME = 0.05
 ANIM_ENEMY_DIE_FRAME_TIME = 0.06
-ENEMY_GHOST_GLOW_SCALE = 5.6
-ENEMY_GHOST_GLOW_ALPHA = 96
-ENEMY_GHOST_GLOW_INNER_SCALE = 2.4
-ENEMY_GHOST_GLOW_INNER_ALPHA = 170
-ENEMY_GHOST_GLOW_PULSE = 0.16
-ENEMY_GHOST_GLOW_PULSE_SPEED = 3.4
 
 # --------------------------------------------------------------------------- #
 # Objets et progression
@@ -405,20 +595,26 @@ SOUL_LEVEL_THRESHOLDS: tuple[int, ...] = (0, 3, 8, 15, 25, 40)
 
 COLOR_BACKGROUND = (18, 18, 28)
 COLOR_WALL = (72, 76, 96)
+COLOR_ICE = (118, 196, 220)
+COLOR_ICE_INNER = (186, 232, 244)
 COLOR_SPECTRAL_WALL = (96, 84, 140)
 COLOR_SPIKE = (196, 84, 84)
-COLOR_SPIKE_GLOW = (255, 36, 28)
-COLOR_SPIKE_GLOW_CORE = (255, 110, 72)
+COLOR_FLAMETHROWER = (232, 96, 36)
+COLOR_FLAME_PREVIEW = (255, 120, 40, 55)
+COLOR_HAZARD_GLOW = (255, 12, 4)
+COLOR_HAZARD_GLOW_CORE = (255, 72, 36)
 COLOR_DOOR_LOCKED = (150, 110, 46)
 COLOR_DOOR_OPEN = (96, 170, 110)
 COLOR_CHECKPOINT = (86, 148, 196)
 COLOR_CHECKPOINT_PARTICLE = (90, 186, 255)
 COLOR_CHECKPOINT_PARTICLE_CORE = (210, 240, 255)
+COLOR_CHECKPOINT_GLOW = (118, 198, 255)
+COLOR_CHECKPOINT_GLOW_CORE = (236, 248, 255)
 COLOR_PRESSURE_PLATE = (92, 108, 132)
 COLOR_PRESSURE_PLATE_PRESSED = (64, 168, 214)
-COLOR_MECHANISM_LINK = (150, 214, 255)
-COLOR_MECHANISM_GLOW = (160, 226, 255)
-COLOR_MECHANISM_GLOW_CORE = (230, 246, 255)
+COLOR_MECHANISM_LINK = (168, 220, 255)
+COLOR_MECHANISM_GLOW = (186, 232, 255)
+COLOR_MECHANISM_GLOW_CORE = (236, 248, 255)
 COLOR_PLAYER = (232, 232, 240)
 COLOR_ATTACK = (255, 214, 112)
 COLOR_ATTACK_GLOW = (255, 238, 160)
@@ -445,6 +641,7 @@ COLOR_HUD_TEXT = (228, 228, 236)
 COLOR_HUD_BAR_BACKGROUND = (48, 48, 62)
 COLOR_HUD_BAR_FILL = (128, 200, 255)
 COLOR_HUD_GHOST_GAUGE = (110, 196, 255)
+COLOR_HUD_GHOST_GAUGE_IDLE = (92, 96, 112)  # jauge fantome hors mode, grisee
 COLOR_DASH = (255, 214, 120)
 COLOR_DASH_GLOW = (255, 224, 150)
 COLOR_TRAIL_DASH = (255, 214, 96)
@@ -458,6 +655,15 @@ COLOR_DUST = (236, 228, 208)
 COLOR_DUST_DARK = (186, 174, 150)
 COLOR_MENU_TITLE = (200, 220, 255)
 COLOR_MENU_HINT = (150, 155, 175)
+
+# --------------------------------------------------------------------------- #
+# Ecran de transition de niveau (nom + sous-titre sur fond noir)
+# --------------------------------------------------------------------------- #
+
+LEVEL_INTRO_FADE_TIME = 0.4  # secondes, entree et sortie du texte
+LEVEL_INTRO_HOLD_TIME = 1.4  # secondes a pleine opacite
+LEVEL_INTRO_TITLE_SIZE = 32
+LEVEL_INTRO_SUBTITLE_SIZE = 18
 
 # Opacite du voile hors du champ de vision du fantome (0-255).
 FOG_ALPHA = 235
@@ -573,12 +779,14 @@ UI_KEY_CELL = 16  # taille native d'une touche-lettre
 UI_KEY_ICON_HEIGHT = 40  # hauteur a l'ecran (nearest-neighbor)
 UI_KEY_CAPTION_SIZE = 16  # libelles a cote des icones
 
-# Jauge unique bas-centre : dash (corps) ou timer (fantome).
+# Stats haut-droit : jauge fantome en haut, puis une ligne par item.
+HUD_STAT_ICON = 40
+HUD_STAT_GAP = 8  # espace vertical entre deux lignes
+HUD_STAT_VALUE_GAP = 10  # espace icone -> valeur
 HUD_GAUGE_WIDTH = 168
-HUD_GAUGE_HEIGHT = 10
-HUD_GAUGE_ICON = 22
-HUD_GAUGE_GAP = 8
-HUD_GAUGE_LIFT = 10  # au-dessus des icones clavier
+HUD_GAUGE_HEIGHT = 12
+HUD_GAUGE_GAP = 8  # espace libelle "Lvl. X" -> jauge
+HUD_GAUGE_LABEL_SIZE = 14
 HUD_GAUGE_LOW = 0.22  # le timer fantome pulse sous ce ratio
 
 # --------------------------------------------------------------------------- #
@@ -607,12 +815,13 @@ EDITOR_MIN_ROWS = 8
 EDITOR_MAX_COLUMNS = 600
 EDITOR_MAX_ROWS = 300
 EDITOR_HISTORY_LIMIT = 250  # nombre d'actions annulables
-EDITOR_PANEL_WIDTH = 320  # largeur du panneau de droite (palette)
-EDITOR_STATUS_HEIGHT = 78  # hauteur de la barre d'etat du bas
-EDITOR_ROW_HEIGHT = 34  # hauteur d'une ligne de palette
-EDITOR_SWATCH_SIZE = 26  # cote d'une vignette de palette
-EDITOR_TEXT_SIZE = 12
-EDITOR_TITLE_SIZE = 14
+EDITOR_PANEL_WIDTH = 400  # largeur du panneau de droite (palette + plaques)
+EDITOR_STATUS_HEIGHT = 108  # hauteur de la barre d'etat du bas
+EDITOR_ROW_HEIGHT = 42  # hauteur d'une ligne de palette
+EDITOR_SWATCH_SIZE = 28  # cote d'une vignette de palette
+# Press Start 2P est une police 8 px : 16 est un multiple net, plus lisible que 12.
+EDITOR_TEXT_SIZE = 16
+EDITOR_TITLE_SIZE = 16
 EDITOR_ZOOM_MIN = 0.25
 EDITOR_ZOOM_MAX = 6.0
 EDITOR_ZOOM_DEFAULT = 1.25  # 1.0 = une tuile = TILE_SIZE pixels a l'ecran
@@ -622,18 +831,21 @@ EDITOR_GRID_MIN_ZOOM = 0.45  # sous ce zoom, la grille n'est plus tracee
 EDITOR_MESSAGE_TIME = 3.0  # secondes d'affichage d'un message de statut
 EDITOR_FLOOD_LIMIT = 20000  # garde-fou du remplissage par zone
 EDITOR_MAPS_GLOB = "*.json"
+EDITOR_MARQUEE_SPEED = 42.0  # pixels par seconde quand un libelle debord
+EDITOR_MARQUEE_PAUSE = 0.85  # pause aux extremites du defilement horizontal
 
 COLOR_EDITOR_BACKGROUND = (13, 14, 20)
-COLOR_EDITOR_PANEL = (22, 24, 34)
-COLOR_EDITOR_PANEL_BORDER = (54, 58, 78)
-COLOR_EDITOR_ROW_ACTIVE = (46, 62, 88)
-COLOR_EDITOR_ROW_HOVER = (34, 38, 52)
+COLOR_EDITOR_PANEL = (18, 20, 30)
+COLOR_EDITOR_PANEL_BORDER = (68, 74, 98)
+COLOR_EDITOR_ROW_ACTIVE = (52, 74, 108)
+COLOR_EDITOR_ROW_HOVER = (36, 42, 58)
+COLOR_EDITOR_HEADING = (30, 34, 48)
 COLOR_EDITOR_GRID = (40, 44, 60)
 COLOR_EDITOR_BOUNDS = (120, 132, 172)
-COLOR_EDITOR_TEXT = (226, 228, 238)
-COLOR_EDITOR_TEXT_DIM = (138, 145, 168)
-COLOR_EDITOR_ACCENT = (128, 200, 255)
-COLOR_EDITOR_WARNING = (255, 186, 72)
+COLOR_EDITOR_TEXT = (236, 238, 246)
+COLOR_EDITOR_TEXT_DIM = (176, 182, 204)
+COLOR_EDITOR_ACCENT = (140, 210, 255)
+COLOR_EDITOR_WARNING = (255, 196, 88)
 COLOR_EDITOR_DANGER = (240, 96, 96)
 COLOR_EDITOR_OK = (120, 210, 140)
 COLOR_EDITOR_SELECTION = (128, 200, 255, 55)
@@ -642,3 +854,9 @@ COLOR_EDITOR_PASTE = (255, 214, 120, 60)
 COLOR_EDITOR_HOVER = (255, 255, 255, 38)
 COLOR_EDITOR_UNKNOWN = (150, 90, 190)
 COLOR_EDITOR_OVERLAY = (8, 10, 16, 235)
+COLOR_EDITOR_PLATE = (64, 168, 214, 80)
+COLOR_EDITOR_PLATE_BORDER = (140, 220, 255)
+COLOR_EDITOR_PLATE_SELECTED = (255, 210, 90, 95)
+COLOR_EDITOR_GATED = (240, 110, 110, 75)
+COLOR_EDITOR_GATED_BORDER = (255, 160, 160)
+COLOR_EDITOR_LINK = (150, 214, 255)

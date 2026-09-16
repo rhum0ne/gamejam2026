@@ -15,7 +15,7 @@ Usage :
 
 from __future__ import annotations
 
-# data: {"position": (x, y), "cause": "spikes"|"out_of_bounds"|"enemy"|"sacrifice"}
+# data: {"position": (x, y), "cause": "spikes"|"out_of_bounds"|"enemy"|"sacrifice"|"flame"}
 PLAYER_DEATH = "PLAYER_DEATH"
 
 # data: {"reason": "timer"|"manual", "position": (x, y) | None}

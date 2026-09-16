@@ -29,8 +29,8 @@ from src.systems.events import PLAYER_DEATH, PLAYER_GHOST_END, PLAYER_WIN  # noq
 from src.systems.game_state import GameSession, GameState, PlayView  # noqa: E402
 from src.systems.upgrades import SoulProgression  # noqa: E402
 from src.ui import keys  # noqa: E402
-from src.ui.menus import TitleView, VictoryView  # noqa: E402
-from src.world.level import Level  # noqa: E402
+from src.ui.menus import LevelErrorView, TitleView, VictoryView  # noqa: E402
+from src.world.level import Level, LevelFormatError  # noqa: E402
 
 FRAME = settings.FRAME_TIME
 
@@ -50,6 +50,37 @@ def check_levels() -> None:
             extra = f", {len(level.mechanisms)} plaque(s), {hanging} pique(s) plafond"
         print(f"  carte '{name}' -> {level.name}: {level.columns}x{level.rows} tuiles, "
               f"{len(level.walls)} murs, {len(level.items)} objets, {len(level.enemies)} ennemis{extra}")
+    check_invalid_activator()
+
+
+def check_invalid_activator() -> None:
+    """Une plaque qui pointe dans le vide doit lever un message explicite."""
+    from src.world.level import LevelFormatError
+
+    data = {
+        "name": "test",
+        "tile_size": 32,
+        "legend": {"#": "wall", "P": "player_spawn"},
+        "rows": ["####", "#P.#", "####"],
+        "activators": [
+            {
+                "x": 1,
+                "y": 1,
+                "width": 1,
+                "activate": {"setBlock": [{"x": 2, "y": 1, "type": "void"}]},
+            }
+        ],
+    }
+    try:
+        Level.from_dict(data)
+    except LevelFormatError as error:
+        message = str(error)
+        assert "activators[0]" in message, message
+        assert "(2, 1)" in message, message
+        assert "case vide" in message, message
+        print(f"  plaque orpheline -> {message}")
+        return
+    raise AssertionError("une plaque sans bloc aurait du etre refusee")
 
 
 def check_progression() -> None:
@@ -395,9 +426,11 @@ def check_tutorial_is_solvable(window: arcade.Window) -> None:
             if abs(delta_y) > 6:
                 view.held_keys.add(arcade.key.UP if delta_y > 0 else arcade.key.DOWN)
             # Le timer et la duree de vie du cadavre ne sont pas le sujet de ce test.
-            # Le timer du fantome n'est pas le sujet ici : un pilote scripte
-            # est bien plus lent qu'un joueur, on le neutralise.
+            # Un pilote scripte est plus lent qu'un joueur, surtout depuis que
+            # le puits du tutoriel a gagne des etages : on les neutralise.
             view.ghost.time_left = settings.GHOST_DURATION
+            for corpse_sprite in view.level.corpses:
+                corpse_sprite.time_left = settings.CORPSE_LIFETIME
             view.on_update(FRAME)
             if is_done():
                 return True
@@ -410,7 +443,14 @@ def check_tutorial_is_solvable(window: arcade.Window) -> None:
     )
     # Remontee en deux temps : d'abord au-dessus du cadavre, puis descente
     # dessus, pour ne pas raser la corniche (le fantome bute sur les murs).
+    # Le puits a des etages intermediaires : on grimpe d'abord dans la
+    # gaine, sinon le vol diagonal se coince sous les planchers.
     waypoint_y = corpse.center_y + 3 * settings.TILE_SIZE
+    assert fly_to(
+        lambda: key_item.center_x,
+        lambda: waypoint_y,
+        lambda: abs(view.ghost.center_y - waypoint_y) < 12,
+    ), "le fantome doit pouvoir remonter du puits"
     assert fly_to(
         lambda: corpse.center_x,
         lambda: waypoint_y,
@@ -480,6 +520,14 @@ def check_menus(window: arcade.Window) -> None:
         advance(view, 1)
         view.on_resize(settings.SCREEN_MIN_WIDTH, settings.SCREEN_MIN_HEIGHT)
         advance(view, 1)
+    error_view = LevelErrorView(
+        session,
+        LevelFormatError(
+            "activators[0] : setBlock void : aucun bloc a (17, 41) (case vide)"
+        ),
+    )
+    window.show_view(error_view)
+    advance(error_view, 2)
     play = PlayView(session)
     window.show_view(play)
     assert play.atmosphere.puff_count > 0, "l'atmosphere de premier plan doit etre peuplee"
@@ -519,11 +567,14 @@ def check_editor_document() -> None:
     kinds = {item.kind for item in palette.PALETTE}
     for kind in gameplay_kinds():
         assert kind in kinds, f"la palette doit lister le gameplay '{kind}'"
-    assert "rock" in kinds and "enemy" in kinds and "spike" in kinds
+    assert "wall" in kinds and "enemy" in kinds and "spike" in kinds
 
     document = EditorDocument.from_file("level_1_tuto.json")
     assert document.columns > 0 and document.rows > 0
     assert document.counts().get("player_spawn", 0) >= 1
+    assert len(document.activators) == 2
+    assert document.activators[0].width == 4
+    assert document.activators[0].targets
 
     column, row = 4, 4
     before = document.cell(column, row)
@@ -537,12 +588,12 @@ def check_editor_document() -> None:
     document.undo()
 
     rect = GridRect(2, 2, 6, 5)
-    document.fill_rect(rect, "grass")
+    document.fill_rect(rect, "wall")
     for cell_column, cell_row in rect.cells():
-        assert document.cell(cell_column, cell_row) == "grass"
-    document.replace_kind("grass", "rock", rect)
+        assert document.cell(cell_column, cell_row) == "wall"
+    document.replace_kind("wall", "bedrock", rect)
     for cell_column, cell_row in rect.cells():
-        assert document.cell(cell_column, cell_row) == "rock"
+        assert document.cell(cell_column, cell_row) == "bedrock"
     document.undo()
     document.undo()
 
@@ -557,9 +608,141 @@ def check_editor_document() -> None:
     payload = json.loads(saved.read_text(encoding="utf-8"))
     assert payload["rows"], "la carte reecrite doit avoir des lignes"
     assert "player_spawn" in payload["legend"].values()
+    assert len(payload.get("activators", [])) == 2
+    first = payload["activators"][0]
+    assert first["x"] == 13 and first["width"] == 4
+    assert first["activate"]["setBlock"]
     saved.unlink()
+
+    index = document.add_activator(5, 5, 3)
+    assert document.activators[index].width == 3
+    linked = document.toggle_target(index, 2, document.rows - 2)
+    assert linked
+    document.undo()
+    document.undo()
+    assert len(document.activators) == 2
+
+    flame_cell = (6, 6)
+    document.paint((flame_cell,), "flamethrower")
+    placed = document.flame_at(*flame_cell)
+    assert placed is not None, "peindre un lance-flammes doit creer ses reglages"
+    tuned = document.adjust_flame(*flame_cell, range_delta=2, interval_delta=0.4, rotate=True)
+    assert tuned is not None
+    assert tuned.range_tiles == placed.range_tiles + 2
+    assert tuned.direction == "down"
+    flame_path = Path(tempfile.mkdtemp()) / "flamethrower_roundtrip.json"
+    flame_saved = document.save(flame_path)
+    flame_payload = json.loads(flame_saved.read_text(encoding="utf-8"))
+    entries = flame_payload.get("flamethrowers", [])
+    assert entries, "la carte doit ecrire le champ flamethrowers"
+    assert entries[0]["range"] == tuned.range_tiles
+    assert entries[0]["dir"] == "down"
+    reloaded = EditorDocument.from_file(flame_saved)
+    restored = reloaded.flame_at(*flame_cell)
+    assert restored is not None and restored.range_tiles == tuned.range_tiles
+    assert restored.direction == "down"
+    flame_saved.unlink()
+    document.undo()
+    assert document.flame_at(*flame_cell) is None
+    ice_cell = (7, 7)
+    document.paint((ice_cell,), settings.TILE_KIND_ICE)
+    assert document.cell(*ice_cell) == settings.TILE_KIND_ICE
+    ice_saved = document.save(Path(tempfile.mkdtemp()) / "ice_roundtrip.json")
+    ice_payload = json.loads(ice_saved.read_text(encoding="utf-8"))
+    assert settings.TILE_KIND_ICE in ice_payload["legend"].values()
+    ice_saved.unlink()
+    document.undo()
     print(f"  editeur document -> {document.columns}x{document.rows}, "
           f"{len(palette.PALETTE)} elements de palette")
+
+
+def check_flamethrower(window: arcade.Window) -> None:
+    """Le jet shader se dessine, tue le corps et les ennemis, et se configure."""
+    from src.world.flamethrower import Flamethrower
+    from src.world.level import Level
+
+    data = {
+        "name": "Lance",
+        "tile_size": settings.TILE_SIZE,
+        "legend": {".": "vide", "#": "rock", "f": "flamethrower", "P": "player_spawn"},
+        "rows": [
+            "######",
+            "#P...#",
+            "#f...#",
+            "######",
+        ],
+        "flamethrowers": [
+            {"x": 1, "y": 2, "range": 3, "interval": 0.0, "facing": 1},
+        ],
+    }
+    level = Level.from_dict(data)
+    assert len(level.flamethrowers) == 1
+    thrower = level.flamethrowers[0]
+    thrower.update(0.0)
+    assert thrower.is_lethal, "intervalle 0 = jet permanent"
+    player = Player(*level.player_spawn)
+    player.center_x, player.center_y = thrower.flame_midpoint()
+    assert collisions.player_hits_flame(player, level.flamethrowers)
+    enemy = Enemy(*thrower.flame_midpoint())
+    level.enemies.append(enemy)
+    burned = collisions.enemies_hit_by_flame(level.enemies, level.flamethrowers)
+    assert enemy in burned, "le jet doit tuer les ennemis"
+    thrower.draw_flame()
+    assert thrower.direction == "right"
+
+    down = Flamethrower(200.0, 200.0, range_tiles=3, interval=0.0, direction="down")
+    down.update(0.0)
+    left, right, bottom, top = down.flame_bounds()
+    assert top - bottom >= down.flame_length * 0.99
+    assert right - left <= settings.FLAMETHROWER_HEIGHT + 1.0
+    assert down.flame_midpoint()[1] < down.center_y
+    assert down.nozzle()[1] < down.center_y
+    assert top <= down.center_y + 1.0
+    down.draw_flame()
+    print(
+        f"  lance-flammes -> portee {thrower.range_tiles} tuiles, "
+        f"jet lethal, 4 axes, shader OK"
+    )
+
+
+def check_ice_block(window: arcade.Window) -> None:
+    """Le bloc `ice_block` est solide et conserve l'elan du corps au sol."""
+    from src.world.level import Level
+
+    data = {
+        "name": "Glace",
+        "tile_size": settings.TILE_SIZE,
+        "legend": {
+            ".": "vide",
+            "#": "rock",
+            "~": settings.TILE_KIND_ICE,
+            "P": "player_spawn",
+        },
+        "rows": [
+            "############",
+            "#..........#",
+            "#P.........#",
+            "#~~~~~~~~~~#",
+            "############",
+        ],
+    }
+    level = Level.from_dict(data)
+    ices = [wall for wall in level.walls if getattr(wall, "slippery", False)]
+    assert len(ices) == 10, f"attendu 10 blocs de glace, obtenu {len(ices)}"
+    player = Player(*level.player_spawn)
+    player.bind_world(level.static_walls, platforms=[level.corpses])
+    player.walk(0)
+    for _ in range(4):
+        player.update(FRAME)
+    assert player._standing_on_ice(), "le joueur doit reposer sur la glace"
+    player.change_x = settings.PLAYER_SPEED
+    for _ in range(24):
+        player.update(FRAME)
+    assert abs(player.change_x) > settings.PLAYER_SPEED * 0.45, (
+        f"la glace doit conserver l'elan, vitesse restante {player.change_x:.2f}"
+    )
+    print(f"  glace -> {len(ices)} blocs, elan conserve ({player.change_x:.2f} px/frame)")
+
 
 
 def check_editor_views(window: arcade.Window) -> None:
@@ -578,7 +761,7 @@ def check_editor_views(window: arcade.Window) -> None:
     window.show_view(view)
     view.on_show_view()
     view.on_draw()
-    view.kind = "rock"
+    view.kind = "wall"
     view.tool = Tool.BRUSH
     screen_x = view.canvas.viewport.center_x
     screen_y = view.canvas.viewport.center_y
@@ -586,6 +769,8 @@ def check_editor_views(window: arcade.Window) -> None:
     view.on_mouse_release(screen_x, screen_y, arcade.MOUSE_BUTTON_LEFT, 0)
     view.on_key_press(arcade.key.Z, arcade.key.MOD_CTRL)
     view.on_key_press(arcade.key.Z, arcade.key.MOD_CTRL | arcade.key.MOD_SHIFT)
+    view.tool = Tool.LINK
+    view._link_index = 0
     view.on_draw()
     print("  editeur vues -> navigateur et grille OK")
 
@@ -626,6 +811,10 @@ def main() -> int:
         check_menus(window)
         print("[11/11] vues de l'editeur")
         check_editor_views(window)
+        print("[11/11] lance-flammes")
+        check_flamethrower(window)
+        print("[12/12] glace")
+        check_ice_block(window)
     finally:
         window.close()
     print("OK : le squelette demarre et tourne.")
