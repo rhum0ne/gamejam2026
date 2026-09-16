@@ -6,14 +6,21 @@ Format attendu (voir `assets/maps/level_1_tuto.json`) :
       "name": "Le Puits Mortel",
       "hint": "texte affiche dans le HUD",
       "tile_size": 32,
-      "legend": {"#": "rock", "G": "grass", "^": "spike", ...},
-      "rows": ["####...", "#.P..G#", ...]
+      "legend": {"#": "wall", "^": "spike", "B": "bedrock", ...},
+      "rows": ["####...", "#.P....#", ...]
     }
 
 `rows` se lit de haut en bas : la premiere chaine est la ligne la plus haute de
 l'ecran. Chaque caractere est traduit via `legend` :
     - un type de gameplay (`door`, `key`, `player_spawn`, `spectral_wall`, ...) ;
-    - ou le nom d'un sprite de terrain (`rock`, `grass`, `spike`, `bedrock`, ...).
+    - ou le nom d'un sprite de terrain (`wall`, `spike`, `bedrock`, ...).
+
+`wall` est la seule matiere terre/roche : il suffit de dessiner sa forme dans
+`rows`, l'apparence (herbe en surface, coin, terre enterree, pilier, coin
+interieur...) est deduite de la grille entiere a chaque chargement
+(auto-tiling, cf. `world/obstacles.py` :: `compute_ground_cells`). Pas de
+symbole dedie a l'herbe : ne jamais en ajouter un, ce serait de nouveau au
+level designer de la placer a la main.
 
 Les plaques d'activation sont declarees a part, en coordonnees de grille
 (x = colonne, y = ligne depuis le haut, comme `rows`) :
@@ -41,6 +48,9 @@ l'enregistrer dans `TILE_SPECS` (`src/world/obstacles.py`), puis l'utiliser
 dans la legende de la carte.
 
 `torch` (symbole `i`) est un decor sans collision : placeholder + halo.
+Les autres decors (`chest`, `sign`, `crate`, `tombstone`, ...) viennent de
+`world/decorations.py` : chaque entree du catalogue a une fabrique generee
+automatiquement ci-dessous.
 `flamethrower` (symbole `f`) est un piege : buse sprite + jet shader. Les
 reglages (`range` en tuiles, `interval` en secondes, `dir` right/down/left/up)
 vivent dans le champ JSON `flamethrowers`, comme les plaques. L'ancien champ
@@ -61,6 +71,7 @@ import settings
 from src.entities.enemy import Enemy
 from src.entities.glow import glow_pass
 from src.entities.item import Item, ItemKind
+from src.world.decorations import Decoration, decoration_kinds
 from src.world.flamethrower import FlameSpec, Flamethrower, parse_flame_specs
 from src.world.mechanisms import (
     GatedTile,
@@ -70,6 +81,7 @@ from src.world.mechanisms import (
     plate_geometry,
 )
 from src.world.obstacles import (
+    SOLID_GROUND_KINDS,
     TILE_SPECS,
     Checkpoint,
     Door,
@@ -79,6 +91,7 @@ from src.world.obstacles import (
     TileSpec,
     Torch,
     Wall,
+    compute_ground_cells,
     tile_spec,
 )
 
@@ -130,6 +143,7 @@ class Level:
     falling_spikes: arcade.SpriteList = field(default_factory=_dynamic_sprite_list)
     mechanisms: list[Mechanism] = field(default_factory=list)
     torches: arcade.SpriteList = field(default_factory=_dynamic_sprite_list)
+    decorations: arcade.SpriteList = field(default_factory=_dynamic_sprite_list)
     torch_stems: arcade.SpriteList = field(default_factory=_dynamic_sprite_list)
     flamethrowers: arcade.SpriteList = field(default_factory=_dynamic_sprite_list)
     player_spawn: tuple[float, float] = (0.0, 0.0)
@@ -157,10 +171,19 @@ class Level:
         if not map_path.is_absolute():
             map_path = settings.MAPS_DIR / map_path
         if not map_path.exists():
-            raise FileNotFoundError(f"carte introuvable : {map_path}")
-        with map_path.open(encoding="utf-8") as stream:
-            data = json.load(stream)
-        return cls.from_dict(data)
+            raise LevelFormatError(f"carte introuvable : {map_path.name}")
+        try:
+            with map_path.open(encoding="utf-8") as stream:
+                data = json.load(stream)
+        except json.JSONDecodeError as error:
+            raise LevelFormatError(
+                f"JSON invalide dans {map_path.name} : {error.msg} "
+                f"(ligne {error.lineno}, colonne {error.colno})"
+            ) from error
+        try:
+            return cls.from_dict(data)
+        except LevelFormatError as error:
+            raise LevelFormatError(f"{map_path.name} : {error}") from error
 
     @classmethod
     def from_dict(cls, data: dict) -> "Level":
@@ -190,6 +213,7 @@ class Level:
         return level
 
     def _build(self, grid: list[str], legend: dict[str, str]) -> None:
+        ground_cells = _compute_ground_cells(grid, legend)
         for row_index, row in enumerate(grid):
             for column_index, symbol in enumerate(row):
                 kind = legend.get(symbol, "vide" if symbol == "." else None)
@@ -200,6 +224,13 @@ class Level:
                     )
                 if kind == "vide":
                     continue
+                if kind == "spectral_wall":
+                    # Seule fabrique qui a besoin de sa case d'auto-tiling :
+                    # le mur spectral se peint comme un mur normal.
+                    center = self.tile_center(column_index, row_index, len(grid))
+                    cell = ground_cells.get((column_index, row_index))
+                    _add_spectral_wall(self, *center, cell)
+                    continue
                 factory = _FACTORIES.get(kind)
                 if factory is not None:
                     center = self.tile_center(column_index, row_index, len(grid))
@@ -207,7 +238,8 @@ class Level:
                     continue
                 if kind in TILE_SPECS:
                     center = self.tile_center(column_index, row_index, len(grid))
-                    _add_terrain(self, *center, kind)
+                    cell = ground_cells.get((column_index, row_index))
+                    _add_terrain(self, *center, kind, cell)
                     continue
                 raise LevelFormatError(f"type de tuile inconnu : '{kind}'")
         self._bind_initial_checkpoint()
@@ -300,8 +332,15 @@ class Level:
         self._ensure_in_bounds(column, row)
         sprite = self._terrain_at(column, row)
         if sprite is None:
+            occupant = self._non_gated_occupant(column, row)
+            detail = (
+                f"occupe par {occupant}"
+                if occupant is not None
+                else "case vide"
+            )
             raise LevelFormatError(
-                f"setBlock void : aucun bloc a ({column}, {row})"
+                f"setBlock void : aucun bloc a ({column}, {row}) "
+                f"({detail} ; la plaque ne retire que murs, murs spectraux et piques)"
             )
         lists = tuple(sprite.sprite_lists)
         if not lists:
@@ -316,6 +355,24 @@ class Level:
             for sprite in sprite_list:
                 if abs(sprite.center_x - x) < 1 and abs(sprite.center_y - y) < 1:
                     return sprite
+        return None
+
+    def _non_gated_occupant(self, column: int, row: int) -> str | None:
+        """Nom de ce qui occupe la case, si ce n'est pas un bloc void-able."""
+        x, y = self.tile_center(column, row, self.rows)
+        named = (
+            ("un decor", self.decorations),
+            ("une torche", self.torches),
+            ("un lance-flammes", self.flamethrowers),
+            ("une porte", self.doors),
+            ("un checkpoint", self.checkpoints),
+            ("un objet", self.items),
+            ("un ennemi", self.enemies),
+        )
+        for label, sprites in named:
+            for sprite in sprites:
+                if abs(sprite.center_x - x) < 1 and abs(sprite.center_y - y) < 1:
+                    return label
         return None
 
     def _ensure_in_bounds(self, column: int, row: int) -> None:
@@ -389,6 +446,7 @@ class Level:
                 checkpoint.draw_glow()
         self.checkpoints.draw()
         self.doors.draw()
+        self.decorations.draw()
         with glow_pass():
             self._queue_torch_glows(view_rect, layer="bloom")
         self.torch_stems.draw()
@@ -603,7 +661,9 @@ class Level:
 # --------------------------------------------------------------------------- #
 
 
-def _add_terrain(level: Level, x: float, y: float, kind: str) -> None:
+def _add_terrain(
+    level: Level, x: float, y: float, kind: str, cell: GroundCell | None = None
+) -> None:
     spec: TileSpec = tile_spec(kind)
     if spec.role == "spike":
         level.hazards.append(Spike(x, y, size=level.tile_size, tile=kind))
@@ -611,11 +671,52 @@ def _add_terrain(level: Level, x: float, y: float, kind: str) -> None:
     if spec.role == "ice":
         level.walls.append(IceBlock(x, y, size=level.tile_size, tile=kind))
         return
-    level.walls.append(Wall(x, y, size=level.tile_size, tile=kind))
+    level.walls.append(Wall(x, y, size=level.tile_size, tile=kind, cell=cell))
 
 
-def _add_spectral_wall(level: Level, x: float, y: float) -> None:
-    level.spectral_walls.append(SpectralWall(x, y, size=level.tile_size))
+def _compute_ground_cells(
+    grid: list[str], legend: dict[str, str]
+) -> dict[tuple[int, int], GroundCell]:
+    """Resout la case `SHEET_GROUND` des tuiles auto-tilees de `grid` (cf. `compute_ground_cells`).
+
+    Une case hors carte compte comme solide : les tuiles de bordure se peignent
+    comme du terrain enterre (pas d'herbe au plafond du monde ni de pilier
+    flottant sur les bords), la camera ne montrant jamais l'exterieur.
+    Les murs spectraux sont auto-tiles comme des murs normaux : c'est ce qui
+    les rend indetectables pour le corps physique.
+    """
+
+    def out_of_bounds(column: int, row: int) -> bool:
+        return row < 0 or row >= len(grid) or column < 0 or column >= len(grid[row])
+
+    def kind_at(column: int, row: int) -> str | None:
+        if out_of_bounds(column, row):
+            return None
+        symbol = grid[row][column]
+        return legend.get(symbol, "vide" if symbol == "." else None)
+
+    def is_solid(column: int, row: int) -> bool:
+        if out_of_bounds(column, row):
+            return True
+        return kind_at(column, row) in SOLID_GROUND_KINDS
+
+    def is_autotile(column: int, row: int) -> bool:
+        kind = kind_at(column, row)
+        if kind == "spectral_wall":
+            return True
+        spec = TILE_SPECS.get(kind) if kind is not None else None
+        return spec is not None and spec.autotile
+
+    return compute_ground_cells(
+        len(grid[0]) if grid else 0,
+        len(grid),
+        is_solid=is_solid,
+        is_autotile=is_autotile,
+    )
+
+
+def _add_spectral_wall(level: Level, x: float, y: float, cell: GroundCell | None = None) -> None:
+    level.spectral_walls.append(SpectralWall(x, y, size=level.tile_size, cell=cell))
 
 
 def _add_door(level: Level, x: float, y: float) -> None:
@@ -706,6 +807,15 @@ def _add_flamethrower(level: Level, x: float, y: float) -> None:
     level.flamethrowers.append(thrower)
 
 
+def _decoration_factory(kind: str) -> Callable[[Level, float, float], None]:
+    """Fabrique une fonction `_add_xxx` pour un type de `decorations.DECORATION_SPECS`."""
+
+    def _add_decoration(level: Level, x: float, y: float) -> None:
+        level.decorations.append(Decoration(kind, x, y))
+
+    return _add_decoration
+
+
 _FACTORIES: dict[str, Callable[[Level, float, float], None]] = {
     "spectral_wall": _add_spectral_wall,
     "door": _add_door,
@@ -715,6 +825,7 @@ _FACTORIES: dict[str, Callable[[Level, float, float], None]] = {
     "soul_orb": _add_soul_orb,
     "enemy": _add_enemy,
     "torch": _add_torch,
+    **{kind: _decoration_factory(kind) for kind in decoration_kinds()},
     "flamethrower": _add_flamethrower,
 }
 

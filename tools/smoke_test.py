@@ -29,8 +29,8 @@ from src.systems.events import PLAYER_DEATH, PLAYER_GHOST_END, PLAYER_WIN  # noq
 from src.systems.game_state import GameSession, GameState, PlayView  # noqa: E402
 from src.systems.upgrades import SoulProgression  # noqa: E402
 from src.ui import keys  # noqa: E402
-from src.ui.menus import TitleView, VictoryView  # noqa: E402
-from src.world.level import Level  # noqa: E402
+from src.ui.menus import LevelErrorView, TitleView, VictoryView  # noqa: E402
+from src.world.level import Level, LevelFormatError  # noqa: E402
 
 FRAME = settings.FRAME_TIME
 
@@ -50,6 +50,37 @@ def check_levels() -> None:
             extra = f", {len(level.mechanisms)} plaque(s), {hanging} pique(s) plafond"
         print(f"  carte '{name}' -> {level.name}: {level.columns}x{level.rows} tuiles, "
               f"{len(level.walls)} murs, {len(level.items)} objets, {len(level.enemies)} ennemis{extra}")
+    check_invalid_activator()
+
+
+def check_invalid_activator() -> None:
+    """Une plaque qui pointe dans le vide doit lever un message explicite."""
+    from src.world.level import LevelFormatError
+
+    data = {
+        "name": "test",
+        "tile_size": 32,
+        "legend": {"#": "wall", "P": "player_spawn"},
+        "rows": ["####", "#P.#", "####"],
+        "activators": [
+            {
+                "x": 1,
+                "y": 1,
+                "width": 1,
+                "activate": {"setBlock": [{"x": 2, "y": 1, "type": "void"}]},
+            }
+        ],
+    }
+    try:
+        Level.from_dict(data)
+    except LevelFormatError as error:
+        message = str(error)
+        assert "activators[0]" in message, message
+        assert "(2, 1)" in message, message
+        assert "case vide" in message, message
+        print(f"  plaque orpheline -> {message}")
+        return
+    raise AssertionError("une plaque sans bloc aurait du etre refusee")
 
 
 def check_progression() -> None:
@@ -348,9 +379,11 @@ def check_tutorial_is_solvable(window: arcade.Window) -> None:
             if abs(delta_y) > 6:
                 view.held_keys.add(arcade.key.UP if delta_y > 0 else arcade.key.DOWN)
             # Le timer et la duree de vie du cadavre ne sont pas le sujet de ce test.
-            # Le timer du fantome n'est pas le sujet ici : un pilote scripte
-            # est bien plus lent qu'un joueur, on le neutralise.
+            # Un pilote scripte est plus lent qu'un joueur, surtout depuis que
+            # le puits du tutoriel a gagne des etages : on les neutralise.
             view.ghost.time_left = settings.GHOST_DURATION
+            for corpse_sprite in view.level.corpses:
+                corpse_sprite.time_left = settings.CORPSE_LIFETIME
             view.on_update(FRAME)
             if is_done():
                 return True
@@ -363,7 +396,14 @@ def check_tutorial_is_solvable(window: arcade.Window) -> None:
     )
     # Remontee en deux temps : d'abord au-dessus du cadavre, puis descente
     # dessus, pour ne pas raser la corniche (le fantome bute sur les murs).
+    # Le puits a des etages intermediaires : on grimpe d'abord dans la
+    # gaine, sinon le vol diagonal se coince sous les planchers.
     waypoint_y = corpse.center_y + 3 * settings.TILE_SIZE
+    assert fly_to(
+        lambda: key_item.center_x,
+        lambda: waypoint_y,
+        lambda: abs(view.ghost.center_y - waypoint_y) < 12,
+    ), "le fantome doit pouvoir remonter du puits"
     assert fly_to(
         lambda: corpse.center_x,
         lambda: waypoint_y,
@@ -433,6 +473,14 @@ def check_menus(window: arcade.Window) -> None:
         advance(view, 1)
         view.on_resize(settings.SCREEN_MIN_WIDTH, settings.SCREEN_MIN_HEIGHT)
         advance(view, 1)
+    error_view = LevelErrorView(
+        session,
+        LevelFormatError(
+            "activators[0] : setBlock void : aucun bloc a (17, 41) (case vide)"
+        ),
+    )
+    window.show_view(error_view)
+    advance(error_view, 2)
     play = PlayView(session)
     window.show_view(play)
     assert play.atmosphere.puff_count > 0, "l'atmosphere de premier plan doit etre peuplee"
@@ -472,7 +520,7 @@ def check_editor_document() -> None:
     kinds = {item.kind for item in palette.PALETTE}
     for kind in gameplay_kinds():
         assert kind in kinds, f"la palette doit lister le gameplay '{kind}'"
-    assert "rock" in kinds and "enemy" in kinds and "spike" in kinds
+    assert "wall" in kinds and "enemy" in kinds and "spike" in kinds
 
     document = EditorDocument.from_file("level_1_tuto.json")
     assert document.columns > 0 and document.rows > 0
@@ -493,12 +541,12 @@ def check_editor_document() -> None:
     document.undo()
 
     rect = GridRect(2, 2, 6, 5)
-    document.fill_rect(rect, "grass")
+    document.fill_rect(rect, "wall")
     for cell_column, cell_row in rect.cells():
-        assert document.cell(cell_column, cell_row) == "grass"
-    document.replace_kind("grass", "rock", rect)
+        assert document.cell(cell_column, cell_row) == "wall"
+    document.replace_kind("wall", "bedrock", rect)
     for cell_column, cell_row in rect.cells():
-        assert document.cell(cell_column, cell_row) == "rock"
+        assert document.cell(cell_column, cell_row) == "bedrock"
     document.undo()
     document.undo()
 
@@ -666,7 +714,7 @@ def check_editor_views(window: arcade.Window) -> None:
     window.show_view(view)
     view.on_show_view()
     view.on_draw()
-    view.kind = "rock"
+    view.kind = "wall"
     view.tool = Tool.BRUSH
     screen_x = view.canvas.viewport.center_x
     screen_y = view.canvas.viewport.center_y

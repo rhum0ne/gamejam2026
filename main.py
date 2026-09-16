@@ -36,9 +36,9 @@ except ModuleNotFoundError:
     raise SystemExit(bootstrap_and_relaunch(__file__, sys.argv[1:]))
 
 import settings  # noqa: E402
-from src.systems.game_state import GameSession, PlayView  # noqa: E402
+from src.systems.game_state import GameSession  # noqa: E402
 from src.ui.display import center_on_primary_screen  # noqa: E402
-from src.ui.menus import TitleView  # noqa: E402
+from src.ui.menus import TitleView, open_play_view  # noqa: E402
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -92,7 +92,10 @@ def main(argv: list[str] | None = None) -> None:
 
     session = GameSession(level_index=args.level)
     window = create_window(fullscreen=args.fullscreen)
-    window.show_view(PlayView(session) if args.play else TitleView(session))
+    if args.play:
+        open_play_view(window, session)
+    else:
+        window.show_view(TitleView(session))
     arcade.run()
 
 
