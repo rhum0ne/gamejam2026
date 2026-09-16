@@ -6,9 +6,8 @@ import math
 import random
 from dataclasses import dataclass
 
-import arcade
-
 import settings
+from src.entities.batch_draw import QuadBatch
 
 
 @dataclass(slots=True)
@@ -40,6 +39,7 @@ class PointTrail:
         self._prev: tuple[float, float] | None = None
         self._carry = 0.0
         self._time = 0.0
+        self._quads = QuadBatch(capacity=max(8, settings.TRAIL_MAX * 2))
 
     def clear(self) -> None:
         self._motes.clear()
@@ -69,6 +69,7 @@ class PointTrail:
     def draw(self) -> None:
         wobble = settings.TRAIL_WOBBLE
         freq = settings.TRAIL_WOBBLE_SPEED
+        self._quads.begin()
         for mote in self._motes:
             fade = max(0.0, min(1.0, mote.life / mote.max_life))
             age = 1.0 - fade
@@ -80,9 +81,12 @@ class PointTrail:
                 continue
             px = mote.x + ox
             py = mote.y + oy
-            arcade.draw_point(px, py, (*self.color, alpha), size)
+            self._quads.add(px, py, size, self.color, alpha)
             core = max(1.6, size * 0.45)
-            arcade.draw_point(px, py, (*self.core_color, min(255, int(alpha * 1.15))), core)
+            self._quads.add(
+                px, py, core, self.core_color, min(255, int(alpha * 1.15))
+            )
+        self._quads.flush()
 
     def _lay_points(
         self,

@@ -249,14 +249,17 @@ class Torch(arcade.SpriteSolidColor):
             center_y=center_y + settings.TORCH_STEM_HEIGHT / 2,
             color=settings.COLOR_TORCH_FLAME,
         )
-        self._time = 0.0
         self._phase = (center_x * 0.17 + center_y * 0.09) % math.tau
-
-    def update(self, delta_time: float = settings.FRAME_TIME, *args, **kwargs) -> None:
-        self._time += max(0.0, delta_time)
+        self.stem = arcade.SpriteSolidColor(
+            settings.TORCH_STEM_WIDTH,
+            settings.TORCH_STEM_HEIGHT,
+            center_x=center_x,
+            center_y=self.bottom - settings.TORCH_STEM_HEIGHT / 2,
+            color=settings.COLOR_TORCH_STEM,
+        )
 
     def draw_fx(self) -> None:
-        """Halo chaud, puis le baton du placeholder (la flamme est le sprite)."""
+        """Halo chaud additif autour de la flamme."""
         flicker = self._flicker()
         flame_x = self.center_x
         flame_y = self.center_y
@@ -276,20 +279,11 @@ class Torch(arcade.SpriteSolidColor):
             settings.COLOR_TORCH_GLOW_CORE,
             int(settings.TORCH_GLOW_INNER_ALPHA * flicker),
         )
-        stem_top = self.bottom
-        stem_bottom = stem_top - settings.TORCH_STEM_HEIGHT
-        half = settings.TORCH_STEM_WIDTH / 2
-        arcade.draw_lrbt_rectangle_filled(
-            self.center_x - half,
-            self.center_x + half,
-            stem_bottom,
-            stem_top,
-            settings.COLOR_TORCH_STEM,
-        )
 
     def _flicker(self) -> float:
-        slow = math.sin(self._time * settings.TORCH_FLICKER_SPEED + self._phase)
-        fast = math.sin(self._time * settings.TORCH_FLICKER_SPEED_FAST + self._phase * 1.7)
+        now = time.perf_counter()
+        slow = math.sin(now * settings.TORCH_FLICKER_SPEED + self._phase)
+        fast = math.sin(now * settings.TORCH_FLICKER_SPEED_FAST + self._phase * 1.7)
         return 1.0 + settings.TORCH_FLICKER * (0.65 * slow + 0.35 * fast)
 
 

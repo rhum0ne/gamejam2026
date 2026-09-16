@@ -283,9 +283,18 @@ def apply_rect_hit_box(
     sprite.hit_box = HitBox(points, position=sprite.position)
 
 
+_PIXEL_LISTS: dict[int, arcade.SpriteList] = {}
+
+
 def draw_pixel_sprite(sprite: arcade.Sprite) -> None:
-    """Dessine un sprite en nearest-neighbor (pas de flou GPU)."""
-    arcade.draw_sprite(sprite, pixelated=True)
+    """Nearest-neighbor via une SpriteList d'un element (un batch GPU)."""
+    key = id(sprite)
+    batch = _PIXEL_LISTS.get(key)
+    if batch is None:
+        batch = arcade.SpriteList(use_spatial_hash=False, capacity=1, lazy=True)
+        batch.append(sprite)
+        _PIXEL_LISTS[key] = batch
+    batch.draw(pixelated=True)
 
 
 def _open_image(name: str | Path) -> Image.Image:
