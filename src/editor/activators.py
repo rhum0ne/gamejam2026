@@ -3,6 +3,8 @@
 Le jeu lit le champ `activators` du JSON (voir `world/level.py`). L'editeur
 le conserve a cote de la grille : une plaque n'occupe pas une cellule, elle
 recouvre `width` tuiles et pointe vers des coordonnees `setBlock type=void`.
+`invert` (optionnel) fait apparaitre les blocs a l'activation au lieu de
+les retirer.
 """
 
 from __future__ import annotations
@@ -25,6 +27,7 @@ class Activator:
     row: int
     width: int
     targets: tuple[tuple[int, int], ...] = ()
+    inverted: bool = False
 
     def __post_init__(self) -> None:
         if self.width < 1:
@@ -45,7 +48,7 @@ class Activator:
 
     def resized(self, column: int, width: int) -> "Activator":
         """Meme cibles, nouvelle emprise horizontale."""
-        return Activator(column, self.row, width, self.targets)
+        return Activator(column, self.row, width, self.targets, self.inverted)
 
     def with_toggled(self, column: int, row: int) -> "Activator":
         """Ajoute ou retire la cellule des cibles, sans doublon."""
@@ -56,8 +59,19 @@ class Activator:
                 self.row,
                 self.width,
                 tuple(target for target in self.targets if target != cell),
+                self.inverted,
             )
-        return Activator(self.column, self.row, self.width, (*self.targets, cell))
+        return Activator(
+            self.column,
+            self.row,
+            self.width,
+            (*self.targets, cell),
+            self.inverted,
+        )
+
+    def with_inverted(self, inverted: bool) -> "Activator":
+        """Meme cibles, sens cache / montre inverse."""
+        return Activator(self.column, self.row, self.width, self.targets, inverted)
 
     def clipped(self, columns: int, rows: int) -> "Activator | None":
         """Recadre dans la carte, ou None si la plaque est entierement dehors."""
@@ -72,7 +86,7 @@ class Activator:
             for target_column, target_row in self.targets
             if 0 <= target_column < columns and 0 <= target_row < rows
         )
-        return Activator(column, self.row, width, targets)
+        return Activator(column, self.row, width, targets, self.inverted)
 
     def to_json(self) -> dict:
         """Objet JSON attendu par `Level._parse_activator`."""
@@ -87,6 +101,8 @@ class Activator:
                 ]
             },
         }
+        if self.inverted:
+            payload["invert"] = True
         return payload
 
 
@@ -195,7 +211,15 @@ def prune(
             for cell in clipped.targets
             if can_link_kind(kind_at(*cell))
         )
-        kept.append(Activator(clipped.column, clipped.row, clipped.width, targets))
+        kept.append(
+            Activator(
+                clipped.column,
+                clipped.row,
+                clipped.width,
+                targets,
+                clipped.inverted,
+            )
+        )
     return tuple(kept)
 
 
@@ -208,7 +232,7 @@ def _parse_one(raw: object) -> Activator:
     if width < 1:
         raise ActivatorError("width doit etre un entier >= 1")
     targets = _parse_set_blocks(raw.get("activate"))
-    return Activator(column, row, width, tuple(targets))
+    return Activator(column, row, width, tuple(targets), _parse_invert(raw))
 
 
 def _parse_set_blocks(activate: object) -> list[tuple[int, int]]:
@@ -246,6 +270,15 @@ def _coord(raw: dict, *keys: str) -> int:
         if key in raw:
             return _as_int(raw[key], key)
     raise ActivatorError(f"champ manquant ({', '.join(keys)})")
+
+
+def _parse_invert(raw: dict) -> bool:
+    if "invert" not in raw:
+        return False
+    value = raw["invert"]
+    if not isinstance(value, bool):
+        raise ActivatorError("invert doit etre un booleen")
+    return value
 
 
 def _as_int(value: object, name: str) -> int:

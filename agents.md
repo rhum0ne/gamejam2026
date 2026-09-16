@@ -106,6 +106,7 @@ gamejam2026/
 │   │   ├── ghost.py        Fantome : vol libre, longe, timer, revelation, transport d'objets
 │   │   ├── corpse.py       Cadavre : solide, perissable, devorable par les ennemis
 │   │   ├── enemy.py        IA basique (PATROL / CHASE / FEAST) + bille bleue a la mort
+│   │   ├── zombie.py       Traqueur : vision en cone, cri, course, memoire, chute, 2 PV
 │   │   └── item.py         Objets ramassables (cle, bille bleue) et leurs regles de ramassage
 │   │
 │   ├── world/              L'ENVIRONNEMENT ET LE DECOR
@@ -276,6 +277,42 @@ separation : elle permet de tester les regles sans contexte OpenGL.
   `check_tutorial_is_solvable`) — ne pas le reposer sur le sol principal sans
   rejouer ces tests.
 
+### Zombie — `entities/zombie.py`
+* Ennemi au sol a **2 PV** (`ZOMBIE_HIT_POINTS`) : le 1er coup declenche
+  `EnemyBase._on_hurt` -> etat `HURT` (flash blanc, interrompt l'attaque),
+  puis il fonce sur le joueur meme sans le voir. Le 2e coup le tue.
+* **Vision** (`_can_see`) : demi-plan du cote ou il regarde, jusqu'a
+  `ZOMBIE_SIGHT_RANGE`, **ligne de vue** bloquee par les murs
+  (`arcade.has_line_of_sight`, testee au plus toutes les
+  `ZOMBIE_SIGHT_CHECK_INTERVAL` s). Dans son dos, il ne sent le joueur qu'a
+  `ZOMBIE_BACK_SENSE_RANGE`. Verticalement asymetrique : peu vers le haut
+  (il ne grimpe pas), `ZOMBIE_MAX_DROP_TILES` tuiles vers le bas.
+* `PATROL` lente -> `ALERT` (cri, Hurt sans la frame blanche) -> `CHASE` en
+  course (Walk accelere, pas de planche Run). Demi-tour en course freine
+  pendant `ZOMBIE_TURN_TIME` : sauter par-dessus lui fait gagner du temps.
+* Vue perdue : court au dernier point vu pendant `ZOMBIE_MEMORY_TIME`, puis
+  `SEARCH` (regarde a gauche/droite) pendant `ZOMBIE_SEARCH_TIME`, puis
+  `PATROL`. Le revoir en `CHASE`/`SEARCH` relance la course sans cri.
+* `ATTACK` : griffe bondissante (elan sur les frames 0-3, frames actives
+  `ZOMBIE_ATTACK_HIT_FRAMES`), fin penchee = fenetre pour le punir.
+  `ZOMBIE_ATTACK_RANGE > ZOMBIE_ATTACK_REACH` : c'est le bond qui comble.
+* **Chute** (`_may_drop`) : en course seulement, il saute d'un bord si sa
+  cible est plus bas et qu'un sol existe a au plus `ZOMBIE_MAX_DROP_TILES`
+  tuiles (sur 2 colonnes, pour l'elan). Les puits du tutoriel sont plus
+  profonds : il ne s'y jette pas. En patrouille, demi-tour au bord.
+* `FEAST` : cadavre a `ZOMBIE_CORPSE_SMELL_RANGE` (400 px, plus que le
+  squelette), il y va en courant ; au level design, garde les zombies a
+  plus de 400 px des endroits ou le joueur doit mourir.
+* Planches `Zombie_Default_*` 64x64, dessinees **tournees vers la gauche**
+  (`ZOMBIE_SPRITE_FACES_LEFT`), pieds a 16 px du bas de la frame (d'ou la
+  hitbox 22x30 native). Agrandies x`ZOMBIE_SCALE` (1.5) au chargement pour
+  avoir la taille du squelette : hitbox et offsets sont en pixels finaux.
+  Les durees d'animation passent par `ANIM_SPEED` (0.5).
+* Dans `level_1_tuto.json` (symbole `z`) : zone de test, juste apres le
+  squelette sur le sol principal (`rows[31]` col 34). Il est sur le couloir
+  des scripts de `smoke_test.py` (`check_tutorial_is_solvable` passe
+  toujours) : si tu le deplaces ou changes ses stats, relance le smoke test.
+
 ### Ames et paliers — `systems/upgrades.py`
 * Une bille bleue ramassee = `SOUL_ESSENCE_PER_ORB` essence.
 * Le niveau du fantome vient de `SOUL_LEVEL_THRESHOLDS` (essence *totale*
@@ -303,7 +340,7 @@ separation : elle permet de tester les regles sans contexte OpenGL.
 * `.` = vide (implicite). Tout autre symbole doit figurer dans `legend`.
 * Types disponibles (cles de `_FACTORIES` dans `world/level.py`) :
   `wall`, `spectral_wall`, `spike`, `door`, `checkpoint`, `player_spawn`,
-  `key`, `soul_orb`, `enemy`.
+  `key`, `soul_orb`, `enemy`, `bat`, `zombie`, `torch`.
 
 **Ajouter un type de tuile** : creer la classe dans `world/obstacles.py` (ou
 l'entite dans `entities/`), ajouter une petite fonction `_add_xxx` et son entree
@@ -404,6 +441,8 @@ transition de niveau est automatique (`GameSession.advance_level`).
 * Cadavre : solide, gravite, dissipation, devorable.
 * Ennemi : patrouille, poursuite, festin, bille bleue, sprite anime (squelette)
   avec mort animee (etat `DYING`).
+* Zombie : vision en cone + ligne de vue, cri, course, memoire/recherche,
+  griffe bondissante, 2 PV (etat `HURT`), chute controlee.
 * Niveau 1 "Le Puits Mortel" charge depuis JSON et **terminable**.
 * Camera lissee (constante de temps, look-ahead proportionnel a la vitesse), HUD, ecran titre, victoire, game over.
 

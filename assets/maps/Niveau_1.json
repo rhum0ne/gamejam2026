@@ -4,9 +4,9 @@
   "tile_size": 32,
   "legend": {
     ".": "vide",
-    "[": "dirt_corner",
-    "]": "dirt_corner_right",
-    "-": "dirt_top",
+    "[": "wall",
+    "]": "wall",
+    "-": "wall",
     "D": "door",
     "K": "key",
     "P": "player_spawn",

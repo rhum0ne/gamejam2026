@@ -208,12 +208,19 @@ class EditView(arcade.View):
                     f"Lance-flammes {arrow} portee {flame.range_tiles} "
                     f"int {flame.interval:.1f}s"
                 )
+            falling = self.document.falling_at(*self.hover)
+            if falling is not None:
+                element = (
+                    f"Bloc tombant delay {falling.delay:.2f}s "
+                    f"respawn {falling.respawn:.1f}s"
+                )
         plates = f"{len(self.document.activators)}"
         if self._link_index is not None and 0 <= self._link_index < len(self.document.activators):
             chosen = self.document.activators[self._link_index]
             plates = (
                 f"#{self._link_index + 1} {chosen.column},{chosen.row} "
                 f"x{chosen.width} -> {len(chosen.targets)}"
+                f"{'  montre' if chosen.inverted else '  cache'}"
             )
         message = self._message if self._message_time > 0.0 else ""
         return StatusData(
@@ -463,6 +470,10 @@ class EditView(arcade.View):
             return
         if self._tune_flamethrower(symbol):
             return
+        if self._tune_falling_block(symbol):
+            return
+        if self._tune_activator(symbol):
+            return
         if symbol in (arcade.key.EQUAL, arcade.key.PLUS, arcade.key.NUM_ADD):
             self.canvas.zoom_by(settings.EDITOR_ZOOM_STEP, *self._mouse)
             return
@@ -487,7 +498,7 @@ class EditView(arcade.View):
             if tool is Tool.LINK:
                 self.notify(
                     "plaques : glisser pour placer, clic sur un bloc pour lier, "
-                    "Suppr pour retirer"
+                    "V pour inverser, Suppr pour retirer"
                 )
             else:
                 self.notify(f"outil : {tool.value}")
@@ -535,6 +546,52 @@ class EditView(arcade.View):
             f"lance-flammes : portee {spec.range_tiles}  "
             f"intervalle {spec.interval:.1f}s  {facing}"
         )
+        return True
+
+    def _tune_falling_block(self, symbol: int) -> bool:
+        """Regle delay / respawn du bloc tombant sous le curseur."""
+        if self.hover is None or not self.document.inside(*self.hover):
+            return False
+        if self.document.cell(*self.hover) != settings.TILE_KIND_FALLING:
+            return False
+        delay_delta = 0.0
+        respawn_delta = 0.0
+        if symbol == arcade.key.PERIOD:
+            delay_delta = settings.FALLING_BLOCK_DELAY_STEP
+        elif symbol == arcade.key.COMMA:
+            delay_delta = -settings.FALLING_BLOCK_DELAY_STEP
+        elif symbol in _FLAME_INTERVAL_LONGER:
+            respawn_delta = settings.FALLING_BLOCK_RESPAWN_STEP
+        elif symbol in _FLAME_INTERVAL_SHORTER:
+            respawn_delta = -settings.FALLING_BLOCK_RESPAWN_STEP
+        else:
+            return False
+        spec = self.document.adjust_falling(
+            *self.hover,
+            delay_delta=delay_delta,
+            respawn_delta=respawn_delta,
+        )
+        if spec is None:
+            return True
+        self.canvas.sync(((*self.hover, settings.TILE_KIND_FALLING),))
+        self.notify(
+            f"bloc tombant : delay {spec.delay:.2f}s  respawn {spec.respawn:.1f}s"
+        )
+        return True
+
+    def _tune_activator(self, symbol: int) -> bool:
+        """Inverse cache / montre de la plaque selectionnee ou sous le curseur."""
+        if symbol != arcade.key.V:
+            return False
+        index = self._link_index
+        if index is None and self.hover is not None and self.document.inside(*self.hover):
+            index = activator_at(self.document.activators, *self.hover)
+        if index is None:
+            return False
+        inverted = self.document.toggle_activator_invert(index)
+        self._link_index = index
+        mode = "montre a l'activation" if inverted else "cache a l'activation"
+        self.notify(f"plaque #{index + 1} : {mode}")
         return True
 
     # ------------------------------------------------------------------ #

@@ -33,12 +33,15 @@ CATEGORY_UNKNOWN = "Inconnu"
 
 # Symboles disponibles pour un type sans symbole habituel. Ni le point (vide),
 # ni l'espace, ni les quotes (le JSON de carte les echappe mal). L'alphabet
-# grec sert de rab quand les ASCII sont pris (beaucoup de decors).
+# grec puis cyrillique servent de rab quand les ASCII sont pris (beaucoup de
+# decors, plus les archetypes d'ennemis).
 _GREEK = "αβγδεζηθικλμνξοπρστυφχψωΑΒΓΔΕΖΗΘΙΚΛΜΝΞΟΠΡΣΤΥΦΧΨΩ"
+_CYRILLIC = "абвгдежзийклмнопрстуфхцчшщъыьэюяАБВГДЕЖЗИЙКЛМНОПРСТУФХЦЧШЩЪЫЬЭЮЯ"
 _SYMBOL_POOL = (
     "dI#TBG=^voPCDKEijklmnpqrstuwxyzabcefhABFHJLMNOQRSUVWXYZ0123456789"
     "()[]{}<>-+*/\\|!$%&@;:?~,_'`"
     + _GREEK
+    + _CYRILLIC
 )
 
 
@@ -67,6 +70,7 @@ class PaletteItem:
 _TERRAIN_META: dict[str, tuple[str, str]] = {
     "wall": ("Terre", "#"),
     "bedrock": ("Socle", "B"),
+    settings.TILE_KIND_ICE: ("Glace", "~"),
     "spike": ("Piques (sol)", "^"),
     "spike_up": ("Piques (plafond)", "v"),
 }
@@ -74,14 +78,17 @@ _TERRAIN_META: dict[str, tuple[str, str]] = {
 # kind -> (libelle, categorie, symbole habituel, couleur)
 _GAMEPLAY_META: dict[str, tuple[str, str, str, tuple[int, int, int]]] = {
     "player_spawn": ("Depart du joueur", CATEGORY_GAMEPLAY, "P", settings.COLOR_PLAYER),
-    "checkpoint": ("Checkpoint", CATEGORY_GAMEPLAY, "C", settings.COLOR_CHECKPOINT),
+    "checkpoint": ("Statue de respawn", CATEGORY_GAMEPLAY, "C", settings.COLOR_CHECKPOINT),
     "door": ("Porte de sortie", CATEGORY_GAMEPLAY, "D", settings.COLOR_DOOR_LOCKED),
     "key": ("Cle", CATEGORY_GAMEPLAY, "K", settings.COLOR_KEY),
     "soul_orb": ("Ame (bille bleue)", CATEGORY_GAMEPLAY, "o", settings.COLOR_SOUL_ORB),
     "enemy": ("Ennemi", CATEGORY_GAMEPLAY, "E", settings.COLOR_ENEMY),
+    "bat": ("Chauve-souris", CATEGORY_GAMEPLAY, "b", settings.COLOR_BAT),
+    "zombie": ("Zombie", CATEGORY_GAMEPLAY, "z", settings.COLOR_ZOMBIE),
     "spectral_wall": ("Mur spectral", CATEGORY_GAMEPLAY, "=", settings.COLOR_SPECTRAL_WALL),
     "torch": ("Torche", CATEGORY_DECOR, "i", settings.COLOR_TORCH_FLAME),
     "flamethrower": ("Lance-flammes", CATEGORY_HAZARD, "f", settings.COLOR_FLAMETHROWER),
+    settings.TILE_KIND_FALLING: ("Bloc tombant", CATEGORY_HAZARD, "F", settings.COLOR_FALLING_BLOCK),
 }
 
 _CATEGORY_ORDER = (
@@ -112,13 +119,19 @@ def _terrain_items(taken: set[str]) -> list[PaletteItem]:
         symbol = free_symbol(taken, wanted or kind.upper())
         taken.add(symbol)
         hazard = spec.role == "spike"
+        if spec.role == "spike":
+            color = settings.COLOR_SPIKE
+        elif spec.role == "ice":
+            color = settings.COLOR_ICE
+        else:
+            color = settings.COLOR_WALL
         items.append(
             PaletteItem(
                 kind=kind,
                 label=label,
                 category=CATEGORY_HAZARD if hazard else CATEGORY_TERRAIN,
                 symbol=symbol,
-                color=settings.COLOR_SPIKE if hazard else settings.COLOR_WALL,
+                color=color,
                 spec=spec,
             )
         )

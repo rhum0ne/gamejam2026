@@ -16,18 +16,27 @@ from collections.abc import Sequence
 import arcade
 
 import settings
+from src.ui import sprites
 
 
-class Corpse(arcade.SpriteSolidColor):
-    """Depouille physique, solide et perissable."""
+def _bones_texture() -> arcade.Texture:
+    frames = sprites.load_strip(
+        settings.SPRITE_PLAYER_BONES,
+        settings.SPRITE_FRAME_SIZE,
+        scale=settings.ENTITY_SCALE,
+    )
+    return frames[0]
+
+
+class Corpse(arcade.Sprite):
+    """Depouille physique, solide et perissable (tas d'os)."""
 
     def __init__(self, center_x: float, center_y: float) -> None:
-        super().__init__(
+        super().__init__(_bones_texture(), center_x=center_x, center_y=center_y)
+        sprites.apply_rect_hit_box(
+            self,
             settings.PLAYER_WIDTH + 8,
             settings.PLAYER_HEIGHT // 2,
-            center_x=center_x,
-            center_y=center_y,
-            color=settings.COLOR_CORPSE,
         )
         self.time_left = settings.CORPSE_LIFETIME
         self.eaten_progress = 0.0

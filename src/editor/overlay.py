@@ -25,8 +25,9 @@ SHORTCUTS: tuple[tuple[str, str], ...] = (
     ("B / R / G", "pinceau / rectangle / remplir la zone"),
     ("X / I / M", "gomme / pipette / selection"),
     ("L", "plaques et blocs lies"),
-    (", et .", "portee du lance-flammes sous le curseur"),
-    ("9 et 0", "intervalle du lance-flammes sous le curseur"),
+    ("V", "inverser la plaque (montre / cache a l'activation)"),
+    (", et .", "portee du lance-flammes / delay du bloc tombant"),
+    ("9 et 0", "intervalle du lance-flammes / respawn du bloc tombant"),
     ("H", "pivoter le lance-flammes (4 directions)"),
     ("[ et ]", "element precedent / suivant de la palette"),
     ("Ctrl+A", "tout selectionner"),
@@ -127,6 +128,13 @@ class HelpOverlay:
 
     def __init__(self) -> None:
         self.visible = False
+        self._key_line = labels.Line(settings.EDITOR_TEXT_SIZE, settings.COLOR_EDITOR_TEXT)
+        self._desc_line = labels.Line(
+            settings.EDITOR_TEXT_SIZE, settings.COLOR_EDITOR_TEXT_DIM
+        )
+        self._footer = labels.Line(
+            settings.EDITOR_TEXT_SIZE, settings.COLOR_EDITOR_TEXT_DIM, anchor_x="center"
+        )
 
     def toggle(self) -> None:
         self.visible = not self.visible
@@ -145,30 +153,28 @@ class HelpOverlay:
             settings.COLOR_EDITOR_ACCENT,
             anchor_x="center",
         )
+        margin = 48.0
+        gap = 16.0
         column_width = window_width / 2
+        key_width = min(260.0, max(96.0, column_width * 0.40))
+        desc_width = max(80.0, column_width - key_width - gap - margin)
         top = window_height - 108
         line_height = 32
         per_column = (len(SHORTCUTS) + 1) // 2
         for index, (keys, description) in enumerate(SHORTCUTS):
             column = index // per_column
             row = index % per_column
-            x = 48 + column * column_width
+            x = margin + column * column_width
             y = top - row * line_height
-            labels.draw(keys, x, y, settings.EDITOR_TEXT_SIZE, settings.COLOR_EDITOR_TEXT)
-            labels.draw(
-                description,
-                x + 280,
-                y,
-                settings.EDITOR_TEXT_SIZE,
-                settings.COLOR_EDITOR_TEXT_DIM,
+            self._key_line.draw(keys, x, y, max_width=key_width)
+            self._desc_line.draw(
+                description, x + key_width + gap, y, max_width=desc_width
             )
-        labels.draw(
+        self._footer.draw(
             "F1 ou Echap pour fermer",
             window_width / 2,
             36,
-            settings.EDITOR_TEXT_SIZE,
-            settings.COLOR_EDITOR_TEXT_DIM,
-            anchor_x="center",
+            max_width=max(80.0, window_width - margin * 2),
         )
 
 

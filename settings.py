@@ -22,6 +22,10 @@ UI_DIR = ASSETS_DIR / "ui"
 SOUNDS_DIR = ASSETS_DIR / "sons"
 MAPS_DIR = ASSETS_DIR / "maps"
 FONTS_DIR = ASSETS_DIR / "fonts"
+# Version nettoyee du son fourni : l'original a ~570 ms de silence en tete.
+ATTACK_SOUND_FILENAME = "attack_sword_sync.wav"
+DEFAULT_ATTACK_SOUND = ":resources:sounds/hit1.wav"
+ATTACK_SOUND_VOLUME = 0.45
 
 # --------------------------------------------------------------------------- #
 # Police
@@ -62,6 +66,10 @@ FRAME_TIME = 1 / FPS
 # de dimensions : voir `CameraRig` dans `src/world/camera.py`.
 WORLD_VIEW_WIDTH = SCREEN_WIDTH
 WORLD_VIEW_HEIGHT = SCREEN_HEIGHT
+# Pixels du framebuffer hors-ecran par pixel de conception. 2 = image 2560x1440
+# pour une vue 1280x720 : le zoom camera (2.4) et le plein ecran restent nets.
+# Le nombre de chunks soumis ne change pas (le cadrage monde est identique).
+RENDER_SCALE = 2
 
 # --------------------------------------------------------------------------- #
 # Monde / tuiles
@@ -75,6 +83,11 @@ RENDER_CHUNK_TILES = 16
 # chunk de 512 px apparait d'un coup au bord de l'ecran.
 RENDER_CULL_PAD = 120.0
 
+# Identifiants de TYPE de tuile (legende JSON / TILE_SPECS). Ce ne sont PAS
+# des noms de fichiers sprite : les confondre cassait le chargeur.
+TILE_KIND_ICE = "ice_block"
+TILE_KIND_FALLING = "falling_block"
+
 # Noms de fichiers dans SPRITES_DIR, sans extension. Le chargeur ajoute `.png`.
 # Le terrain (dirt/grass/...) vient desormais de `SHEET_GROUND` plus bas
 # (planche "new_textures") : les anciens PNG individuels (dirt_1.png,
@@ -84,20 +97,29 @@ SPRITE_SPIKE_HANGING = "spike_up"
 # Bandeaux d'entites (fichiers tels quels, y compris le typo "gost").
 SPRITE_PLAYER_WALK = "player_walk"
 SPRITE_PLAYER_IDLE = "player_idle"
+SPRITE_PLAYER_ATTACK = "player_attack_1"
+SPRITE_PLAYER_DEATH = "player_death"
+SPRITE_PLAYER_BONES = "player_bones"
 SPRITE_GHOST_WALK = "gost_walk"
 SPRITE_GHOST_DISAPPEAR = "gost_disappears"
 SPRITE_KEY = "key"
-SPRITE_CHECKPOINT = "Check_Point"
-SPRITE_CHECKPOINT_ACTIVE = "Check_Point_actif"
+SPRITE_DOOR_CLOSED = "door_close"
+SPRITE_DOOR_OPEN = "door_open"
+SPRITE_CHECKPOINT = "phoenix_resurrection-desactive"
+SPRITE_CHECKPOINT_ACTIVE = "phoenix_resurrection-active"
 SPRITE_FLAMETHROWER = "Lance_flamme"
-# PNG natif 32 px, agrandi x2 en nearest-neighbor (pas de flou).
-CHECKPOINT_SIZE = TILE_SIZE * 2
+# Art natif 125 px ; affiche ~3 tuiles, pieds cales sur la case.
+CHECKPOINT_SIZE = TILE_SIZE * 3
+# Porte : art 32x32 affiche sur 2 tuiles de haut (meme collision qu'avant).
+DOOR_DISPLAY_SIZE = TILE_SIZE * 2
 SPRITE_FRAME_SIZE = 32
 # Taille a l'ecran des sprites joueur / fantome (1.0 = 32 px).
 # L'agrandissement est fait en nearest-neighbor dans `load_strip`.
 ENTITY_SCALE = 1.5
 ANIM_WALK_FRAME_TIME = 0.07
 ANIM_IDLE_FRAME_TIME = 0.12
+ANIM_PLAYER_ATTACK_FRAME_TIME = 0.03
+ANIM_PLAYER_DEATH_FRAME_TIME = 0.08
 ANIM_GHOST_DISAPPEAR_FRAME_TIME = 0.08
 # 1.0 = rythme de base ; plus petit = plus lent (0.5 = deux fois plus lent).
 ANIM_SPEED = 0.5
@@ -263,6 +285,20 @@ SPIKE_GHOST_GLOW_INNER_ALPHA = 180
 SPIKE_GHOST_GLOW_PULSE = 0.14
 SPIKE_GHOST_GLOW_PULSE_SPEED = 3.2
 
+# Blocs tombants : delay apres le pas du joueur, puis chute sans collision
+# avec le terrain, puis respawn a la position d'origine.
+FALLING_BLOCK_DELAY = 0.45
+FALLING_BLOCK_DELAY_MIN = 0.05
+FALLING_BLOCK_DELAY_MAX = 4.0
+FALLING_BLOCK_DELAY_STEP = 0.05
+FALLING_BLOCK_RESPAWN = 2.0
+FALLING_BLOCK_RESPAWN_MIN = 0.2
+FALLING_BLOCK_RESPAWN_MAX = 12.0
+FALLING_BLOCK_RESPAWN_STEP = 0.2
+FALLING_BLOCK_GRAVITY = GRAVITY
+FALLING_BLOCK_MAX_SPEED = 12.0
+FALLING_BLOCK_SHAKE = 1.6  # pixels, pendant le delay
+
 # Halo rouge des menaces (piques et ennemis), perce le voile fantome.
 # Gros, saturé, identique pour les deux : un signal DANGER, pas un point.
 HAZARD_GHOST_GLOW_SIZE = 260.0
@@ -299,7 +335,7 @@ PLAYER_JUMP_BUFFER = 0.12
 PLAYER_AIR_BRAKE_TIME = 0.90
 PLAYER_AIR_TURN_BOOST = 1.35
 # PLAYER_RESPAWN_DELAY est la somme des phases REBIRTH_* (plus bas).
-# Eclat d'ames bleues sur le totem au moment du respawn.
+# Eclat d'ames bleues sur la statue au moment du respawn.
 CHECKPOINT_BURST_COUNT = 22
 CHECKPOINT_BURST_LIFE = 0.9
 CHECKPOINT_BURST_SPEED_X = 70.0
@@ -312,9 +348,9 @@ CHECKPOINT_BURST_GLOW_ALPHA = 150
 CHECKPOINT_BURST_CORE_ALPHA = 220
 CHECKPOINT_BURST_SPREAD = 10.0
 CHECKPOINT_BURST_MAX = 48
-# Halo du totem : eteint au repos, flash a l'activation, pulse tant qu'il est actif.
-CHECKPOINT_GLOW_LIFT = 0.22  # fraction de la hauteur, vers le crane
-CHECKPOINT_GLOW_WASH = 340.0  # nappe large, derriere le totem
+# Halo de la statue : eteint au repos, flash a l'activation, pulse tant qu'elle est active.
+CHECKPOINT_GLOW_LIFT = 0.10  # fraction de la hauteur, vers le phenix
+CHECKPOINT_GLOW_WASH = 340.0  # nappe large, derriere la statue
 CHECKPOINT_GLOW_OUTER = 240.0
 CHECKPOINT_GLOW_MID = 118.0
 CHECKPOINT_GLOW_INNER = 44.0
@@ -335,13 +371,18 @@ CHECKPOINT_IGNITE_RISE = 0.18  # part du flash consacree a la montee
 PLAYER_ACCEL_TIME = 0.25
 # Glissade a l'arret (sol) : 2-3 frames, quelques pixels tout au plus.
 PLAYER_SLIDE_TIME = 0.01
+# Glace : le corps conserve son elan, acceleration et demi-tour sont mous.
+PLAYER_ICE_SLIDE_TIME = 1.7
+PLAYER_ICE_ACCEL_SCALE = 0.38
+PLAYER_ICE_STOP_SPEED = 0.06
 # Fraction de l'acceleration au sol quand le joueur est en l'air (1 = aussi vif qu'au sol).
 PLAYER_AIR_CONTROL = 1.15
 # Ralentissement juste apres l'atterrissage.
 PLAYER_LANDING_SLOW_TIME = 0.12
 PLAYER_LANDING_SPEED_SCALE = 0.86
 # Dash horizontal (Shift), vitesse en px/frame, duree et recharge en secondes.
-PLAYER_DASH_SPEED = 30.0
+# ~2x la course : un burst court, pas une teleportation.
+PLAYER_DASH_SPEED = 22.0
 PLAYER_DASH_DURATION = 0.12
 PLAYER_DASH_COOLDOWN = 3.0
 PLAYER_DASH_READY_FLASH = 0.38
@@ -349,6 +390,43 @@ PLAYER_DASH_GLOW_SCALE = 3.4
 PLAYER_DASH_GLOW_ALPHA = 34
 PLAYER_DASH_GLOW_STRETCH = 1.55  # etirement du halo dans l'axe du dash
 PLAYER_DASH_GLOW_OFFSET = 0.32  # recul du halo, en fractions de PLAYER_WIDTH
+# Attaque de melee du joueur (clic gauche).
+PLAYER_ATTACK_RANGE = 42.0  # portee du premier coup, conservee pour compatibilite
+PLAYER_ATTACK_RANGES: tuple[float, ...] = (42.0, 50.0, 62.0)
+PLAYER_ATTACK_DURATION = 0.12  # duree de base, conservee pour compatibilite
+PLAYER_ATTACK_DURATIONS: tuple[float, ...] = (0.12, 0.14, 0.18)
+PLAYER_ATTACK_COOLDOWN = 0.35  # delai minimal quand aucun enchainement n'est prepare
+PLAYER_ATTACK_DAMAGE = 1
+PLAYER_ATTACK_DAMAGES: tuple[int, ...] = (1, 1, 1)
+PLAYER_ATTACK_KNOCKBACK_SCALES: tuple[float, ...] = (1.0, 1.2, 1.65)
+PLAYER_ATTACK_VERTICAL_SCALES: tuple[float, ...] = (1.0, 1.1, 1.3)
+PLAYER_ATTACK_COMBO_COUNT = 3
+PLAYER_ATTACK_BUFFER_PROGRESS = 0.28  # le clic est memorise sur la fin du coup
+PLAYER_ATTACK_COMBO_RESET_TIME = 0.62  # temps avant de repartir au premier coup
+PLAYER_ATTACK_IMPACT_PROGRESS = 0.50  # debut de la frame ou la lame touche vraiment
+PLAYER_ATTACK_DRAW_WIDTHS: tuple[float, ...] = (48.0, 54.0, 62.0)
+PLAYER_ATTACK_SWEEP_ANGLES: tuple[tuple[float, float], ...] = (
+    (58.0, -40.0),
+    (-44.0, 58.0),
+    (84.0, -84.0),
+)
+PLAYER_ATTACK_TRAIL_COUNT = 3
+PLAYER_ATTACK_TRAIL_DELAY = 0.075
+COMBAT_HITSTOP_DURATION = 0.05  # micro-pause lors d'un impact reussi
+COMBAT_HIT_SHAKE_AMPLITUDE = 1.8
+COMBAT_HIT_SHAKE_DURATION = 0.08
+# Eclaboussures de sang (frappe et coups recus).
+BLOOD_COUNT = 12
+BLOOD_COUNT_PLAYER = 18
+BLOOD_LIFE = 0.38
+BLOOD_SPEED_X = 210.0
+BLOOD_SPEED_Y = 160.0
+BLOOD_GRAVITY = 720.0
+BLOOD_SIZE_MIN = 2.4
+BLOOD_SIZE_MAX = 5.2
+BLOOD_SPREAD = 6.0
+BLOOD_MAX = 96
+BLOOD_CONE = 0.7  # radians autour de la direction du coup
 # Trainee de points (fantome cyan / dash jaune).
 TRAIL_SPACING = 6.5
 TRAIL_MOTES = 2
@@ -378,7 +456,7 @@ PARTICLE_LAND_SIZE_MIN = 3.5
 PARTICLE_LAND_SIZE_MAX = 7.5
 PARTICLE_RUN_SPEED_RATIO = 0.88  # fraction de PLAYER_SPEED pour declencher
 # Trainee de dash tant que la vitesse reste nettement au-dessus de la course.
-PARTICLE_HIGH_SPEED_RATIO = 0.45  # fraction de PLAYER_DASH_SPEED
+PARTICLE_HIGH_SPEED_RATIO = 0.70  # fraction de PLAYER_DASH_SPEED (au-dessus de la course)
 PARTICLE_RUN_INTERVAL = 0.040  # secondes entre deux grains
 PARTICLE_RUN_LIFE = 0.28
 PARTICLE_RUN_SPEED_X = 55.0
@@ -523,10 +601,227 @@ ENEMY_ATTACK_VERTICAL_RANGE = 40.0  # tolerance verticale (doit etre a peu pres 
 ENEMY_ATTACK_HIT_FRAMES: tuple[int, int] = (5, 7)
 ENEMY_ATTACK_COOLDOWN = 0.4  # secondes de pause entre deux coups
 ENEMY_CORPSE_SMELL_RANGE = 320.0  # distance d'attraction vers un cadavre
+ENEMY_HIT_FLASH_DURATION = 0.18
+ENEMY_KNOCKBACK_SPEED = 5.0
+ENEMY_KNOCKBACK_FRICTION = 0.72
+# Halo rouge en mode fantome (squelette) : meme vocabulaire que BAT_/ZOMBIE_.
+ENEMY_GHOST_GLOW_SCALE = 5.6
+ENEMY_GHOST_GLOW_ALPHA = 96
+ENEMY_GHOST_GLOW_INNER_SCALE = 2.4
+ENEMY_GHOST_GLOW_INNER_ALPHA = 170
+ENEMY_GHOST_GLOW_PULSE = 0.16
+ENEMY_GHOST_GLOW_PULSE_SPEED = 3.4
 ANIM_ENEMY_IDLE_FRAME_TIME = 0.12
 ANIM_ENEMY_WALK_FRAME_TIME = 0.07
 ANIM_ENEMY_ATTACK_FRAME_TIME = 0.05
 ANIM_ENEMY_DIE_FRAME_TIME = 0.06
+
+# --------------------------------------------------------------------------- #
+# Ennemis - chauve-souris (volant)
+# --------------------------------------------------------------------------- #
+
+# Planches "Bat with VFX" (impacts/trainees dessines dans les planches d'attaque
+# elles-memes) : assets/animations/. Frames natives carrees, contrairement au
+# squelette (96x64) : 64x64.
+BAT_DIR = ANIMATIONS_DIR / "Enemies" / "Bat" / "Bat with VFX"
+BAT_SPRITE_SLEEP = BAT_DIR / "Bat-Sleep.png"
+BAT_SPRITE_WAKE = BAT_DIR / "Bat-WakeUp.png"
+BAT_SPRITE_FLY = BAT_DIR / "Bat-IdleFly.png"
+BAT_SPRITE_RUN = BAT_DIR / "Bat-Run.png"
+BAT_SPRITE_ATTACK_DIVE = BAT_DIR / "Bat-Attack1.png"  # piquet vertical
+BAT_SPRITE_ATTACK_LUNGE = BAT_DIR / "Bat-Attack2.png"  # charge horizontale
+BAT_SPRITE_DIE = BAT_DIR / "Bat-Die.png"
+BAT_FRAME_SIZE = 64
+BAT_SCALE = 1.0
+# Hitbox rectangulaire = corps visible (ailes repliees), pas l'envergure en
+# plein vol : mesuree au centre de la frame, a affiner avec DEBUG_SHOW_HITBOXES.
+BAT_WIDTH = 22
+BAT_HEIGHT = 22
+BAT_HITBOX_OFFSET_X = 0.0
+BAT_HITBOX_OFFSET_Y = -4.0
+# La planche dessine la chauve-souris tournee vers la gauche (le squelette est
+# tourne vers la droite) : `Bat.facing` doit donc s'appliquer en miroir.
+BAT_SPRITE_FACES_LEFT = True
+BAT_HIT_POINTS = 1
+
+# Deplacement (vol libre, sans gravite : cf. Ghost._apply_steering/_move_axis).
+BAT_SPEED = 3.2  # px/frame
+BAT_ACCEL_TIME = 0.18  # secondes pour atteindre BAT_SPEED
+BAT_COAST_TIME = 0.30  # secondes pour freiner une fois la cible hors de portee
+BAT_ARRIVE_DISTANCE = 6.0  # px : assez pres du perchoir pour se rendormir
+
+# Reveil / poursuite / laisse (distances au joueur ou au perchoir d'origine).
+BAT_WAKE_RANGE = 190.0
+BAT_LEASH_RANGE = 340.0  # au-dela du perchoir, la chauve-souris abandonne et rentre
+
+# Attaque : la chauve-souris pique si le joueur est nettement en-dessous, dans
+# un cone autour de la verticale (pas seulement pile en-dessous : un angle
+# genereux, sinon l'attaque ne se declenche presque jamais en jeu reel) ; elle
+# charge a l'horizontale si le joueur est a peu pres a la meme hauteur.
+BAT_ATTACK_RANGE = 70.0  # distance de declenchement (CHASE -> ATTACK)
+BAT_ATTACK_REACH = 46.0  # rayon reel du coup pendant les frames actives, depuis la position apres l'elan
+# RANGE < LURCH_DISTANCE + REACH : un joueur immobile a portee de declenchement
+# est touche ; un joueur qui s'ecarte pendant l'armement peut esquiver.
+BAT_DIVE_MIN_DROP = 16.0  # px : le joueur doit etre au moins ce peu en-dessous
+BAT_DIVE_CONE_ANGLE = 50.0  # degres de part et d'autre de la verticale (piquet)
+BAT_LUNGE_VERTICAL_RANGE = 20.0  # tolerance de hauteur pour la charge horizontale
+BAT_ATTACK_COOLDOWN = 0.5  # secondes de pause entre deux attaques
+# Frames actives de chaque planche d'attaque, calees sur le pic du mouvement
+# dessine (mesure sur les planches, voir le dessin du corps par frame, pas
+# juste la duree totale) : le piquet touche le fond de sa boucle (~13px sous
+# le centre), la charge son extension horizontale maximale (~19px).
+BAT_DIVE_HIT_FRAMES: tuple[int, int] = (5, 6)
+BAT_LUNGE_HIT_FRAMES: tuple[int, int] = (7, 9)
+# La planche anime elle-meme un vrai mouvement (piquet/charge), mais son
+# amplitude est modeste (10-20px autour du centre de la frame 64x64) : bien
+# moins que BAT_ATTACK_RANGE. Sans un minimum de vrai deplacement du sprite,
+# l'attaque semble foncer sur le joueur sans jamais l'atteindre des qu'il
+# n'est pas deja tout pres. On ne va donc pas jusqu'au joueur (ca collerait
+# les deux sprites, cf. retour visuel) : juste un elan court et plafonne vers
+# lui, que l'amplitude dessinee complete jusqu'au contact.
+BAT_ATTACK_LURCH_DISTANCE = 32.0  # px : distance max parcourue par l'ancre pendant l'elan
+# Duree de l'elan (interpolation directe vers la cible, cf. `Bat._advance_attack_lurch`) :
+# volontairement PAS un ressort vitesse/acceleration comme le vol normal, qui
+# survolerait la cible sur un trajet si court et rearmerait sans fin
+# ("picorement"). Doit tenir dans la fenetre entre BAT_ATTACK_LURCH_START_FRAME
+# et le debut des frames actives (le piquet laisse le moins de marge : ~0.1s).
+BAT_ATTACK_LURCH_DURATION = 0.07  # secondes
+# Les toutes premieres frames des deux planches d'attaque dessinent un recul/
+# une montee (l'armement, a l'oppose du joueur : mesure sur les planches,
+# cf. commentaire au-dessus). Faire foncer l'ancre des la frame 0 la ferait
+# avancer pendant que le dessin recule : un contresens visuel tres marque
+# (l'impression de "rejouer" quelque chose). L'elan n'est donc arme qu'a
+# partir de cette frame, une fois le dessin reellement lance vers la cible.
+BAT_ATTACK_LURCH_START_FRAME = 4
+
+ANIM_BAT_SLEEP_FRAME_TIME = 0.20
+ANIM_BAT_WAKE_FRAME_TIME = 0.05
+ANIM_BAT_FLY_FRAME_TIME = 0.09
+ANIM_BAT_RUN_FRAME_TIME = 0.06
+ANIM_BAT_ATTACK_DIVE_FRAME_TIME = 0.045
+ANIM_BAT_ATTACK_LUNGE_FRAME_TIME = 0.04
+ANIM_BAT_DIE_FRAME_TIME = 0.05
+
+BAT_GHOST_GLOW_SCALE = 5.0
+BAT_GHOST_GLOW_ALPHA = 90
+BAT_GHOST_GLOW_INNER_SCALE = 2.2
+BAT_GHOST_GLOW_INNER_ALPHA = 160
+BAT_GHOST_GLOW_PULSE = 0.18
+BAT_GHOST_GLOW_PULSE_SPEED = 3.8
+COLOR_BAT = (150, 96, 190)
+COLOR_BAT_GLOW = (255, 28, 22)
+COLOR_BAT_GLOW_CORE = (255, 92, 64)
+
+# --------------------------------------------------------------------------- #
+# Ennemis - zombie (traqueur au sol)
+# --------------------------------------------------------------------------- #
+
+# Planches "Zombie_Default" : 6 frames 64x64 chacune. Pas de planche de course :
+# la course rejoue Walk en accelere (ANIM_ZOMBIE_RUN_FRAME_TIME).
+ZOMBIE_DIR = ANIMATIONS_DIR / "Enemies" / "Zombie"
+ZOMBIE_SPRITE_IDLE = ZOMBIE_DIR / "Zombie_Default_Idle.png"
+ZOMBIE_SPRITE_WALK = ZOMBIE_DIR / "Zombie_Default_Walk.png"
+ZOMBIE_SPRITE_ATTACK = ZOMBIE_DIR / "Zombie_Default_Attack1.png"
+ZOMBIE_SPRITE_HURT = ZOMBIE_DIR / "Zombie_Default_Hurt.png"
+ZOMBIE_SPRITE_DIE = ZOMBIE_DIR / "Zombie_Default_Dead.png"
+ZOMBIE_FRAME_SIZE = 64
+# Planches agrandies au chargement (nearest-neighbor, cf. ENTITY_SCALE du
+# joueur) : a 1.0, le zombie (~31 px de haut) paraissait minuscule a cote du
+# squelette (~46 px) et du joueur. A 1.5, il fait ~46 px, comme le squelette.
+ZOMBIE_SCALE = 1.5
+# Corps mesure sur les planches natives : x 20-44, y 17-48 (pieds a 16 px du
+# bas de la frame, pas tout en bas comme le squelette) -> hitbox 22x30
+# centree, abaissee d'1 px pour que son bas tombe pile sous les pieds.
+# Valeurs en pixels finaux (apres ZOMBIE_SCALE), comme `apply_rect_hit_box` l'attend.
+ZOMBIE_WIDTH = 22 * ZOMBIE_SCALE
+ZOMBIE_HEIGHT = 30 * ZOMBIE_SCALE
+ZOMBIE_HITBOX_OFFSET_X = 0.0
+ZOMBIE_HITBOX_OFFSET_Y = -1.0 * ZOMBIE_SCALE
+# Les planches dessinent le zombie tourne vers la gauche (cf. BAT_SPRITE_FACES_LEFT).
+ZOMBIE_SPRITE_FACES_LEFT = True
+# 2 PV : le premier stomp le sonne (HURT) et l'enrage, le second le tue.
+ZOMBIE_HIT_POINTS = 2
+
+# Deplacement : traine les pieds en patrouille, sprinte une fois qu'il a vu le
+# joueur. Le joueur (PLAYER_SPEED 5.5) le distance, mais doit s'engager.
+ZOMBIE_PATROL_SPEED = 0.8  # px/frame
+ZOMBIE_RUN_SPEED = 3.4  # px/frame
+ZOMBIE_ACCEL_TIME = 0.30  # secondes (lissage exponentiel de change_x)
+# Demi-tour en course : il freine et met ce temps a se retourner. Sauter
+# par-dessus lui fait donc gagner un vrai temps d'avance.
+ZOMBIE_TURN_TIME = 0.25
+
+# Vision : cone avant (demi-plan du cote ou il regarde) + ligne de vue (les
+# murs bloquent). Dans son dos, il ne "sent" le joueur qu'au contact.
+ZOMBIE_SIGHT_RANGE = 280.0
+ZOMBIE_BACK_SENSE_RANGE = 48.0
+# Asymetrique : il ne peut pas grimper (pas de vision vers le haut au-dela d'un
+# petit ecart, comme ENEMY_AGGRO_VERTICAL_RANGE), mais il peut se laisser
+# tomber jusqu'a ZOMBIE_MAX_DROP_TILES : il voit donc aussi loin vers le bas.
+ZOMBIE_SIGHT_UP_RANGE = 48.0
+ZOMBIE_MAX_DROP_TILES = 4
+ZOMBIE_SIGHT_DOWN_RANGE = (ZOMBIE_MAX_DROP_TILES + 0.5) * TILE_SIZE
+ZOMBIE_EYE_OFFSET_Y = 12.0  # px au-dessus du centre : point de depart de la ligne de vue
+ZOMBIE_SIGHT_CHECK_INTERVAL = 0.1  # secondes entre deux tests de ligne de vue (perf)
+ZOMBIE_SIGHT_CHECK_RESOLUTION = 8  # px entre deux echantillons du rayon
+# Cri d'alerte (PATROL -> CHASE) : laisse au joueur le temps de reagir.
+# Duree reelle = frames x FRAME_TIME / ANIM_SPEED : 5 x 0.04 / 0.5 = 0.4 s.
+ANIM_ZOMBIE_ALERT_FRAME_TIME = 0.04
+
+# Memoire : une fois la vue perdue, il court au dernier point ou il a vu le
+# joueur pendant ZOMBIE_MEMORY_TIME, puis cherche (regarde a gauche/droite)
+# pendant ZOMBIE_SEARCH_TIME avant de reprendre sa patrouille.
+ZOMBIE_MEMORY_TIME = 1.5
+ZOMBIE_SEARCH_TIME = 1.5
+ZOMBIE_SEARCH_LOOK_TIME = 0.5  # secondes entre deux changements de regard
+ZOMBIE_ARRIVE_DISTANCE = 8.0  # px : assez pres du dernier point vu
+
+# Chute : en course, il se laisse tomber d'une plateforme si sa cible est plus
+# bas et qu'un sol existe a au plus ZOMBIE_MAX_DROP_TILES tuiles sous le bord
+# (les puits a piques du tutoriel sont bien plus profonds : il ne s'y jette pas).
+# La cible doit etre au moins ce peu sous le centre du zombie : un joueur au
+# meme etage a son centre a la meme hauteur (a quelques px pres), un joueur une
+# seule tuile plus bas l'a deja ~32 px en dessous.
+ZOMBIE_DROP_MIN_TARGET_DROP = 12.0
+# Pendant la chute, l'elan de course porte le zombie ~1 tuile plus loin que le
+# bord : le sol d'arrivee est aussi cherche une colonne plus loin.
+ZOMBIE_DROP_PROBE_COLUMNS = 2
+
+# Griffe bondissante : il garde son elan pendant l'armement (frames 0-3), puis
+# reste penche (frames 4-5) -> fenetre pour le punir. RANGE > REACH ici, a
+# l'inverse du squelette : c'est le bond qui comble la difference.
+ZOMBIE_ATTACK_RANGE = 64.0
+ZOMBIE_ATTACK_REACH = 60.0
+ZOMBIE_ATTACK_VERTICAL_RANGE = 40.0
+# Frames d'Attack1 (0-5) : 0-1 = armement (bras leve), 2-3 = griffe, 4-5 = penche.
+ZOMBIE_ATTACK_HIT_FRAMES: tuple[int, int] = (2, 3)
+ZOMBIE_ATTACK_LUNGE_LAST_FRAME = 3
+ZOMBIE_ATTACK_LUNGE_SPEED = 2.6  # px/frame au depart du bond (ou la vitesse de course si plus grande)
+ZOMBIE_ATTACK_LUNGE_DECAY = 0.12  # secondes (constante de temps du ralentissement)
+ZOMBIE_ATTACK_COOLDOWN = 1.0
+# Plus gourmand que le squelette : sent de plus loin et y va en courant.
+ZOMBIE_CORPSE_SMELL_RANGE = 400.0
+
+# Temps par frame AVANT ANIM_SPEED (0.5 : les durees reelles sont doublees).
+ANIM_ZOMBIE_IDLE_FRAME_TIME = 0.12
+ANIM_ZOMBIE_WALK_FRAME_TIME = 0.12
+ANIM_ZOMBIE_RUN_FRAME_TIME = 0.035
+# Griffe a 2 x 0.08 / 0.5 = 0.32 s du declenchement ; attaque entiere ~1 s,
+# dont la fin penchee (frames 4-5) est la fenetre pour le punir.
+ANIM_ZOMBIE_ATTACK_FRAME_TIME = 0.08
+ANIM_ZOMBIE_EAT_FRAME_TIME = 0.15  # Attack1 frames 3-4 en boucle (penche, mastique)
+ANIM_ZOMBIE_HURT_FRAME_TIME = 0.035  # sonne ~0.42 s
+ANIM_ZOMBIE_DIE_FRAME_TIME = 0.07
+
+ZOMBIE_GHOST_GLOW_SCALE = 5.2
+ZOMBIE_GHOST_GLOW_ALPHA = 92
+ZOMBIE_GHOST_GLOW_INNER_SCALE = 2.3
+ZOMBIE_GHOST_GLOW_INNER_ALPHA = 165
+ZOMBIE_GHOST_GLOW_PULSE = 0.14
+ZOMBIE_GHOST_GLOW_PULSE_SPEED = 2.6  # plus lent : un zombie "respire" moins vite
+COLOR_ZOMBIE = (84, 170, 132)
+COLOR_ZOMBIE_GLOW = (255, 28, 22)
+COLOR_ZOMBIE_GLOW_CORE = (255, 92, 64)
 
 # --------------------------------------------------------------------------- #
 # Objets et progression
@@ -542,6 +837,12 @@ SOUL_ORB_GLOW_PULSE = 0.18
 SOUL_ORB_GLOW_PULSE_SPEED = 2.8
 SOUL_ORB_MAGNET_RANGE = 96.0  # px : l'orbe derive vers le joueur dans ce rayon
 SOUL_ORB_MAGNET_SPEED = 42.0  # px / seconde
+KEY_GLOW_SCALE = 3.6
+KEY_GLOW_ALPHA = 70
+KEY_GLOW_INNER_SCALE = 1.6
+KEY_GLOW_INNER_ALPHA = 120
+KEY_GLOW_PULSE = 0.22
+KEY_GLOW_PULSE_SPEED = 2.4
 
 SOUL_ESSENCE_PER_ORB = 1
 # Ames cumulees pour atteindre le niveau n+1 (index = niveau - 1).
@@ -554,6 +855,11 @@ SOUL_LEVEL_THRESHOLDS: tuple[int, ...] = (0, 3, 8, 15, 25, 40)
 
 COLOR_BACKGROUND = (18, 18, 28)
 COLOR_WALL = (72, 76, 96)
+COLOR_ICE = (118, 196, 220)
+COLOR_ICE_INNER = (186, 232, 244)
+COLOR_FALLING_BLOCK = (176, 122, 64)
+COLOR_FALLING_BLOCK_INNER = (214, 168, 96)
+COLOR_FALLING_BLOCK_ARMED = (212, 96, 64)
 COLOR_SPECTRAL_WALL = (96, 84, 140)
 COLOR_SPIKE = (196, 84, 84)
 COLOR_FLAMETHROWER = (232, 96, 36)
@@ -573,6 +879,14 @@ COLOR_MECHANISM_LINK = (168, 220, 255)
 COLOR_MECHANISM_GLOW = (186, 232, 255)
 COLOR_MECHANISM_GLOW_CORE = (236, 248, 255)
 COLOR_PLAYER = (232, 232, 240)
+COLOR_ATTACK = (255, 214, 112)
+COLOR_ATTACK_GLOW = (255, 238, 160)
+COLOR_SWORD_BLADE = (225, 231, 234)
+COLOR_SWORD_EDGE = (255, 255, 248)
+COLOR_SWORD_GUARD = (172, 67, 52)
+COLOR_SWORD_HANDLE = (91, 49, 39)
+COLOR_SWORD_POMMEL = (224, 142, 72)
+COLOR_SWORD_GLOW = (255, 218, 140)
 COLOR_GHOST = (128, 200, 255)
 COLOR_GHOST_GLOW = (110, 190, 255)
 COLOR_TRAIL_GHOST = (132, 214, 255)
@@ -581,13 +895,20 @@ COLOR_DEATH_PARTICLE = (150, 214, 255)
 COLOR_DEATH_PARTICLE_CORE = (245, 252, 255)
 COLOR_CORPSE = (140, 120, 120)
 COLOR_ENEMY = (188, 92, 160)
+COLOR_ENEMY_HIT = (255, 155, 155)
+COLOR_ENEMY_GLOW = (255, 28, 22)
+COLOR_ENEMY_GLOW_CORE = (255, 92, 64)
 COLOR_KEY = (232, 204, 96)
+COLOR_KEY_GLOW = (255, 214, 96)
+COLOR_KEY_GLOW_CORE = (255, 244, 190)
+COLOR_BLOOD = (168, 18, 28)
+COLOR_BLOOD_BRIGHT = (210, 36, 42)
 COLOR_SOUL_ORB = (110, 190, 255)
 COLOR_HUD_TEXT = (228, 228, 236)
 COLOR_HUD_BAR_BACKGROUND = (48, 48, 62)
 COLOR_HUD_BAR_FILL = (128, 200, 255)
 COLOR_HUD_GHOST_GAUGE = (110, 196, 255)
-COLOR_HUD_KEY_EMPTY = (36, 36, 42)  # cle absente : sombre, pas transparente
+COLOR_HUD_GHOST_GAUGE_IDLE = (92, 96, 112)  # jauge fantome hors mode, grisee
 COLOR_DASH = (255, 214, 120)
 COLOR_DASH_GLOW = (255, 224, 150)
 COLOR_TRAIL_DASH = (255, 214, 96)
@@ -684,11 +1005,16 @@ CAMERA_DASH_SHAKE_TIME = 0.18
 # Zoom : > 1.0 rapproche (corps), < 1.0 eloigne (fantome). La transition entre
 # les deux, lissee par CAMERA_ZOOM_SMOOTH_TIME, donne l'effet de projection
 # hors du corps (la camera recule) quand on passe humain -> fantome.
-CAMERA_ZOOM_PLAYER = 1.18
-CAMERA_ZOOM_GHOST = 0.82
+CAMERA_ZOOM_PLAYER = 1.9
+# Leger recul pendant le dash (plus petit = plus de monde a l'ecran).
+CAMERA_ZOOM_DASH = 2.08
+CAMERA_ZOOM_GHOST = 0.92
 CAMERA_ZOOM_SMOOTH_TIME = 0.55
+# Zoom du dash : plus vif que la transition corps/fantome, pour que le recul
+# se lise sur les ~0.12 s du burst.
+CAMERA_DASH_ZOOM_TIME = 0.09
 # Mort -> fantome : gros plan rapide, secousse + particules, puis recul.
-CAMERA_ZOOM_DEATH = 1.82
+CAMERA_ZOOM_DEATH = 3.0
 DEATH_ZOOM_IN_TIME = 0.28
 DEATH_BURST_TIME = 0.50
 DEATH_ZOOM_OUT_TIME = 0.78
@@ -755,15 +1081,14 @@ UI_KEY_CELL = 16  # taille native d'une touche-lettre
 UI_KEY_ICON_HEIGHT = 40  # hauteur a l'ecran (nearest-neighbor)
 UI_KEY_CAPTION_SIZE = 16  # libelles a cote des icones
 
-# Stats haut-droit, une ligne par item : icone + valeur, jauge en dessous.
+# Stats haut-droit : jauge fantome en haut, puis une ligne par item.
 HUD_STAT_ICON = 40
 HUD_STAT_GAP = 8  # espace vertical entre deux lignes
 HUD_STAT_VALUE_GAP = 10  # espace icone -> valeur
-# Jauge du timer fantome, sous les stats.
 HUD_GAUGE_WIDTH = 168
-HUD_GAUGE_HEIGHT = 10
-HUD_GAUGE_ICON = 22
-HUD_GAUGE_GAP = 8
+HUD_GAUGE_HEIGHT = 12
+HUD_GAUGE_GAP = 8  # espace libelle "Lvl. X" -> jauge
+HUD_GAUGE_LABEL_SIZE = 14
 HUD_GAUGE_LOW = 0.22  # le timer fantome pulse sous ce ratio
 
 # --------------------------------------------------------------------------- #
@@ -771,7 +1096,7 @@ HUD_GAUGE_LOW = 0.22  # le timer fantome pulse sous ce ratio
 # --------------------------------------------------------------------------- #
 
 DEBUG_OVERLAY = True  # panneau : FPS, etat, tuiles a l'ecran, positions (F3 en jeu)
-DEBUG_SHOW_HITBOXES = False
+DEBUG_SHOW_HITBOXES = True
 DEBUG_SHOW_FPS = True  # si l'overlay est off, affiche quand meme le FPS en bas a gauche
 COLOR_DEBUG = (140, 230, 160)
 COLOR_DEBUG_PANEL = (8, 12, 18, 180)
@@ -834,6 +1159,11 @@ COLOR_EDITOR_OVERLAY = (8, 10, 16, 235)
 COLOR_EDITOR_PLATE = (64, 168, 214, 80)
 COLOR_EDITOR_PLATE_BORDER = (140, 220, 255)
 COLOR_EDITOR_PLATE_SELECTED = (255, 210, 90, 95)
+COLOR_EDITOR_PLATE_INVERT = (214, 120, 64, 80)
+COLOR_EDITOR_PLATE_INVERT_BORDER = (255, 176, 96)
 COLOR_EDITOR_GATED = (240, 110, 110, 75)
 COLOR_EDITOR_GATED_BORDER = (255, 160, 160)
+COLOR_EDITOR_GATED_INVERT = (96, 196, 128, 75)
+COLOR_EDITOR_GATED_INVERT_BORDER = (150, 230, 170)
 COLOR_EDITOR_LINK = (150, 214, 255)
+COLOR_EDITOR_LINK_INVERT = (255, 176, 120)
