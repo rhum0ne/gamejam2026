@@ -852,6 +852,7 @@ def check_tutorial_is_solvable(window: arcade.Window) -> None:
             break
         view.on_update(FRAME)
     assert not view.level.corpses, "le cadavre doit finir par se dissiper"
+    assert view.level.remains, "la dissipation doit laisser un squelette"
 
     view.held_keys.add(arcade.key.RIGHT)
     previous_x = view.player.center_x

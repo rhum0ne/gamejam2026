@@ -459,8 +459,8 @@ class Level:
         """Ajoute un cadavre au niveau (il devient solide immediatement)."""
         self.corpses.append(corpse)
 
-    def _collect_eaten_corpses(self) -> None:
-        """Un cadavre devore laisse un squelette decoratif, hors des collisions."""
+    def _collect_remnants(self) -> None:
+        """Un cadavre dissipe ou devore laisse un squelette decoratif, hors collisions."""
         for corpse in list(self.corpses):
             if not isinstance(corpse, Corpse) or not corpse.is_remnant:
                 continue
@@ -516,6 +516,9 @@ class Level:
         self.falling_blocks.draw(pixelated=True)
         self.remains.draw(pixelated=True)
         self.corpses.draw(pixelated=True)
+        for body in (*self.remains, *self.corpses):
+            if isinstance(body, Corpse):
+                body.draw_fx()
         self.items.draw(pixelated=True)
         self.enemies.draw(pixelated=True)
 
@@ -679,7 +682,8 @@ class Level:
         derivent quand elles sont assez proches.
         """
         self.corpses.update(delta_time)
-        self._collect_eaten_corpses()
+        self._collect_remnants()
+        self.remains.update(delta_time)
         self.checkpoints.update(delta_time)
         self.flamethrowers.update(delta_time)
         self._update_falling_blocks(delta_time)

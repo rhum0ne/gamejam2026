@@ -508,9 +508,23 @@ GHOST_GLOW_PULSE = 0.12  # variation d'opacite (0 = halo fixe)
 # Cadavre
 # --------------------------------------------------------------------------- #
 
-CORPSE_LIFETIME = 15.0  # secondes avant dissipation (cadavre non devore)
-CORPSE_FADE_TIME = 3.0  # secondes de fondu en fin de vie
+CORPSE_LIFETIME = 15.0  # secondes avant transformation en squelette
+CORPSE_FADE_TIME = 0.35  # fondu cadavre -> os (court, masque par les particules)
 CORPSE_EAT_TIME = 4.0  # secondes pour qu'un ennemi devore un cadavre (laisse un squelette)
+CORPSE_DECAY_COUNT = 28
+CORPSE_DECAY_LIFE = 0.48
+CORPSE_DECAY_SPEED = 95.0
+CORPSE_DECAY_GRAVITY = 220.0
+CORPSE_DECAY_SIZE_MIN = 3.2
+CORPSE_DECAY_SIZE_MAX = 8.5
+CORPSE_DECAY_SPREAD_X = 16.0
+CORPSE_DECAY_SPREAD_Y = 9.0
+CORPSE_DECAY_MAX = 80
+# Hitbox plus plate que le sprite (pose allongee) : le bas de la boite est
+# aligne sur le sol, et un leger lift evite que le dessin s'enfonce dans la tuile.
+CORPSE_HITBOX_WIDTH = PLAYER_WIDTH + 8
+CORPSE_HITBOX_HEIGHT = 16
+CORPSE_GROUND_LIFT = 0
 
 # --------------------------------------------------------------------------- #
 # Plaques d'activation
