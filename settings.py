@@ -589,6 +589,27 @@ ANIM_ENEMY_WALK_FRAME_TIME = 0.07
 ANIM_ENEMY_ATTACK_FRAME_TIME = 0.05
 ANIM_ENEMY_DIE_FRAME_TIME = 0.06
 
+# Directeur de spawn : les ennemis de la carte servent de graines, puis les
+# points `enemy_spawns` alimentent de petites vagues de renforts. Le directeur
+# attend que la zone soit hors camera et assez loin du joueur avant d'armer
+# une apparition mystique.
+ENEMY_SPAWN_MAX_ACTIVE = 6
+ENEMY_SPAWN_WAVE_SIZE = 2
+ENEMY_SPAWN_INITIAL_DELAY = 5.0
+ENEMY_SPAWN_WAVE_INTERVAL = 6.0
+ENEMY_SPAWN_WARNING_DURATION = 0.7
+ENEMY_SPAWN_OFFSCREEN_MARGIN = 64.0
+ENEMY_SPAWN_MARKER_RADIUS = 22.0
+ENEMY_SPAWN_GHOST_HINT_SIZE = 36.0
+ENEMY_SPAWN_GHOST_HINT_ALPHA = 86
+
+# Compatibilite avec les reglages de la premiere version du respawn. Le
+# directeur les lit encore pour le delai et les distances de securite.
+ENEMY_RESPAWN_DELAY = 4.0
+ENEMY_RESPAWN_RETRY_DELAY = 0.5
+ENEMY_RESPAWN_MIN_PLAYER_DISTANCE = 192.0
+ENEMY_RESPAWN_MIN_ENEMY_DISTANCE = 96.0
+
 # --------------------------------------------------------------------------- #
 # Objets et progression
 # --------------------------------------------------------------------------- #
@@ -658,6 +679,8 @@ COLOR_ENEMY = (188, 92, 160)
 COLOR_ENEMY_HIT = (255, 155, 155)
 COLOR_ENEMY_GLOW = (255, 28, 22)
 COLOR_ENEMY_GLOW_CORE = (255, 92, 64)
+COLOR_ENEMY_SPAWN = (190, 78, 232)
+COLOR_ENEMY_SPAWN_GHOST = (144, 208, 255)
 COLOR_KEY = (232, 204, 96)
 COLOR_SOUL_ORB = (110, 190, 255)
 COLOR_HUD_TEXT = (228, 228, 236)

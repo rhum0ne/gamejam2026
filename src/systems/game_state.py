@@ -29,11 +29,13 @@ import arcade
 import settings
 from src.entities.batch_draw import SpriteOverlay
 from src.entities.corpse import Corpse
+from src.entities.enemy import Enemy
 from src.entities.ghost import Ghost
 from src.entities.glow import draw_glow, glow_pass
 from src.entities.item import ItemKind
 from src.entities.player import Player
 from src.systems import collisions
+from src.systems.enemy_spawner import EnemySpawnDirector
 from src.systems.ghost_emergence import GhostEmergence
 from src.systems.player_rebirth import PlayerRebirth
 from src.systems.play_events import bind_play_view, emit_ghost_end, emit_player_death, emit_player_win
@@ -223,6 +225,7 @@ class PlayView(arcade.View):
         self._hitstop_timer = 0.0
         self._attack_sound = self._load_attack_sound()
         self._delivered_items: list[ItemKind] = []
+        self._enemy_spawner: EnemySpawnDirector | None = None
         bind_play_view(self)
         self._fps = 0.0
         self._last_draw_time = 0.0
@@ -239,6 +242,9 @@ class PlayView(arcade.View):
         """(Re)charge le niveau courant de la session et remet les entites a zero."""
         self.level = Level.from_file(self.session.level_file)
         self.player = Player(*self.level.player_spawn)
+        for spawn_x, spawn_y in self.level.enemy_spawn_points:
+            self.level.enemies.append(Enemy(spawn_x, spawn_y))
+        seed_enemies = list(self.level.enemies)
         self.player.respawn_point = self.level.checkpoint_spawn
         for checkpoint in self.level.checkpoints:
             if checkpoint.spawn_point == self.level.checkpoint_spawn:
@@ -250,9 +256,14 @@ class PlayView(arcade.View):
         )
         for enemy in self.level.enemies:
             enemy.bind_world(self._static_platforms(), hazards=self.level.hazards)
+        self._enemy_spawner = EnemySpawnDirector(
+            self.level.enemy_spawn_points,
+            seed_enemies,
+            self.level.enemy_spawn_config,
+        )
+        self._enemy_spawner.bind_world(self._static_platforms(), hazards=self.level.hazards)
         self.level.prepare_draw()
         self.camera.set_bounds(self.level.width, self.level.height)
-        self._enemy_spawns = [(enemy, enemy.center_x, enemy.center_y) for enemy in self.level.enemies]
         self.camera.snap_to(self.player)
         self.ghost = None
         self.anchor_corpse = None
@@ -343,6 +354,8 @@ class PlayView(arcade.View):
         )
         if rebirth is None or rebirth.shows_world:
             self.level.draw(self._terrain_cull_rect(), tight_cull=tight_cull)
+            if self.machine.state is GameState.PLAYING and self._enemy_spawner is not None:
+                self._enemy_spawner.draw()
             if self.player.alive and not defer_player:
                 self.player.draw_fx()
                 draw_pixel_sprite(self.player)
@@ -531,6 +544,9 @@ class PlayView(arcade.View):
             self._draw_threat_glows()
             self._draw_mechanism_hints()
             ghost.draw_fx()
+        if self._enemy_spawner is not None:
+            self._enemy_spawner.draw(ghost_mode=True)
+            self._enemy_spawner.draw_ghost_hints(ghost)
         revealed_actors: list[arcade.Sprite] = []
         for item in self.level.items:
             if ghost.reveals(item):
@@ -725,6 +741,13 @@ class PlayView(arcade.View):
             self._update_respawning(delta_time)
         self._resolve_falling_spike_kills()
         self._resolve_flame_kills()
+        if self.machine.state is GameState.PLAYING and self._enemy_spawner is not None:
+            self._enemy_spawner.update(
+                delta_time,
+                self.level.enemies,
+                self.player,
+                self.camera.visible_rect(),
+            )
         self.atmosphere.update(delta_time)
 
     def _mechanism_weights(self) -> list[arcade.Sprite]:
@@ -867,19 +890,13 @@ class PlayView(arcade.View):
             for kind in self._delivered_items:
                 self.player.give_item(kind)
             self._delivered_items.clear()
-        self._update_respawn_enemies()
+        if self._enemy_spawner is not None:
+            self._enemy_spawner.reset_after_player_death(self.level.enemies)
         self.machine.try_to(GameState.PLAYING)
 
     def _update_enemies(self, delta_time: float) -> None:
         for enemy in list(self.level.enemies):
             enemy.update(delta_time, player=self.player, corpses=self.level.corpses)
-
-    def _update_respawn_enemies(self) -> None:
-        for enemy, spawn_x, spawn_y in self._enemy_spawns:
-            enemy.respawn(spawn_x, spawn_y)
-            if enemy not in self.level.enemies:
-                self.level.enemies.append(enemy)
-            
 
     # ------------------------------------------------------------------ #
     # Consequences des collisions

@@ -77,7 +77,13 @@ def _die_animation() -> sprites.StripAnimation:
 class Enemy(arcade.Sprite):
     """Ennemi terrestre carnivore."""
 
-    def __init__(self, center_x: float, center_y: float) -> None:
+    def __init__(
+        self,
+        center_x: float,
+        center_y: float,
+        *,
+        drops_soul: bool = True,
+    ) -> None:
         self._idle = _idle_animation()
         self._walk = _walk_animation()
         self._attack = _attack_animation()
@@ -104,6 +110,7 @@ class Enemy(arcade.Sprite):
         self._base_color = self.color
         self._hit_flash_left = 0.0
         self._knockback_x = 0.0
+        self._drops_soul = drops_soul
         self._physics: arcade.PhysicsEnginePlatformer | None = None
         self._ground: arcade.SpriteList | None = None
         self._hazards: arcade.SpriteList | None = None
@@ -165,6 +172,11 @@ class Enemy(arcade.Sprite):
         """Indique si l'ennemi est vaincu mais encore visible."""
         return self.state is EnemyState.DYING
 
+    @property
+    def drops_soul(self) -> bool:
+        """Vrai si la prochaine mort de cet ennemi peut liberer une ame."""
+        return self._drops_soul
+
     def take_damage(self, amount: int = 1, knockback: float = 0.0) -> Item | None:
         """Applique des degats. Retourne la bille bleue si l'ennemi meurt.
 
@@ -183,7 +195,10 @@ class Enemy(arcade.Sprite):
         self.change_x = knockback
         if self.hit_points > 0:
             return None
-        orb = make_soul_orb(self.center_x, self.center_y)
+        orb = make_soul_orb(self.center_x, self.center_y) if self._drops_soul else None
+        # Une instance ne peut recompenser qu'une seule mort. Les renforts
+        # crees par le directeur demarrent deja avec ce drapeau a False.
+        self._drops_soul = False
         self._start_dying()
         self.change_x = knockback
         return orb

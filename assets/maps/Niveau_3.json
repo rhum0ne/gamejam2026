@@ -16,6 +16,21 @@
     "i": "torch",
     "T": "wall"
   },
+  "enemy_spawns": [
+    {"x": 18, "y": 10},
+    {"x": 22, "y": 10}
+  ],
+  "enemy_spawn_director": {
+    "max_active": 5,
+    "wave_size": 1,
+    "initial_delay": 7.0,
+    "wave_interval": 8.0,
+    "respawn_delay": 5.0,
+    "warning_duration": 0.85,
+    "min_player_distance": 256.0,
+    "min_enemy_distance": 112.0,
+    "offscreen_margin": 80.0
+  },
   "rows": [
     "[TTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTT",
     "T..................................=...T",
