@@ -99,6 +99,26 @@ def _render_chunk_list() -> arcade.SpriteList:
     )
 
 
+def _resolve_map_path(path: str | Path) -> Path:
+    map_path = Path(path)
+    if not map_path.is_absolute():
+        map_path = settings.MAPS_DIR / map_path
+    if not map_path.exists():
+        raise FileNotFoundError(f"carte introuvable : {map_path}")
+    return map_path
+
+
+def peek_level_info(path: str | Path) -> tuple[str, str]:
+    """Lit juste le nom et le sous-titre d'une carte (ecran de transition).
+
+    Evite de construire tout le niveau (sprites, collisions...) uniquement
+    pour afficher son titre avant le chargement reel.
+    """
+    with _resolve_map_path(path).open(encoding="utf-8") as stream:
+        data = json.load(stream)
+    return data.get("name", "Niveau sans nom"), data.get("subtitle", "")
+
+
 class LevelFormatError(ValueError):
     """Carte invalide : symbole inconnu, lignes de longueurs differentes, etc."""
 
@@ -112,6 +132,9 @@ class Level:
     tile_size: int
     columns: int
     rows: int
+    # Nom court affiche en plus du titre sur l'ecran de transition (ex: le nom
+    # d'ambiance du niveau, une fois que `name` se limitera a "Niveau N").
+    subtitle: str = ""
     walls: arcade.SpriteList = field(default_factory=_static_sprite_list)
     spectral_walls: arcade.SpriteList = field(default_factory=_static_sprite_list)
     hazards: arcade.SpriteList = field(default_factory=_static_sprite_list)
@@ -145,12 +168,7 @@ class Level:
     @classmethod
     def from_file(cls, path: str | Path) -> "Level":
         """Charge un niveau depuis un fichier JSON."""
-        map_path = Path(path)
-        if not map_path.is_absolute():
-            map_path = settings.MAPS_DIR / map_path
-        if not map_path.exists():
-            raise FileNotFoundError(f"carte introuvable : {map_path}")
-        with map_path.open(encoding="utf-8") as stream:
+        with _resolve_map_path(path).open(encoding="utf-8") as stream:
             data = json.load(stream)
         return cls.from_dict(data)
 
@@ -172,6 +190,7 @@ class Level:
             tile_size=tile_size,
             columns=widths.pop(),
             rows=len(grid),
+            subtitle=data.get("subtitle", ""),
         )
         level._build(grid, legend)
         level._bind_activators(data.get("activators", []))

@@ -35,7 +35,12 @@ FONT_FILE = FONTS_DIR / "PressStart2P-Regular.ttf"
 FONT_PIXEL = "Press Start 2P"
 
 # Ordre de parcours des niveaux : le nom du fichier dans assets/maps/.
-LEVEL_SEQUENCE: tuple[str, ...] = ("level_1_tuto.json",)
+LEVEL_SEQUENCE: tuple[str, ...] = (
+    "level_1_tuto.json",
+    "Niveau_1.json",
+    "Niveau_2.json",
+    "Niveau_3.json",
+)
 
 # --------------------------------------------------------------------------- #
 # Fenetre
@@ -472,6 +477,15 @@ COLOR_DUST = (236, 228, 208)
 COLOR_DUST_DARK = (186, 174, 150)
 COLOR_MENU_TITLE = (200, 220, 255)
 COLOR_MENU_HINT = (150, 155, 175)
+
+# --------------------------------------------------------------------------- #
+# Ecran de transition de niveau (nom + sous-titre sur fond noir)
+# --------------------------------------------------------------------------- #
+
+LEVEL_INTRO_FADE_TIME = 0.4  # secondes, entree et sortie du texte
+LEVEL_INTRO_HOLD_TIME = 1.4  # secondes a pleine opacite
+LEVEL_INTRO_TITLE_SIZE = 32
+LEVEL_INTRO_SUBTITLE_SIZE = 18
 
 # Opacite du voile hors du champ de vision du fantome (0-255).
 FOG_ALPHA = 235

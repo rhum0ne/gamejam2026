@@ -116,12 +116,12 @@ def on_player_ghost_end(view: PlayView, data: dict) -> None:
 
 
 def on_player_win(view: PlayView, data: dict) -> None:
-    """Niveau reussi : niveau suivant, ou ecran de victoire finale."""
+    """Niveau reussi : ecran de transition vers le suivant, ou victoire finale."""
     from src.systems.game_state import GameState
-    from src.ui.menus import VictoryView
+    from src.ui.menus import LevelIntroView, VictoryView
 
     view.machine.try_to(GameState.VICTORY)
     if view.session.advance_level():
-        view.setup()
+        view.window.show_view(LevelIntroView(view.session))
         return
     view.window.show_view(VictoryView(view.session))
