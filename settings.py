@@ -136,11 +136,21 @@ SPIKE_GHOST_GLOW_PULSE = 0.14
 SPIKE_GHOST_GLOW_PULSE_SPEED = 3.2
 PLAYER_WIDTH = SPRITE_FRAME_SIZE
 PLAYER_HEIGHT = SPRITE_FRAME_SIZE
-PLAYER_GRAVITY = 1  # un peu plus leger : saut legerement plus haut et plus lent
+PLAYER_GRAVITY = 0.40  # gravite de montee maintenue (le moteur l'applique toujours)
 PLAYER_SPEED = 5.5
-PLAYER_JUMP_SPEED = 18.0
-PLAYER_MAX_FALL_SPEED = 14.0  # px/frame, vitesse verticale max en chute
-PLAYER_COYOTE_TIME = 0.10  # secondes de tolerance pour sauter apres une chute
+# NSMB DS : impulsion nette, puis arc lent (~0.45 s au pic, ~4.5 tuiles).
+PLAYER_JUMP_SPEED = 8.8
+PLAYER_JUMP_RUN_BONUS = 1.8  # impulsion extra a pleine vitesse, comme un saut de course
+PLAYER_JUMP_RISE_GRAVITY = 0.40
+# Relacher augmente la gravite, sans ecraser la vitesse (hauteur analogique).
+PLAYER_JUMP_CUT_GRAVITY = 0.88
+PLAYER_JUMP_FALL_GRAVITY = 0.52  # un peu plus lourd a la descente
+PLAYER_MAX_FALL_SPEED = 6.5
+PLAYER_COYOTE_TIME = 0.12
+PLAYER_JUMP_BUFFER = 0.12
+# En l'air, on garde l'elan ; inverser la direction reste possible.
+PLAYER_AIR_BRAKE_TIME = 0.90
+PLAYER_AIR_TURN_BOOST = 1.35
 # PLAYER_RESPAWN_DELAY est la somme des phases REBIRTH_* (plus bas).
 # Eclat d'ames bleues sur le totem au moment du respawn.
 CHECKPOINT_BURST_COUNT = 22
@@ -159,8 +169,8 @@ CHECKPOINT_BURST_MAX = 48
 PLAYER_ACCEL_TIME = 0.25
 # Glissade a l'arret (sol) : 2-3 frames, quelques pixels tout au plus.
 PLAYER_SLIDE_TIME = 0.01
-# Fraction de l'acceleration au sol quand le joueur est en l'air.
-PLAYER_AIR_CONTROL = 5.0
+# Fraction de l'acceleration au sol quand le joueur est en l'air (1 = aussi vif qu'au sol).
+PLAYER_AIR_CONTROL = 1.15
 # Ralentissement juste apres l'atterrissage.
 PLAYER_LANDING_SLOW_TIME = 0.12
 PLAYER_LANDING_SPEED_SCALE = 0.86

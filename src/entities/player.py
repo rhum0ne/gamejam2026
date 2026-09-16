@@ -73,6 +73,8 @@ class Player(arcade.Sprite):
         self._time_off_ground = 0.0
         self._place_on_tile(center_x, center_y)
         self._was_on_ground = True
+        self._jump_held = False
+        self._jump_buffer = 0.0
         self._move_dir = 0
         self._landing_timer = 0.0
         self._dash_timer = 0.0
@@ -155,6 +157,8 @@ class Player(arcade.Sprite):
         self.change_x = 0.0
         self.change_y = 0.0
         self._move_dir = 0
+        self._jump_held = False
+        self._jump_buffer = 0.0
         self._dash_timer = 0.0
         self._landing_timer = 0.0
         self._dust.clear()
@@ -168,6 +172,8 @@ class Player(arcade.Sprite):
         self.change_y = 0.0
         self._time_off_ground = 0.0
         self._was_on_ground = True
+        self._jump_held = False
+        self._jump_buffer = 0.0
         self._move_dir = 0
         self._landing_timer = 0.0
         self._dash_timer = 0.0
@@ -204,20 +210,36 @@ class Player(arcade.Sprite):
         return True
 
     def jump(self) -> bool:
-        """Tente un saut. Retourne True si le saut a ete declenche."""
+        """Tente un saut, ou le met en buffer si on est encore en l'air."""
         if not self.alive or self._physics is None:
             return False
-        if self._time_off_ground > settings.PLAYER_COYOTE_TIME:
-            return False
-        self._physics.jump(settings.PLAYER_JUMP_SPEED)
-        self._time_off_ground = settings.PLAYER_COYOTE_TIME + 1.0
-        self._was_on_ground = False
-        return True
+        self._jump_held = True
+        if self._can_start_jump():
+            self._start_jump()
+            return True
+        self._jump_buffer = settings.PLAYER_JUMP_BUFFER
+        return False
 
     def cut_jump(self) -> None:
-        """Ecourte le saut quand la touche est relachee (saut a hauteur variable)."""
-        if self.change_y > 0 and not self.is_dashing:
-            self.change_y *= 0.4
+        """Arrete de maintenir : la gravite de coupe ecourte la montee."""
+        self._jump_held = False
+
+    def _can_start_jump(self) -> bool:
+        if self._physics is None or self.is_dashing:
+            return False
+        return self._time_off_ground <= settings.PLAYER_COYOTE_TIME
+
+    def _start_jump(self) -> None:
+        if self._physics is None:
+            return
+        speed = settings.PLAYER_JUMP_SPEED
+        max_speed = max(settings.PLAYER_SPEED, 0.001)
+        run = min(1.0, abs(self.change_x) / max_speed)
+        speed += settings.PLAYER_JUMP_RUN_BONUS * run
+        self._physics.jump(speed)
+        self._jump_buffer = 0.0
+        self._time_off_ground = settings.PLAYER_COYOTE_TIME + 1.0
+        self._was_on_ground = False
 
     def draw_fx(self) -> None:
         """Trainee de points du dash, halo, et anneau 'dash pret'."""
@@ -270,6 +292,9 @@ class Player(arcade.Sprite):
             self.change_x = self._dash_dir * settings.PLAYER_DASH_SPEED
         else:
             self._apply_horizontal(delta_time)
+        if self._jump_buffer > 0.0 and self._can_start_jump():
+            self._start_jump()
+        self._apply_jump_gravity()
         self._cap_fall_speed()
         fall_speed = max(0.0, -self.change_y)
         self._physics.update()
@@ -291,6 +316,7 @@ class Player(arcade.Sprite):
         else:
             self._time_off_ground += delta_time
             self._dust.stop_run()
+        self._tick_jump_buffer(delta_time)
         self._dash_trail.follow(
             self.center_x,
             self.center_y,
@@ -300,6 +326,26 @@ class Player(arcade.Sprite):
             active=self.is_dashing,
         )
         self._dust.update(delta_time)
+
+    def _tick_jump_buffer(self, delta_time: float) -> None:
+        if self._jump_buffer > 0.0:
+            self._jump_buffer = max(0.0, self._jump_buffer - delta_time)
+
+    def _apply_jump_gravity(self) -> None:
+        """Arc Mario : montee tenue, coupe analogique, descente un peu plus lourde."""
+        if self.is_dashing:
+            return
+        if self.change_y > 0:
+            target = (
+                settings.PLAYER_JUMP_RISE_GRAVITY
+                if self._jump_held
+                else settings.PLAYER_JUMP_CUT_GRAVITY
+            )
+        else:
+            target = settings.PLAYER_JUMP_FALL_GRAVITY
+        extra = target - settings.PLAYER_GRAVITY
+        if extra > 0.0:
+            self.change_y -= extra
 
     def _cap_fall_speed(self) -> None:
         """Plafonne la vitesse de chute (change_y negatif)."""
@@ -352,8 +398,13 @@ class Player(arcade.Sprite):
             self.change_x = _approach(self.change_x, direction * max_speed, accel * delta_time)
             return
         if direction == 0:
+            self.change_x += (0.0 - self.change_x) * _exp_alpha(
+                delta_time, settings.PLAYER_AIR_BRAKE_TIME
+            )
             return
         air_accel = accel * settings.PLAYER_AIR_CONTROL
+        if self.change_x * direction < 0.0:
+            air_accel *= settings.PLAYER_AIR_TURN_BOOST
         self.change_x = _approach(
             self.change_x, direction * settings.PLAYER_SPEED, air_accel * delta_time
         )
