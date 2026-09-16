@@ -118,7 +118,8 @@ ENTITY_SCALE = 1.5
 ANIM_WALK_FRAME_TIME = 0.07
 ANIM_IDLE_FRAME_TIME = 0.12
 ANIM_PLAYER_ATTACK_FRAME_TIME = 0.03
-ANIM_PLAYER_DEATH_FRAME_TIME = 0.08
+ANIM_PLAYER_DEATH_FRAME_TIME = 0.12  # pose de chute, avant le fondu
+ANIM_PLAYER_DEATH_BLEND_TIME = 0.16  # fondu vers le corps au sol
 ANIM_GHOST_DISAPPEAR_FRAME_TIME = 0.08
 # 1.0 = rythme de base ; plus petit = plus lent (0.5 = deux fois plus lent).
 ANIM_SPEED = 0.5
@@ -507,9 +508,9 @@ GHOST_GLOW_PULSE = 0.12  # variation d'opacite (0 = halo fixe)
 # Cadavre
 # --------------------------------------------------------------------------- #
 
-CORPSE_LIFETIME = 15.0  # secondes avant dissipation
+CORPSE_LIFETIME = 15.0  # secondes avant dissipation (cadavre non devore)
 CORPSE_FADE_TIME = 3.0  # secondes de fondu en fin de vie
-CORPSE_EAT_TIME = 4.0  # secondes pour qu'un ennemi devore un cadavre
+CORPSE_EAT_TIME = 4.0  # secondes pour qu'un ennemi devore un cadavre (laisse un squelette)
 
 # --------------------------------------------------------------------------- #
 # Plaques d'activation
@@ -1064,8 +1065,8 @@ HUD_GAUGE_LOW = 0.22  # le timer fantome pulse sous ce ratio
 # Debug
 # --------------------------------------------------------------------------- #
 
-DEBUG_OVERLAY = True  # panneau : FPS, etat, tuiles a l'ecran, positions (F3 en jeu)
-DEBUG_SHOW_HITBOXES = True
+DEBUG_OVERLAY = True  # autorise le panneau FPS/etat (F3 pour l'afficher, masque au lancement)
+DEBUG_SHOW_HITBOXES = False
 DEBUG_SHOW_FPS = True  # si l'overlay est off, affiche quand meme le FPS en bas a gauche
 COLOR_DEBUG = (140, 230, 160)
 COLOR_DEBUG_PANEL = (8, 12, 18, 180)

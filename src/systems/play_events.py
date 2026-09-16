@@ -77,7 +77,7 @@ def on_player_death_immobilize(view: PlayView, data: dict) -> None:
 def on_player_death_spawn_corpse(view: PlayView, data: dict) -> None:
     """Laisse un cadavre solide a l'endroit de la mort."""
     center_x, center_y = data["position"]
-    corpse = Corpse(center_x, center_y)
+    corpse = Corpse(center_x, center_y, facing=view.player.facing)
     corpse.bind_world(view._static_platforms())
     view.level.spawn_corpse(corpse)
     view.anchor_corpse = corpse
