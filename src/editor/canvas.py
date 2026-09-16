@@ -326,10 +326,20 @@ class GridCanvas:
             self._draw_links(activator, selected)
 
     def _draw_plate(self, activator: Activator, selected: bool) -> None:
-        fill = settings.COLOR_EDITOR_PLATE_SELECTED if selected else settings.COLOR_EDITOR_PLATE
-        border = (
-            settings.COLOR_EDITOR_WARNING if selected else settings.COLOR_EDITOR_PLATE_BORDER
-        )
+        if activator.inverted:
+            fill = settings.COLOR_EDITOR_PLATE_SELECTED if selected else settings.COLOR_EDITOR_PLATE_INVERT
+            border = (
+                settings.COLOR_EDITOR_WARNING if selected else settings.COLOR_EDITOR_PLATE_INVERT_BORDER
+            )
+            lamp = settings.COLOR_EDITOR_PLATE_INVERT_BORDER
+        else:
+            fill = settings.COLOR_EDITOR_PLATE_SELECTED if selected else settings.COLOR_EDITOR_PLATE
+            border = (
+                settings.COLOR_EDITOR_WARNING if selected else settings.COLOR_EDITOR_PLATE_BORDER
+            )
+            lamp = (
+                settings.COLOR_PRESSURE_PLATE_PRESSED if selected else settings.COLOR_PRESSURE_PLATE
+            )
         rect = GridRect(
             activator.column,
             activator.row,
@@ -349,7 +359,7 @@ class GridCanvas:
             center_x + width / 2,
             center_y - height / 2,
             center_y + height / 2,
-            settings.COLOR_PRESSURE_PLATE_PRESSED if selected else settings.COLOR_PRESSURE_PLATE,
+            lamp,
         )
 
     def _draw_links(self, activator: Activator, selected: bool) -> None:
@@ -366,8 +376,14 @@ class GridCanvas:
         color = (
             settings.COLOR_EDITOR_WARNING if selected else settings.COLOR_EDITOR_LINK
         )
-        gated_fill = settings.COLOR_EDITOR_GATED
-        gated_border = settings.COLOR_EDITOR_GATED_BORDER
+        if activator.inverted:
+            gated_fill = settings.COLOR_EDITOR_GATED_INVERT
+            gated_border = settings.COLOR_EDITOR_GATED_INVERT_BORDER
+            if not selected:
+                color = settings.COLOR_EDITOR_LINK_INVERT
+        else:
+            gated_fill = settings.COLOR_EDITOR_GATED
+            gated_border = settings.COLOR_EDITOR_GATED_BORDER
         for column, row in activator.targets:
             self._draw_rect(GridRect(column, row, column, row), gated_fill, gated_border)
         for center_column, center_row in cluster_targets(activator.targets):

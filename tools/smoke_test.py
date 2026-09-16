@@ -51,6 +51,7 @@ def check_levels() -> None:
         print(f"  carte '{name}' -> {level.name}: {level.columns}x{level.rows} tuiles, "
               f"{len(level.walls)} murs, {len(level.items)} objets, {len(level.enemies)} ennemis{extra}")
     check_invalid_activator()
+    check_inverted_activator()
 
 
 def check_invalid_activator() -> None:
@@ -81,6 +82,43 @@ def check_invalid_activator() -> None:
         print(f"  plaque orpheline -> {message}")
         return
     raise AssertionError("une plaque sans bloc aurait du etre refusee")
+
+
+def check_inverted_activator() -> None:
+    """Une plaque `invert` montre les blocs a l'activation au lieu de les cacher."""
+    from src.world.level import Level
+
+    data = {
+        "name": "inverse",
+        "tile_size": 32,
+        "legend": {"#": "wall", "P": "player_spawn"},
+        "rows": [
+            "#####",
+            "#P..#",
+            "#.#.#",
+            "#####",
+        ],
+        "activators": [
+            {
+                "x": 1,
+                "y": 1,
+                "width": 1,
+                "invert": True,
+                "activate": {"setBlock": [{"x": 2, "y": 2, "type": "void"}]},
+            }
+        ],
+    }
+    level = Level.from_dict(data)
+    assert len(level.mechanisms) == 1
+    mechanism = level.mechanisms[0]
+    assert mechanism.inverted
+    assert mechanism.targets
+    assert all(tile.hidden for tile in mechanism.targets), "les blocs inverses sont caches au repos"
+    mechanism.set_pressed(True, ())
+    assert all(not tile.hidden for tile in mechanism.targets), "l'activation doit montrer les blocs"
+    mechanism.set_pressed(False, ())
+    assert all(tile.hidden for tile in mechanism.targets), "le relachement doit recacher les blocs"
+    print("  plaque inversee -> cachee au repos, visible a l'activation")
 
 
 def check_progression() -> None:
@@ -478,6 +516,7 @@ def check_tutorial_is_solvable(window: arcade.Window) -> None:
 
     view.held_keys.add(arcade.key.RIGHT)
     previous_x = view.player.center_x
+    start_level = view.session.level_index
     for _ in range(3500):
         blocked = abs(view.player.center_x - previous_x) < 0.2
         previous_x = view.player.center_x
@@ -491,11 +530,13 @@ def check_tutorial_is_solvable(window: arcade.Window) -> None:
         if view.player.on_ground and (blocked or wall_ahead or hole_ahead):
             view.player.jump()
         view.on_update(FRAME)
-        if view.machine.state is GameState.VICTORY:
+        if view.machine.state is GameState.VICTORY or view.session.level_index > start_level:
             break
         if view.machine.state is GameState.GHOST:
             break
-    assert view.machine.state is GameState.VICTORY, (
+    assert (
+        view.machine.state is GameState.VICTORY or view.session.level_index > start_level
+    ), (
         f"le niveau doit pouvoir etre termine (etat : {view.machine.state.name}, "
         f"x = {view.player.center_x:.0f})"
     )
@@ -618,6 +659,26 @@ def check_editor_document() -> None:
     assert document.activators[index].width == 3
     linked = document.toggle_target(index, 2, document.rows - 2)
     assert linked
+    assert not document.activators[index].inverted
+    assert document.toggle_activator_invert(index)
+    invert_path = Path(tempfile.mkdtemp()) / "activator_invert.json"
+    invert_saved = document.save(invert_path)
+    invert_payload = json.loads(invert_saved.read_text(encoding="utf-8"))
+    inverted_entry = next(
+        entry
+        for entry in invert_payload["activators"]
+        if entry["x"] == 5 and entry["y"] == 5
+    )
+    assert inverted_entry.get("invert") is True
+    reloaded_invert = EditorDocument.from_file(invert_saved)
+    restored_plate = next(
+        plate
+        for plate in reloaded_invert.activators
+        if plate.column == 5 and plate.row == 5
+    )
+    assert restored_plate.inverted
+    invert_saved.unlink()
+    document.undo()
     document.undo()
     document.undo()
     assert len(document.activators) == 2
@@ -652,6 +713,34 @@ def check_editor_document() -> None:
     assert settings.TILE_KIND_ICE in ice_payload["legend"].values()
     ice_saved.unlink()
     document.undo()
+    fall_cell = (8, 8)
+    document.paint((fall_cell,), settings.TILE_KIND_FALLING)
+    placed_fall = document.falling_at(*fall_cell)
+    assert placed_fall is not None, "peindre un bloc tombant doit creer ses reglages"
+    tuned_fall = document.adjust_falling(
+        *fall_cell,
+        delay_delta=0.15,
+        respawn_delta=0.6,
+    )
+    assert tuned_fall is not None
+    assert abs(tuned_fall.delay - (placed_fall.delay + 0.15)) < 1e-6
+    assert abs(tuned_fall.respawn - (placed_fall.respawn + 0.6)) < 1e-6
+    fall_path = Path(tempfile.mkdtemp()) / "falling_roundtrip.json"
+    fall_saved = document.save(fall_path)
+    fall_payload = json.loads(fall_saved.read_text(encoding="utf-8"))
+    assert settings.TILE_KIND_FALLING in fall_payload["legend"].values()
+    fall_entries = fall_payload.get("falling_blocks", [])
+    assert fall_entries, "la carte doit ecrire le champ falling_blocks"
+    assert abs(fall_entries[0]["delay"] - tuned_fall.delay) < 1e-6
+    assert abs(fall_entries[0]["respawn"] - tuned_fall.respawn) < 1e-6
+    reloaded_fall = EditorDocument.from_file(fall_saved)
+    restored_fall = reloaded_fall.falling_at(*fall_cell)
+    assert restored_fall is not None
+    assert abs(restored_fall.delay - tuned_fall.delay) < 1e-6
+    assert abs(restored_fall.respawn - tuned_fall.respawn) < 1e-6
+    fall_saved.unlink()
+    document.undo()
+    assert document.falling_at(*fall_cell) is None
     print(f"  editeur document -> {document.columns}x{document.rows}, "
           f"{len(palette.PALETTE)} elements de palette")
 
@@ -789,6 +878,100 @@ def check_dash_stops_on_wall(window: arcade.Window) -> None:
     print(f"  dash mur -> vx sol {ground_vx:.2f}, air {air_vx:.2f}")
 
 
+def check_falling_block(window: arcade.Window) -> None:
+    """Le bloc tombant s'effondre avec le joueur, traverse le terrain, puis respawn."""
+    from src.world.falling_block import FallingState
+    from src.world.level import Level
+
+    data = {
+        "name": "Chute",
+        "tile_size": settings.TILE_SIZE,
+        "legend": {
+            ".": "vide",
+            "#": "wall",
+            "F": settings.TILE_KIND_FALLING,
+            "P": "player_spawn",
+        },
+        "rows": [
+            "########",
+            "#......#",
+            "#..P...#",
+            "#..F...#",
+            "#......#",
+            "#..#...#",
+            "#......#",
+            "########",
+        ],
+        "falling_blocks": [
+            {"x": 3, "y": 3, "delay": 0.05, "respawn": 0.2},
+        ],
+    }
+    level = Level.from_dict(data)
+    assert len(level.falling_blocks) == 1
+    block = level.falling_blocks[0]
+    assert abs(block.delay - 0.05) < 1e-6
+    assert abs(block.respawn - 0.2) < 1e-6
+    home_y = block.home_y
+    wall_below = min(level.walls, key=lambda wall: abs(wall.center_x - block.center_x) + abs(wall.center_y - (home_y - settings.TILE_SIZE * 2)))
+    player = Player(*level.player_spawn)
+    player.bind_world(
+        level.static_walls,
+        platforms=[level.corpses, level.falling_blocks],
+    )
+
+    def step() -> None:
+        level.update(FRAME)
+        for falling in level.falling_blocks:
+            if falling.just_respawned:
+                falling.just_respawned = False
+                falling.eject_upward(player)
+        player.update(FRAME)
+        for falling in level.falling_blocks:
+            if falling.supports(player):
+                falling.arm()
+            falling.stick_rider(player)
+
+    for _ in range(4):
+        step()
+    assert block.state is FallingState.ARMED or block.state is FallingState.FALLING
+    for _ in range(12):
+        step()
+        if block.state is FallingState.FALLING:
+            break
+    assert block.state is FallingState.FALLING, "le bloc doit tomber apres le delay"
+    y_before = block.center_y
+    player_before = player.center_y
+    for _ in range(8):
+        step()
+    assert block.center_y < y_before, "le bloc doit descendre"
+    assert player.center_y < player_before, "le joueur doit tomber avec le bloc"
+    while block.state is FallingState.FALLING and block.center_y > wall_below.center_y:
+        step()
+        assert block.center_y > -settings.TILE_SIZE * 4, "le bloc devrait deja avoir traverse le mur"
+    assert block.state is FallingState.FALLING, "le bloc ne doit pas s'arreter sur un mur"
+    assert block.center_y < wall_below.center_y, "le bloc traverse le terrain"
+
+    while block.state is FallingState.FALLING:
+        step()
+        assert block.center_y > -settings.TILE_SIZE * 12
+    assert block.state is FallingState.GONE
+    waited = 0
+    while block.state is FallingState.GONE:
+        player.center_x = block.home_x
+        player.center_y = block.home_y
+        player.change_x = 0.0
+        player.change_y = 0.0
+        step()
+        waited += 1
+        assert waited < 60, "le bloc devrait respawn"
+    assert block.state in (FallingState.IDLE, FallingState.ARMED)
+    assert player.bottom >= block.top - 1.0, "le respawn doit pousser le joueur vers le haut"
+    print(
+        f"  bloc tombant -> delay {block.delay:.2f}s, chute a travers le terrain, "
+        f"respawn ejecte"
+    )
+
+
 def check_editor_views(window: arcade.Window) -> None:
     """Le navigateur et la vue d'edition se dessinent, peignent et annulent."""
     from src.editor.browser import BrowserView
@@ -816,6 +999,11 @@ def check_editor_views(window: arcade.Window) -> None:
     view.tool = Tool.LINK
     view._link_index = 0
     view.on_draw()
+    view.on_key_press(arcade.key.F1, 0)
+    assert view.help.visible
+    view.on_draw()
+    view.on_key_press(arcade.key.F1, 0)
+    assert not view.help.visible
     print("  editeur vues -> navigateur et grille OK")
 
 
@@ -861,6 +1049,8 @@ def main() -> int:
         check_ice_block(window)
         print("[13/13] dash contre un mur")
         check_dash_stops_on_wall(window)
+        print("[14/14] blocs tombants")
+        check_falling_block(window)
     finally:
         window.close()
     print("OK : le squelette demarre et tourne.")

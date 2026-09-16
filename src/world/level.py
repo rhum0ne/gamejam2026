@@ -39,7 +39,9 @@ Les plaques d'activation sont declarees a part, en coordonnees de grille
     ]
 
 `setBlock type=void` retire le bloc existant tant qu'un poids (joueur, cadavre,
-ennemi) reste sur la plaque. `width` est optionnel (1 tuile par defaut).
+ennemi) reste sur la plaque. `"invert": true` inverse le sens : les blocs
+sont caches au chargement et n'apparaissent que tant que la plaque est
+enfoncee. `width` est optionnel (1 tuile par defaut).
 Une pique de plafond (`spike_up`) tombe si le bloc au-dessus d'elle disparait :
 elle tue au contact puis se brise au sol.
 
@@ -55,6 +57,10 @@ automatiquement ci-dessous.
 reglages (`range` en tuiles, `interval` en secondes, `dir` right/down/left/up)
 vivent dans le champ JSON `flamethrowers`, comme les plaques. L'ancien champ
 `facing` 1/-1 est encore lu.
+
+`falling_block` est une plateforme qui s'effondre : delay puis chute sans
+collision avec le terrain, puis respawn. Les delais vivent dans le champ
+JSON `falling_blocks` (`delay` et `respawn`, en secondes).
 """
 
 from __future__ import annotations
@@ -72,6 +78,7 @@ from src.entities.enemy import Enemy
 from src.entities.glow import glow_pass
 from src.entities.item import Item, ItemKind
 from src.world.decorations import Decoration, decoration_kinds
+from src.world.falling_block import FallingBlock, FallingSpec, parse_falling_specs
 from src.world.flamethrower import FlameSpec, Flamethrower, parse_flame_specs
 from src.world.mechanisms import (
     GatedTile,
@@ -169,6 +176,7 @@ class Level:
     decorations: arcade.SpriteList = field(default_factory=_dynamic_sprite_list)
     torch_stems: arcade.SpriteList = field(default_factory=_dynamic_sprite_list)
     flamethrowers: arcade.SpriteList = field(default_factory=_dynamic_sprite_list)
+    falling_blocks: arcade.SpriteList = field(default_factory=_dynamic_sprite_list)
     player_spawn: tuple[float, float] = (0.0, 0.0)
     checkpoint_spawn: tuple[float, float] = (0.0, 0.0)
     tiles_drawn: int = 0
@@ -182,6 +190,8 @@ class Level:
     _spectral_chunks: list[arcade.SpriteList] = field(default_factory=list)
     _hazard_chunks: list[arcade.SpriteList] = field(default_factory=list)
     _flame_specs: dict[tuple[int, int], FlameSpec] = field(default_factory=dict)
+    _falling_specs: dict[tuple[int, int], FallingSpec] = field(default_factory=dict)
+    _falling_gone: list[FallingBlock] = field(default_factory=list)
 
     # ------------------------------------------------------------------ #
     # Chargement
@@ -230,6 +240,10 @@ class Level:
         )
         try:
             level._flame_specs = parse_flame_specs(data.get("flamethrowers"))
+        except ValueError as error:
+            raise LevelFormatError(str(error)) from error
+        try:
+            level._falling_specs = parse_falling_specs(data.get("falling_blocks"))
         except ValueError as error:
             raise LevelFormatError(str(error)) from error
         level._build(grid, legend)
@@ -350,6 +364,7 @@ class Level:
             plate=plate,
             targets=targets,
             chunks=group_gated_chunks(targets, self.tile_size),
+            inverted=_parse_invert(raw),
         )
 
     def _gated_tile_at(self, column: int, row: int) -> GatedTile:
@@ -388,6 +403,7 @@ class Level:
             ("un decor", self.decorations),
             ("une torche", self.torches),
             ("un lance-flammes", self.flamethrowers),
+            ("un bloc tombant", self.falling_blocks),
             ("une porte", self.doors),
             ("un checkpoint", self.checkpoints),
             ("un objet", self.items),
@@ -432,7 +448,7 @@ class Level:
     @property
     def solid_platforms(self) -> list[arcade.SpriteList]:
         """Listes solides pour le corps physique (murs + murs spectraux + cadavres)."""
-        return [self.walls, self.spectral_walls, self.corpses]
+        return [self.walls, self.spectral_walls, self.corpses, self.falling_blocks]
 
     def spawn_corpse(self, corpse: arcade.Sprite) -> None:
         """Ajoute un cadavre au niveau (il devient solide immediatement)."""
@@ -484,6 +500,7 @@ class Level:
         for thrower in self.flamethrowers:
             thrower.draw_flame()
         self.flamethrowers.draw(pixelated=True)
+        self.falling_blocks.draw(pixelated=True)
         self.corpses.draw(pixelated=True)
         self.items.draw(pixelated=True)
         self.enemies.draw(pixelated=True)
@@ -541,6 +558,7 @@ class Level:
             self.torches,
             self.torch_stems,
             self.flamethrowers,
+            self.falling_blocks,
         ):
             sprite_list.initialize()
         for chunks in (self._wall_chunks, self._spectral_chunks, self._hazard_chunks):
@@ -648,6 +666,7 @@ class Level:
         self.corpses.update(delta_time)
         self.checkpoints.update(delta_time)
         self.flamethrowers.update(delta_time)
+        self._update_falling_blocks(delta_time)
         for item in self.items:
             item.update(delta_time, attractor=attractor)
 
@@ -678,6 +697,23 @@ class Level:
         for spike in list(self.falling_spikes):
             if spike.fall(ground):
                 spike.remove_from_sprite_lists()
+
+    def _update_falling_blocks(self, delta_time: float) -> None:
+        """Delay, chute libre (sans collision terrain), puis respawn a l'origine."""
+        for block in list(self.falling_blocks):
+            block.tick(delta_time)
+            if block.went_off_screen():
+                block.hide_for_respawn()
+                self._falling_gone.append(block)
+        still_gone: list[FallingBlock] = []
+        for block in self._falling_gone:
+            block.tick(delta_time)
+            if not block.ready_to_respawn():
+                still_gone.append(block)
+                continue
+            block.respawn_now()
+            self.falling_blocks.append(block)
+        self._falling_gone = still_gone
 
 
 # --------------------------------------------------------------------------- #
@@ -782,6 +818,16 @@ def _as_int(value: object, name: str) -> int:
     return value
 
 
+def _parse_invert(raw: dict) -> bool:
+    """Lit `invert` (defaut False). Absent = plaque qui cache a l'activation."""
+    if "invert" not in raw:
+        return False
+    value = raw["invert"]
+    if not isinstance(value, bool):
+        raise LevelFormatError("invert doit etre un booleen")
+    return value
+
+
 def _parse_set_blocks(activate: object) -> list[tuple[int, int]]:
     """Extrait les tuiles `setBlock type=void` d'un objet `activate`."""
     if activate is None:
@@ -831,6 +877,20 @@ def _add_flamethrower(level: Level, x: float, y: float) -> None:
     level.flamethrowers.append(thrower)
 
 
+def _add_falling_block(level: Level, x: float, y: float) -> None:
+    column = int(x // level.tile_size)
+    row = level.rows - 1 - int(y // level.tile_size)
+    spec = level._falling_specs.get((column, row))
+    block = FallingBlock(
+        x,
+        y,
+        size=level.tile_size,
+        delay=spec.delay if spec is not None else settings.FALLING_BLOCK_DELAY,
+        respawn=spec.respawn if spec is not None else settings.FALLING_BLOCK_RESPAWN,
+    )
+    level.falling_blocks.append(block)
+
+
 def _decoration_factory(kind: str) -> Callable[[Level, float, float], None]:
     """Fabrique une fonction `_add_xxx` pour un type de `decorations.DECORATION_SPECS`."""
 
@@ -851,6 +911,7 @@ _FACTORIES: dict[str, Callable[[Level, float, float], None]] = {
     "torch": _add_torch,
     **{kind: _decoration_factory(kind) for kind in decoration_kinds()},
     "flamethrower": _add_flamethrower,
+    settings.TILE_KIND_FALLING: _add_falling_block,
 }
 
 
