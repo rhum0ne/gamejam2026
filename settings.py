@@ -356,6 +356,102 @@ ENEMY_GHOST_GLOW_PULSE = 0.16
 ENEMY_GHOST_GLOW_PULSE_SPEED = 3.4
 
 # --------------------------------------------------------------------------- #
+# Ennemis - chauve-souris (volant)
+# --------------------------------------------------------------------------- #
+
+# Planches "Bat with VFX" (impacts/trainees dessines dans les planches d'attaque
+# elles-memes) : assets/animations/. Frames natives carrees, contrairement au
+# squelette (96x64) : 64x64.
+BAT_DIR = ANIMATIONS_DIR / "Enemies" / "Bat" / "Bat with VFX"
+BAT_SPRITE_SLEEP = BAT_DIR / "Bat-Sleep.png"
+BAT_SPRITE_WAKE = BAT_DIR / "Bat-WakeUp.png"
+BAT_SPRITE_FLY = BAT_DIR / "Bat-IdleFly.png"
+BAT_SPRITE_RUN = BAT_DIR / "Bat-Run.png"
+BAT_SPRITE_ATTACK_DIVE = BAT_DIR / "Bat-Attack1.png"  # piquet vertical
+BAT_SPRITE_ATTACK_LUNGE = BAT_DIR / "Bat-Attack2.png"  # charge horizontale
+BAT_SPRITE_DIE = BAT_DIR / "Bat-Die.png"
+BAT_FRAME_SIZE = 64
+BAT_SCALE = 1.0
+# Hitbox rectangulaire = corps visible (ailes repliees), pas l'envergure en
+# plein vol : mesuree au centre de la frame, a affiner avec DEBUG_SHOW_HITBOXES.
+BAT_WIDTH = 22
+BAT_HEIGHT = 22
+BAT_HITBOX_OFFSET_X = 0.0
+BAT_HITBOX_OFFSET_Y = -4.0
+# La planche dessine la chauve-souris tournee vers la gauche (le squelette est
+# tourne vers la droite) : `Bat.facing` doit donc s'appliquer en miroir.
+BAT_SPRITE_FACES_LEFT = True
+BAT_HIT_POINTS = 1
+
+# Deplacement (vol libre, sans gravite : cf. Ghost._apply_steering/_move_axis).
+BAT_SPEED = 3.2  # px/frame
+BAT_ACCEL_TIME = 0.18  # secondes pour atteindre BAT_SPEED
+BAT_COAST_TIME = 0.30  # secondes pour freiner une fois la cible hors de portee
+BAT_ARRIVE_DISTANCE = 6.0  # px : assez pres du perchoir pour se rendormir
+
+# Reveil / poursuite / laisse (distances au joueur ou au perchoir d'origine).
+BAT_WAKE_RANGE = 190.0
+BAT_LEASH_RANGE = 340.0  # au-dela du perchoir, la chauve-souris abandonne et rentre
+
+# Attaque : la chauve-souris pique si le joueur est nettement en-dessous, dans
+# un cone autour de la verticale (pas seulement pile en-dessous : un angle
+# genereux, sinon l'attaque ne se declenche presque jamais en jeu reel) ; elle
+# charge a l'horizontale si le joueur est a peu pres a la meme hauteur.
+BAT_ATTACK_RANGE = 70.0  # distance de declenchement (CHASE -> ATTACK)
+BAT_ATTACK_REACH = 46.0  # rayon reel du coup pendant les frames actives, depuis la position apres l'elan
+# RANGE < LURCH_DISTANCE + REACH : un joueur immobile a portee de declenchement
+# est touche ; un joueur qui s'ecarte pendant l'armement peut esquiver.
+BAT_DIVE_MIN_DROP = 16.0  # px : le joueur doit etre au moins ce peu en-dessous
+BAT_DIVE_CONE_ANGLE = 50.0  # degres de part et d'autre de la verticale (piquet)
+BAT_LUNGE_VERTICAL_RANGE = 20.0  # tolerance de hauteur pour la charge horizontale
+BAT_ATTACK_COOLDOWN = 0.5  # secondes de pause entre deux attaques
+# Frames actives de chaque planche d'attaque, calees sur le pic du mouvement
+# dessine (mesure sur les planches, voir le dessin du corps par frame, pas
+# juste la duree totale) : le piquet touche le fond de sa boucle (~13px sous
+# le centre), la charge son extension horizontale maximale (~19px).
+BAT_DIVE_HIT_FRAMES: tuple[int, int] = (5, 6)
+BAT_LUNGE_HIT_FRAMES: tuple[int, int] = (7, 9)
+# La planche anime elle-meme un vrai mouvement (piquet/charge), mais son
+# amplitude est modeste (10-20px autour du centre de la frame 64x64) : bien
+# moins que BAT_ATTACK_RANGE. Sans un minimum de vrai deplacement du sprite,
+# l'attaque semble foncer sur le joueur sans jamais l'atteindre des qu'il
+# n'est pas deja tout pres. On ne va donc pas jusqu'au joueur (ca collerait
+# les deux sprites, cf. retour visuel) : juste un elan court et plafonne vers
+# lui, que l'amplitude dessinee complete jusqu'au contact.
+BAT_ATTACK_LURCH_DISTANCE = 32.0  # px : distance max parcourue par l'ancre pendant l'elan
+# Duree de l'elan (interpolation directe vers la cible, cf. `Bat._advance_attack_lurch`) :
+# volontairement PAS un ressort vitesse/acceleration comme le vol normal, qui
+# survolerait la cible sur un trajet si court et rearmerait sans fin
+# ("picorement"). Doit tenir dans la fenetre entre BAT_ATTACK_LURCH_START_FRAME
+# et le debut des frames actives (le piquet laisse le moins de marge : ~0.1s).
+BAT_ATTACK_LURCH_DURATION = 0.07  # secondes
+# Les toutes premieres frames des deux planches d'attaque dessinent un recul/
+# une montee (l'armement, a l'oppose du joueur : mesure sur les planches,
+# cf. commentaire au-dessus). Faire foncer l'ancre des la frame 0 la ferait
+# avancer pendant que le dessin recule : un contresens visuel tres marque
+# (l'impression de "rejouer" quelque chose). L'elan n'est donc arme qu'a
+# partir de cette frame, une fois le dessin reellement lance vers la cible.
+BAT_ATTACK_LURCH_START_FRAME = 4
+
+ANIM_BAT_SLEEP_FRAME_TIME = 0.20
+ANIM_BAT_WAKE_FRAME_TIME = 0.05
+ANIM_BAT_FLY_FRAME_TIME = 0.09
+ANIM_BAT_RUN_FRAME_TIME = 0.06
+ANIM_BAT_ATTACK_DIVE_FRAME_TIME = 0.045
+ANIM_BAT_ATTACK_LUNGE_FRAME_TIME = 0.04
+ANIM_BAT_DIE_FRAME_TIME = 0.05
+
+BAT_GHOST_GLOW_SCALE = 5.0
+BAT_GHOST_GLOW_ALPHA = 90
+BAT_GHOST_GLOW_INNER_SCALE = 2.2
+BAT_GHOST_GLOW_INNER_ALPHA = 160
+BAT_GHOST_GLOW_PULSE = 0.18
+BAT_GHOST_GLOW_PULSE_SPEED = 3.8
+COLOR_BAT = (150, 96, 190)
+COLOR_BAT_GLOW = (255, 28, 22)
+COLOR_BAT_GLOW_CORE = (255, 92, 64)
+
+# --------------------------------------------------------------------------- #
 # Objets et progression
 # --------------------------------------------------------------------------- #
 

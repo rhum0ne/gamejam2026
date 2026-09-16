@@ -20,7 +20,7 @@ import arcade
 
 import settings
 from src.entities.corpse import Corpse
-from src.entities.enemy import Enemy, EnemyState
+from src.entities.enemy_base import EnemyBase
 from src.entities.ghost import Ghost
 from src.entities.item import Item
 from src.entities.player import Player
@@ -86,12 +86,13 @@ def corpse_touched_by_ghost(ghost: Ghost, corpses: arcade.SpriteList) -> Corpse 
     return touched[0] if touched else None
 
 
-def enemy_striking_player(player: Player, enemies: Iterable[Enemy]) -> Enemy | None:
-    """Premier ennemi dont le coup d'epee touche le corps physique vivant.
+def enemy_striking_player(player: Player, enemies: Iterable[EnemyBase]) -> EnemyBase | None:
+    """Premier ennemi dont l'attaque touche le corps physique vivant.
 
     Le simple contact avec le corps d'un ennemi ne tue pas : seul le coup,
-    pendant les frames ou la lame est tendue (`Enemy.strike_active`), compte.
-    Un ennemi `DYING` n'est jamais en train de frapper.
+    pendant les frames ou l'attaque est active (`EnemyBase.strike_active`),
+    compte. Un ennemi en train de mourir (`is_dying`) n'est jamais en train
+    de frapper.
     """
     if not player.alive:
         return None
@@ -101,34 +102,34 @@ def enemy_striking_player(player: Player, enemies: Iterable[Enemy]) -> Enemy | N
     return None
 
 
-def enemy_stomped_by_player(player: Player, enemies: arcade.SpriteList) -> Enemy | None:
+def enemy_stomped_by_player(player: Player, enemies: arcade.SpriteList) -> EnemyBase | None:
     """Ennemi ecrase par le joueur en retombant dessus (attaque de base).
 
-    Le seuil utilise `settings.ENEMY_HEIGHT` (hauteur du corps visible du
-    squelette) plutot que `enemy.height` : ce dernier reflete desormais la
-    frame d'animation entiere (96x64 px), bien plus haute que l'ennemi.
+    Le seuil utilise `enemy.body_height` (hauteur du corps visible, propre a
+    chaque archetype) plutot que `enemy.height` : ce dernier reflete la frame
+    d'animation entiere, generalement bien plus haute/large que le corps.
     """
     if not player.alive or player.change_y >= 0:
         return None
     for enemy in arcade.check_for_collision_with_list(player, enemies):
-        if enemy.state is EnemyState.DYING:
+        if enemy.is_dying:
             continue
-        if player.center_y > enemy.center_y + settings.ENEMY_HEIGHT / 4:
+        if player.center_y > enemy.center_y + enemy.body_height / 4:
             return enemy
     return None
 
 
 def plate_is_weighted(plate: arcade.Sprite, weights: Sequence[arcade.Sprite]) -> bool:
-    """Un poids (corps, cadavre, ennemi) appuie-t-il sur la plaque ?"""
+    """Un poids (corps, cadavre, ennemi au sol) appuie-t-il sur la plaque ?"""
     return any(arcade.check_for_collision(plate, body) for body in weights)
 
 
 def enemies_hit_by_falling_spikes(
     enemies: arcade.SpriteList,
     falling_spikes: arcade.SpriteList,
-) -> list[Enemy]:
+) -> list[EnemyBase]:
     """Ennemis touches par une pique en chute."""
-    hit: list[Enemy] = []
+    hit: list[EnemyBase] = []
     seen: set[int] = set()
     for spike in falling_spikes:
         for enemy in arcade.check_for_collision_with_list(spike, enemies):

@@ -13,15 +13,15 @@ Priorites de comportement, de la plus forte a la plus faible :
 meme "etage") : sans ca, un ennemi au sol "suit" un joueur juste au-dessus de
 lui dans le vide sans jamais pouvoir l'atteindre.
 Un dernier etat, DYING, joue l'animation de mort avant de retirer l'ennemi
-du jeu (voir `take_damage`).
+du jeu (voir `take_damage`, herite de `EnemyBase`).
 
-TODO(gameplay) : varier les archetypes (volant, spectral visible uniquement en
-mode fantome, tireur) en sous-classant `Enemy`.
+Les PV/mort/halo/portee d'attaque generiques sont dans `EnemyBase`
+(`src/entities/enemy_base.py`). Voir aussi `src/entities/bat.py` pour un
+archetype different (volant).
 """
 
 from __future__ import annotations
 
-import math
 from collections.abc import Sequence
 from enum import Enum, auto
 
@@ -29,8 +29,7 @@ import arcade
 
 import settings
 from src.entities.corpse import Corpse
-from src.entities.glow import draw_glow
-from src.entities.item import Item, make_soul_orb
+from src.entities.enemy_base import EnemyBase
 from src.entities.player import Player
 from src.ui import sprites
 
@@ -75,7 +74,7 @@ def _die_animation() -> sprites.StripAnimation:
     return sprites.StripAnimation(frames, settings.ANIM_ENEMY_DIE_FRAME_TIME, loop=False)
 
 
-class Enemy(arcade.Sprite):
+class Enemy(EnemyBase):
     """Ennemi terrestre carnivore."""
 
     def __init__(self, center_x: float, center_y: float) -> None:
@@ -83,7 +82,14 @@ class Enemy(arcade.Sprite):
         self._walk = _walk_animation()
         self._attack = _attack_animation()
         self._die = _die_animation()
-        super().__init__(self._idle.textures[0], center_x=center_x, center_y=center_y)
+        super().__init__(
+            self._idle.textures[0],
+            center_x=center_x,
+            center_y=center_y,
+            hit_points=1,
+            body_width=settings.ENEMY_WIDTH,
+            body_height=settings.ENEMY_HEIGHT,
+        )
         self.scale = settings.ENEMY_SCALE
         # La planche fait ENEMY_FRAME_WIDTH x ENEMY_FRAME_HEIGHT px, mais le
         # squelette n'en occupe qu'une partie (l'epee balaie le reste pendant
@@ -99,12 +105,21 @@ class Enemy(arcade.Sprite):
         self.state = EnemyState.PATROL
         self.facing = -1
         sprites.apply_facing(self, self.facing)
-        self.hit_points = 1
-        self.max_hit_points = self.hit_points
+        self.attack_reach = settings.ENEMY_ATTACK_REACH
+        self.attack_vertical_range = settings.ENEMY_ATTACK_VERTICAL_RANGE
         self._attack_cooldown = 0.0
         self._physics: arcade.PhysicsEnginePlatformer | None = None
         self._ground: arcade.SpriteList | None = None
-        self._glow_time = (center_x * 0.13 + center_y * 0.07) % math.tau
+        self._configure_glow(
+            scale=settings.ENEMY_GHOST_GLOW_SCALE,
+            alpha=settings.ENEMY_GHOST_GLOW_ALPHA,
+            inner_scale=settings.ENEMY_GHOST_GLOW_INNER_SCALE,
+            inner_alpha=settings.ENEMY_GHOST_GLOW_INNER_ALPHA,
+            pulse=settings.ENEMY_GHOST_GLOW_PULSE,
+            pulse_speed=settings.ENEMY_GHOST_GLOW_PULSE_SPEED,
+            color=settings.COLOR_ENEMY_GLOW,
+            color_core=settings.COLOR_ENEMY_GLOW_CORE,
+        )
 
     # ------------------------------------------------------------------ #
     # Initialisation
@@ -131,41 +146,11 @@ class Enemy(arcade.Sprite):
         first, last = settings.ENEMY_ATTACK_HIT_FRAMES
         return first <= self._animator.frame_index <= last
 
-    def strike_reaches(self, target: arcade.Sprite) -> bool:
-        """La lame, tendue du cote ou regarde l'ennemi, atteint-elle `target` ?
-
-        Compte aussi une cible collee contre (ou dans) le corps de l'ennemi.
-        """
-        if not isinstance(target, arcade.Sprite):
-            raise TypeError("target doit etre un arcade.Sprite")
-        forward = (target.center_x - self.center_x) * self.facing
-        if forward < -settings.ENEMY_WIDTH / 2 or forward > settings.ENEMY_ATTACK_REACH:
-            return False
-        return abs(target.center_y - self.center_y) <= settings.ENEMY_ATTACK_VERTICAL_RANGE
-
     # ------------------------------------------------------------------ #
     # Mort
     # ------------------------------------------------------------------ #
 
-    def take_damage(self, amount: int = 1) -> Item | None:
-        """Applique des degats. Retourne la bille bleue si l'ennemi meurt.
-
-        Un ennemi deja en train de mourir (`DYING`) ignore tout nouveau coup :
-        sans ca, un joueur qui reste sur sa tete pendant l'animation de mort
-        ferait apparaitre plusieurs billes bleues pour un seul ennemi.
-        """
-        if amount <= 0:
-            raise ValueError("amount doit etre strictement positif")
-        if self.state is EnemyState.DYING:
-            return None
-        self.hit_points -= amount
-        if self.hit_points > 0:
-            return None
-        orb = make_soul_orb(self.center_x, self.center_y)
-        self._start_dying()
-        return orb
-
-    def _start_dying(self) -> None:
+    def _on_death(self) -> None:
         """Stoppe l'ennemi et lance l'animation de mort.
 
         Le retrait effectif de la SpriteList est fait par `update` une fois
@@ -175,54 +160,13 @@ class Enemy(arcade.Sprite):
         self.state = EnemyState.DYING
         self.change_x = 0.0
 
-    def respawn(self, center_x: float, center_y: float) -> None:
-        """Remet l'ennemi a un point de spawn, vivant et reinitialise.
-
-        Repositionne, annule la vitesse acquise et restaure les PV/etat/
-        orientation d'origine. Ne touche pas a l'appartenance aux SpriteList :
-        si l'ennemi avait ete retire via `take_damage`, c'est a l'appelant de
-        le rajouter (voir `PlayView._respawn_enemies`), car `Enemy` ne garde
-        pas de reference vers les listes qui le contiennent.
-        """
-        self.center_x = center_x
-        self.center_y = center_y
-        self.change_x = 0.0
-        self.change_y = 0.0
-        self.hit_points = self.max_hit_points
+    def _on_respawn(self) -> None:
         self.state = EnemyState.PATROL
         self._attack_cooldown = 0.0
         self.facing = -1
         self._animator.play(self._idle)
         self.texture = self._animator.animation.textures[0]
         sprites.apply_facing(self, self.facing)
-
-    # ------------------------------------------------------------------ #
-    # Dessin
-    # ------------------------------------------------------------------ #
-
-    def draw_ghost_glow(self, *, bind_blend: bool = True) -> None:
-        """Halo rouge intense, dessine aussi hors du champ de vision."""
-        pulse = 1.0 + settings.ENEMY_GHOST_GLOW_PULSE * math.sin(
-            self._glow_time * settings.ENEMY_GHOST_GLOW_PULSE_SPEED
-        )
-        draw_glow(
-            self.center_x,
-            self.center_y,
-            settings.ENEMY_WIDTH * settings.ENEMY_GHOST_GLOW_SCALE,
-            settings.ENEMY_HEIGHT * settings.ENEMY_GHOST_GLOW_SCALE,
-            settings.COLOR_ENEMY_GLOW,
-            int(settings.ENEMY_GHOST_GLOW_ALPHA * pulse),
-            bind_blend=bind_blend,
-        )
-        draw_glow(
-            self.center_x,
-            self.center_y,
-            settings.ENEMY_WIDTH * settings.ENEMY_GHOST_GLOW_INNER_SCALE,
-            settings.ENEMY_HEIGHT * settings.ENEMY_GHOST_GLOW_INNER_SCALE,
-            settings.COLOR_ENEMY_GLOW_CORE,
-            int(settings.ENEMY_GHOST_GLOW_INNER_ALPHA * pulse),
-            bind_blend=bind_blend,
-        )
 
     # ------------------------------------------------------------------ #
     # Boucle de jeu

@@ -32,7 +32,9 @@ Les plaques d'activation sont declarees a part, en coordonnees de grille
     ]
 
 `setBlock type=void` retire le bloc existant tant qu'un poids (joueur, cadavre,
-ennemi) reste sur la plaque. `width` est optionnel (1 tuile par defaut).
+ennemi au sol ; un ennemi volant comme la chauve-souris ne pese pas, voir
+`EnemyBase.weighs_on_plates`) reste sur la plaque. `width` est optionnel (1
+tuile par defaut).
 Une pique de plafond (`spike_up`) tombe si le bloc au-dessus d'elle disparait :
 elle tue au contact puis se brise au sol.
 
@@ -54,6 +56,7 @@ from pathlib import Path
 import arcade
 
 import settings
+from src.entities.bat import Bat
 from src.entities.enemy import Enemy
 from src.entities.glow import glow_pass
 from src.entities.item import Item, ItemKind
@@ -617,6 +620,10 @@ def _add_enemy(level: Level, x: float, y: float) -> None:
     level.enemies.append(Enemy(x, y))
 
 
+def _add_bat(level: Level, x: float, y: float) -> None:
+    level.enemies.append(Bat(x, y))
+
+
 def _coord(raw: dict, *keys: str) -> int:
     for key in keys:
         if key in raw:
@@ -670,6 +677,7 @@ _FACTORIES: dict[str, Callable[[Level, float, float], None]] = {
     "key": _add_key,
     "soul_orb": _add_soul_orb,
     "enemy": _add_enemy,
+    "bat": _add_bat,
     "torch": _add_torch,
 }
 
