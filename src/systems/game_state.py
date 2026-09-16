@@ -32,7 +32,7 @@ from src.entities.corpse import Corpse
 from src.entities.ghost import Ghost
 from src.entities.glow import draw_glow, glow_pass
 from src.entities.item import ItemKind
-from src.entities.particles import BloodBurst
+from src.entities.particles import BloodBurst, SoulBurst
 from src.entities.player import Player
 from src.systems import collisions
 from src.systems.ghost_emergence import GhostEmergence
@@ -57,6 +57,7 @@ class GameState(Enum):
     GHOST = auto()
     RESPAWNING = auto()
     PAUSED = auto()
+    LEVEL_UP = auto()
     VICTORY = auto()
     GAME_OVER = auto()
 
@@ -64,15 +65,29 @@ class GameState(Enum):
 _TRANSITIONS: dict[GameState, frozenset[GameState]] = {
     GameState.MENU: frozenset({GameState.PLAYING}),
     GameState.PLAYING: frozenset(
-        {GameState.GHOST, GameState.VICTORY, GameState.GAME_OVER, GameState.MENU, GameState.PAUSED}
+        {
+            GameState.GHOST,
+            GameState.VICTORY,
+            GameState.GAME_OVER,
+            GameState.MENU,
+            GameState.PAUSED,
+            GameState.LEVEL_UP,
+        }
     ),
     GameState.GHOST: frozenset(
-        {GameState.RESPAWNING, GameState.GAME_OVER, GameState.MENU, GameState.PAUSED}
+        {
+            GameState.RESPAWNING,
+            GameState.GAME_OVER,
+            GameState.MENU,
+            GameState.PAUSED,
+            GameState.LEVEL_UP,
+        }
     ),
     GameState.RESPAWNING: frozenset({GameState.PLAYING, GameState.MENU, GameState.PAUSED}),
     GameState.PAUSED: frozenset(
         {GameState.PLAYING, GameState.GHOST, GameState.RESPAWNING, GameState.MENU}
     ),
+    GameState.LEVEL_UP: frozenset({GameState.PLAYING, GameState.GHOST, GameState.MENU}),
     GameState.VICTORY: frozenset({GameState.PLAYING, GameState.MENU}),
     GameState.GAME_OVER: frozenset({GameState.PLAYING, GameState.MENU}),
 }
@@ -83,6 +98,7 @@ STATE_LABELS: dict[GameState, str] = {
     GameState.GHOST: "Projection astrale",
     GameState.RESPAWNING: "Retour au corps...",
     GameState.PAUSED: "Pause",
+    GameState.LEVEL_UP: "Montee de niveau",
     GameState.VICTORY: "Niveau termine",
     GameState.GAME_OVER: "Game Over",
 }
@@ -240,10 +256,13 @@ class PlayView(arcade.View):
         self.held_keys: set[int] = set()
         self._hitstop_timer = 0.0
         self._blood = BloodBurst()
+        self._soul_pickup_fx = SoulBurst()
         self._attack_sound = self._load_attack_sound()
         self._delivered_items: list[ItemKind] = []
         self._pause_menu = None
         self._paused_from = GameState.PLAYING
+        self._level_up_menu = None
+        self._level_up_from = GameState.PLAYING
         bind_play_view(self)
         self._fps = 0.0
         self._last_draw_time = 0.0
@@ -282,6 +301,7 @@ class PlayView(arcade.View):
         self.held_keys.clear()
         self._hitstop_timer = 0.0
         self._blood.clear()
+        self._soul_pickup_fx.clear()
         self._delivered_items.clear()
         self.machine = GameStateMachine(GameState.MENU)
         self.machine.to(GameState.PLAYING)
@@ -377,6 +397,7 @@ class PlayView(arcade.View):
                 elif self.ghost.vanishing:
                     draw_pixel_sprite(self.ghost)
             self._blood.draw()
+            self._soul_pickup_fx.draw()
             if settings.DEBUG_SHOW_HITBOXES:
                 self._draw_hitboxes()
         self.camera.use_ui()
@@ -396,6 +417,9 @@ class PlayView(arcade.View):
         if self.machine.state is GameState.PAUSED:
             self.camera.use_ui()
             self._pause_overlay().draw(settings.WORLD_VIEW_WIDTH, settings.WORLD_VIEW_HEIGHT)
+        elif self.machine.state is GameState.LEVEL_UP:
+            self.camera.use_ui()
+            self._level_up_overlay().draw(settings.WORLD_VIEW_WIDTH, settings.WORLD_VIEW_HEIGHT)
         warp = 0.0
         if self.machine.state is GameState.GHOST and self.ghost is not None:
             warp = self.ghost.warp_strength
@@ -724,7 +748,7 @@ class PlayView(arcade.View):
     # ------------------------------------------------------------------ #
 
     def on_update(self, delta_time: float) -> None:
-        if self.machine.state is GameState.PAUSED:
+        if self.machine.state in (GameState.PAUSED, GameState.LEVEL_UP):
             return
         if self._hitstop_timer > 0.0:
             self._hitstop_timer = max(0.0, self._hitstop_timer - delta_time)
@@ -752,6 +776,7 @@ class PlayView(arcade.View):
         self._resolve_falling_spike_kills()
         self._resolve_flame_kills()
         self._blood.update(delta_time)
+        self._soul_pickup_fx.update(delta_time)
         self.atmosphere.update(delta_time)
 
     def _mechanism_weights(self) -> list[arcade.Sprite]:
@@ -944,7 +969,7 @@ class PlayView(arcade.View):
             )
 
         for item in collisions.items_reachable_by_body(self.player, self.level):
-            self._collect(item.kind)
+            self._collect(item.kind, item.center_x, item.center_y)
             item.remove_from_sprite_lists()
 
         checkpoint = collisions.checkpoint_touched_by_player(self.player, self.level)
@@ -1018,17 +1043,20 @@ class PlayView(arcade.View):
         if corpse is None:
             return
         for item in ghost.release_all():
-            self._collect(item.kind)
+            self._collect(item.kind, item.center_x, item.center_y)
             item.remove_from_sprite_lists()
 
-    def _collect(self, kind: ItemKind) -> None:
+    def _collect(self, kind: ItemKind, x: float = 0.0, y: float = 0.0) -> None:
         """Applique l'effet du ramassage d'un objet.
 
         Les objets ramasses pendant le mode fantome sont mis de cote et remis au
         corps physique a la reapparition.
         """
         if kind is ItemKind.SOUL_ORB:
-            self.session.progression.absorb_orb()
+            self._soul_pickup_fx.emit(x, y)
+            leveled_up = self.session.progression.absorb_orb()
+            if leveled_up:
+                self.enter_level_up()
             return
         if self.machine.state is GameState.GHOST:
             self._delivered_items.append(kind)
@@ -1065,6 +1093,9 @@ class PlayView(arcade.View):
         if self.machine.state is GameState.PAUSED:
             self._pause_overlay().on_key_press(self.window, symbol, modifiers)
             return
+        if self.machine.state is GameState.LEVEL_UP:
+            self._level_up_overlay().on_key_press(self.window, symbol, modifiers)
+            return
         self.held_keys.add(symbol)
         state = self.machine.state
         if symbol == arcade.key.ESCAPE:
@@ -1089,13 +1120,34 @@ class PlayView(arcade.View):
             if self.ghost is not None:
                 self.ghost.start_vanish()
 
+    def on_key_release(self, symbol: int, modifiers: int) -> None:
+        self.held_keys.discard(symbol)
+        if self.machine.state in (GameState.PAUSED, GameState.LEVEL_UP):
+            return
+        if symbol in _JUMP_KEYS and self.machine.state is GameState.PLAYING:
+            self.player.cut_jump()
+
+    def on_mouse_motion(self, x: float, y: float, dx: float, dy: float) -> None:
+        if self.machine.state is GameState.PAUSED:
+            ui_x, ui_y = self.camera.window_to_ui(x, y)
+            self._pause_overlay().on_mouse_motion(ui_x, ui_y)
+        elif self.machine.state is GameState.LEVEL_UP:
+            ui_x, ui_y = self.camera.window_to_ui(x, y)
+            self._level_up_overlay().on_mouse_motion(ui_x, ui_y)
+
     def on_mouse_press(self, x: float, y: float, button: int, modifiers: int) -> None:
-        """Clic gauche : menu pause, ou attaque oriente vers le curseur."""
+        """Route le clic vers l'overlay actif, sinon oriente/attaque au clic gauche."""
         if self.machine.state is GameState.PAUSED:
             if button != arcade.MOUSE_BUTTON_LEFT:
                 return
             ui_x, ui_y = self.camera.window_to_ui(x, y)
             self._pause_overlay().on_mouse_press(ui_x, ui_y)
+            return
+        if self.machine.state is GameState.LEVEL_UP:
+            if button != arcade.MOUSE_BUTTON_LEFT:
+                return
+            ui_x, ui_y = self.camera.window_to_ui(x, y)
+            self._level_up_overlay().on_mouse_press(ui_x, ui_y)
             return
         if button != _ATTACK_BUTTON or self.machine.state is not GameState.PLAYING:
             return
@@ -1104,26 +1156,15 @@ class PlayView(arcade.View):
             self.player.facing = 1 if world_x > self.player.center_x else -1
         self.player.attack()
 
-    def on_key_release(self, symbol: int, modifiers: int) -> None:
-        self.held_keys.discard(symbol)
-        if self.machine.state is GameState.PAUSED:
-            return
-        if symbol in _JUMP_KEYS and self.machine.state is GameState.PLAYING:
-            self.player.cut_jump()
-
-    def on_mouse_motion(self, x: float, y: float, dx: float, dy: float) -> None:
-        if self.machine.state is not GameState.PAUSED:
-            return
-        ui_x, ui_y = self.camera.window_to_ui(x, y)
-        self._pause_overlay().on_mouse_motion(ui_x, ui_y)
-
     def on_mouse_release(self, x: float, y: float, button: int, modifiers: int) -> None:
-        if self.machine.state is not GameState.PAUSED:
-            return
         if button != arcade.MOUSE_BUTTON_LEFT:
             return
-        ui_x, ui_y = self.camera.window_to_ui(x, y)
-        self._pause_overlay().on_mouse_release(ui_x, ui_y)
+        if self.machine.state is GameState.PAUSED:
+            ui_x, ui_y = self.camera.window_to_ui(x, y)
+            self._pause_overlay().on_mouse_release(ui_x, ui_y)
+        elif self.machine.state is GameState.LEVEL_UP:
+            ui_x, ui_y = self.camera.window_to_ui(x, y)
+            self._level_up_overlay().on_mouse_release(ui_x, ui_y)
 
     def _pause_overlay(self):
         if self._pause_menu is None:
@@ -1157,6 +1198,28 @@ class PlayView(arcade.View):
         from src.ui.menus import TitleView
 
         self.window.show_view(TitleView(self.session))
+
+    def _level_up_overlay(self):
+        if self._level_up_menu is None:
+            from src.ui.level_up import LevelUpOverlay
+
+            self._level_up_menu = LevelUpOverlay(on_choose=self._choose_upgrade)
+        return self._level_up_menu
+
+    def enter_level_up(self) -> None:
+        """Ouvre l'ecran de choix d'amelioration (montee de niveau)."""
+        if self.machine.state is GameState.LEVEL_UP:
+            return
+        if not self.machine.can(GameState.LEVEL_UP):
+            return
+        self._level_up_from = self.machine.state
+        self.held_keys.clear()
+        self._level_up_overlay().set_cards(self.session.progression.upgrade_cards())
+        self.machine.try_to(GameState.LEVEL_UP)
+
+    def _choose_upgrade(self, kind: str) -> None:
+        self.session.progression.apply_upgrade(kind)
+        self.machine.try_to(self._level_up_from)
 
     def on_resize(self, width: int, height: int) -> None:
         super().on_resize(width, height)

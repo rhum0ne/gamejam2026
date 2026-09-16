@@ -175,18 +175,36 @@ def check_ground_theme() -> None:
 
 
 def check_progression() -> None:
-    """Les paliers d'ames se debloquent tout seuls, sans shop."""
+    """XP + ames exponentiels ; les ameliorations sont choisies, pas automatiques."""
     progression = SoulProgression()
     assert progression.level == 1
-    assert progression.ghost_stats.max_range == settings.GHOST_MAX_RANGE
+    assert progression.essence == 0
     assert progression.ghost_stats.duration == settings.GHOST_DURATION
+    assert progression.ghost_stats.speed == settings.GHOST_SPEED
+    leveled_up = False
     for _ in range(3):
-        progression.absorb_orb()
-    assert progression.level == 2
-    assert progression.ghost_stats.max_range > settings.GHOST_MAX_RANGE
-    assert progression.ghost_stats.duration > settings.GHOST_DURATION
-    print(f"  progression -> niveau {progression.level}, "
-          f"portee fantome {progression.ghost_stats.max_range:.0f} px")
+        leveled_up = progression.absorb_orb() or leveled_up
+    assert progression.level == 2, "3 ames doivent suffire pour le niveau 2 (courbe exponentielle)"
+    assert leveled_up, "absorb_orb doit signaler la montee de niveau"
+    assert progression.essence == 3, "l'essence (monnaie) n'est jamais depensee toute seule"
+    # Les stats du fantome ne bougent pas tant qu'aucune carte n'a ete choisie.
+    assert progression.ghost_stats.duration == settings.GHOST_DURATION
+    assert progression.ghost_stats.speed == settings.GHOST_SPEED
+
+    first_cost = progression.upgrade_cost("duration")
+    progression.apply_upgrade("duration")
+    assert progression.ghost_stats.duration == settings.GHOST_DURATION + settings.GHOST_UPGRADE_DURATION_BONUS
+    assert progression.essence == 3 - first_cost
+    second_cost = progression.upgrade_cost("duration")
+    assert second_cost > first_cost, "le prix d'une amelioration doit croitre a chaque achat"
+
+    cards = progression.upgrade_cards()
+    assert {card.kind for card in cards} == {"vision", "speed", "duration"}
+    print(
+        f"  progression -> niveau {progression.level}, {progression.essence} ame(s), "
+        f"duree fantome {progression.ghost_stats.duration:.1f}s "
+        f"(prochaine carte duree : {second_cost} ame(s))"
+    )
 
 
 def check_event_manager() -> None:
