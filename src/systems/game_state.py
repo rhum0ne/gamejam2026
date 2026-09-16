@@ -512,9 +512,6 @@ class PlayView(arcade.View):
             ghost_duration=self.ghost.stats.duration if self.ghost is not None else settings.GHOST_DURATION,
             leash_ratio=self.ghost.leash_ratio if self.ghost is not None else 0.0,
             fps=self._fps if settings.DEBUG_SHOW_FPS and not self._debug_enabled else None,
-            dash_ratio=self.player.dash_ratio if show_body_hud else None,
-            dash_ready=self.player.dash_ready,
-            dash_flash=self.player.dash_flash,
             controls=(
                 "ghost"
                 if state is GameState.GHOST and not self.ghost_emerging
