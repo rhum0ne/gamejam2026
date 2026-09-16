@@ -25,12 +25,13 @@ from dataclasses import dataclass, field
 from enum import Enum, auto
 
 import arcade
+from arcade.types import XYWH
 
 import settings
 from src.entities.batch_draw import SpriteOverlay
 from src.entities.corpse import Corpse
 from src.entities.ghost import Ghost
-from src.entities.glow import glow_pass
+from src.entities.glow import draw_glow, glow_pass
 from src.entities.item import ItemKind
 from src.entities.player import Player
 from src.systems import collisions
@@ -41,6 +42,7 @@ from src.systems.upgrades import SoulProgression
 from src.ui.debug import DebugOverlay, DebugSnapshot
 from src.ui.display import handle_display_key
 from src.ui.hud import Hud, HudData
+from src.ui import sprites
 from src.ui.sprites import draw_pixel_sprite
 from src.world.atmosphere import ForegroundAtmosphere
 from src.world.camera import CameraRig
@@ -366,29 +368,42 @@ class PlayView(arcade.View):
         self.camera.present(warp)
 
     def _draw_player_attack(self) -> None:
-        """Dessine un slash lumineux pendant la fenetre active de la frappe."""
+        """Dessine directement l'epee extraite de l'attaque du squelette."""
         if self.player.attack_bounds is None:
             return
-        progress = min(1.0, self.player.attack_progress * 1.8)
+        progress = min(1.0, self.player.attack_progress * 1.35)
         direction = 1 if self.player.facing >= 0 else -1
-        start_x = self.player.center_x + direction * (self.player.width / 2 + 2)
-        reach = max(10.0, settings.PLAYER_ATTACK_RANGE * progress)
-        tip_x = start_x + direction * reach
-        center_y = self.player.center_y
-        slash_height = self.player.height * 0.35
-        arcade.draw_line(
-            start_x,
-            center_y - slash_height,
-            tip_x,
-            center_y + slash_height,
-            settings.COLOR_ATTACK,
-            5,
+        body_width = abs(self.player.width)
+        body_height = abs(self.player.height)
+        hand_x = self.player.center_x + direction * body_width * 0.22
+        hand_y = self.player.center_y + body_height * 0.03
+
+        texture = sprites.skeleton_sword_texture(direction)
+        draw_width = 48.0
+        draw_height = draw_width * texture.height / texture.width
+        weapon_x = hand_x + direction * draw_width * 0.33
+        weapon_y = hand_y + math.sin(progress * math.pi) * 3.0
+        weapon_angle = direction * (10.0 - 20.0 * progress)
+
+        # Halo court, concentre sur la lame et son mouvement.
+        with glow_pass():
+            draw_glow(weapon_x, weapon_y, draw_width * 1.15, draw_height * 2.2, settings.COLOR_SWORD_GLOW, 46)
+
+        arcade.draw_texture_rect(
+            texture,
+            XYWH(weapon_x, weapon_y, draw_width, draw_height),
+            angle=weapon_angle,
+            pixelated=True,
         )
+
+        # Petit reflet anime pour rendre le coup lisible sans masquer la lame.
+        trail_x = weapon_x - direction * draw_width * 0.18
+        trail_y = weapon_y - draw_height * 0.22
         arcade.draw_line(
-            start_x + direction * 4,
-            center_y - slash_height + 4,
-            tip_x + direction * 4,
-            center_y + slash_height - 4,
+            trail_x,
+            trail_y,
+            weapon_x,
+            weapon_y,
             settings.COLOR_ATTACK_GLOW,
             2,
         )

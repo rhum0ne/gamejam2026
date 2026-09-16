@@ -22,7 +22,7 @@ UI_DIR = ASSETS_DIR / "ui"
 SOUNDS_DIR = ASSETS_DIR / "sons"
 MAPS_DIR = ASSETS_DIR / "maps"
 FONTS_DIR = ASSETS_DIR / "fonts"
-ATTACK_SOUND_FILENAME = "attack.wav"
+ATTACK_SOUND_FILENAME = "54427377-sword-slash-476148.mp3"
 DEFAULT_ATTACK_SOUND = ":resources:sounds/hit1.wav"
 ATTACK_SOUND_VOLUME = 0.45
 
@@ -310,6 +310,10 @@ ENEMY_SPRITE_IDLE = ENEMY_SKELETON_DIR / "Skeleton_01_White_Idle.png"
 ENEMY_SPRITE_WALK = ENEMY_SKELETON_DIR / "Skeleton_01_White_Walk.png"
 ENEMY_SPRITE_ATTACK = ENEMY_SKELETON_DIR / "Skeleton_01_White_Attack1.png"
 ENEMY_SPRITE_DIE = ENEMY_SKELETON_DIR / "Skeleton_01_White_Die.png"
+# L'arme est integree dans la frame 5 de l'animation d'attaque du squelette.
+# Rectangle source de la lame et de la poignee, en pixels dans une frame 96x64.
+ENEMY_SWORD_FRAME = 5
+ENEMY_SWORD_CROP = (65, 24, 92, 34)
 # Planches natives en 96x64 : le squelette (dessine vers la droite) n'occupe
 # qu'une partie de la frame (l'epee balaie le reste pendant les attaques).
 ENEMY_FRAME_WIDTH = 96
@@ -400,6 +404,12 @@ COLOR_MECHANISM_GLOW_CORE = (230, 246, 255)
 COLOR_PLAYER = (232, 232, 240)
 COLOR_ATTACK = (255, 214, 112)
 COLOR_ATTACK_GLOW = (255, 238, 160)
+COLOR_SWORD_BLADE = (225, 231, 234)
+COLOR_SWORD_EDGE = (255, 255, 248)
+COLOR_SWORD_GUARD = (172, 67, 52)
+COLOR_SWORD_HANDLE = (91, 49, 39)
+COLOR_SWORD_POMMEL = (224, 142, 72)
+COLOR_SWORD_GLOW = (255, 218, 140)
 COLOR_GHOST = (128, 200, 255)
 COLOR_GHOST_GLOW = (110, 190, 255)
 COLOR_TRAIL_GHOST = (132, 214, 255)
