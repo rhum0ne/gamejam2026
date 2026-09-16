@@ -27,6 +27,7 @@ from enum import Enum, auto
 import arcade
 
 import settings
+from src.entities.batch_draw import SpriteOverlay
 from src.entities.corpse import Corpse
 from src.entities.ghost import Ghost
 from src.entities.glow import glow_pass
@@ -209,6 +210,8 @@ class PlayView(arcade.View):
         self.hud = Hud(settings.WORLD_VIEW_WIDTH, settings.WORLD_VIEW_HEIGHT)
         self.debug = DebugOverlay()
         self._debug_enabled = settings.DEBUG_OVERLAY
+        self._reveal_walls = SpriteOverlay()
+        self._reveal_actors = SpriteOverlay()
         self.level: Level
         self.player: Player
         self.ghost: Ghost | None = None
@@ -236,11 +239,12 @@ class PlayView(arcade.View):
         self.player.respawn_point = self.level.checkpoint_spawn
         for checkpoint in self.level.checkpoints:
             if checkpoint.spawn_point == self.level.checkpoint_spawn:
-                self.level.activate_checkpoint(checkpoint)
+                self.level.activate_checkpoint(checkpoint, ignite=False)
                 break
         self.player.bind_world(self.level.static_walls, platforms=[self.level.corpses])
         for enemy in self.level.enemies:
-            enemy.bind_world(self._static_platforms())
+            enemy.bind_world(self._static_platforms(), hazards=self.level.hazards)
+        self.level.prepare_draw()
         self.camera.set_bounds(self.level.width, self.level.height)
         self._enemy_spawns = [(enemy, enemy.center_x, enemy.center_y) for enemy in self.level.enemies]
         self.camera.snap_to(self.player)
@@ -304,8 +308,13 @@ class PlayView(arcade.View):
         defer_player = rebirth is not None and rebirth.shows_player
         self.camera.begin_frame()
         self.camera.use_world()
+        tight_cull = (
+            self.machine.state is GameState.GHOST
+            and not self.ghost_emerging
+            and (rebirth is None or rebirth.shows_world)
+        )
         if rebirth is None or rebirth.shows_world:
-            self.level.draw(self._terrain_cull_rect())
+            self.level.draw(self._terrain_cull_rect(), tight_cull=tight_cull)
             if self.player.alive and not defer_player:
                 self.player.draw_fx()
                 draw_pixel_sprite(self.player)
@@ -367,8 +376,7 @@ class PlayView(arcade.View):
             draw_pixel_sprite(self.player)
             self.player.draw_particles()
             self.player.alpha = 255
-        with glow_pass():
-            rebirth.draw_fx()
+        rebirth.draw_fx()
 
     def _draw_hitboxes(self) -> None:
         color = settings.COLOR_DEBUG_HITBOX
@@ -378,6 +386,10 @@ class PlayView(arcade.View):
         self.level.corpses.draw_hit_boxes(color)
         self.level.plates.draw_hit_boxes(color)
         self.level.falling_spikes.draw_hit_boxes(color)
+        for thrower in self.level.flamethrowers:
+            if thrower.is_lethal:
+                left, right, bottom, top = thrower.flame_bounds()
+                arcade.draw_lrbt_rectangle_outline(left, right, bottom, top, color, 1)
         if self.player.alive:
             self.player.draw_hit_box(color)
         if self.ghost is not None:
@@ -400,62 +412,54 @@ class PlayView(arcade.View):
             with glow_pass():
                 ghost.draw_fx()
             draw_pixel_sprite(ghost)
-        with glow_pass():
-            emergence.draw_fx()
+        emergence.draw_fx()
 
     def _draw_ghost_layer(self, ghost: Ghost) -> None:
-        """Voile radial, auras toujours visibles, secrets dans le champ, fantome."""
+        """Voile radial, menaces rouges hors champ, secrets dans le champ, fantome."""
+        revealed_walls: list[arcade.Sprite] = []
         for wall in self.level.spectral_walls:
             wall.set_revealed(ghost.reveals(wall))
-        self.fog.draw(ghost, self.camera.world)
-        for wall in self.level.spectral_walls:
             if wall.revealed:
-                arcade.draw_sprite(wall)
+                revealed_walls.append(wall)
+        self.fog.draw(ghost, self.camera.world)
+        self._reveal_walls.draw(revealed_walls)
         with glow_pass():
             for item in self.level.items:
                 if ghost.reveals(item):
                     item.draw_fx()
-            self._draw_ghost_danger_glows()
+            self._draw_threat_glows()
             self._draw_mechanism_hints()
             ghost.draw_fx()
+        revealed_actors: list[arcade.Sprite] = []
         for item in self.level.items:
             if ghost.reveals(item):
-                arcade.draw_sprite(item)
-        self._draw_ghost_danger_sprites(ghost)
+                revealed_actors.append(item)
+        for enemy in self.level.enemies:
+            if ghost.reveals(enemy):
+                revealed_actors.append(enemy)
+        self._reveal_actors.draw(revealed_actors)
         draw_pixel_sprite(ghost)
         self._draw_body_arrow(ghost)
 
-    def _draw_ghost_danger_glows(self) -> None:
-        """Halos d'ennemis et de pieges, au-dessus du voile."""
+    def _draw_threat_glows(self) -> None:
+        """Piques et ennemis : meme halo rouge, au-dessus du voile, tout l'ecran."""
         view = self.camera.cull_rect()
-        pad = max(
-            settings.ENEMY_WIDTH * settings.ENEMY_GHOST_GLOW_SCALE,
-            settings.TILE_SIZE * settings.SPIKE_GHOST_GLOW_SCALE,
-        )
+        pad = settings.HAZARD_GHOST_GLOW_SIZE
+        for spike in self.level.hazards:
+            if _in_view(spike, view, pad):
+                spike.draw_ghost_glow(bind_blend=False)
+        for spike in self.level.falling_spikes:
+            if _in_view(spike, view, pad):
+                spike.draw_ghost_glow(bind_blend=False)
+        for thrower in self.level.flamethrowers:
+            if _in_view(thrower, view, pad):
+                thrower.draw_ghost_glow(bind_blend=False)
         for enemy in self.level.enemies:
             if _in_view(enemy, view, pad):
                 enemy.draw_ghost_glow(bind_blend=False)
-        for spike in self.level.hazards:
-            if _in_view(spike, view, pad):
-                spike.draw_ghost_glow(bind_blend=False)
-        for spike in self.level.falling_spikes:
-            if _in_view(spike, view, pad):
-                spike.draw_ghost_glow(bind_blend=False)
-
-    def _draw_ghost_danger_sprites(self, ghost: Ghost) -> None:
-        """Sprites d'ennemis et de pieges reveles, au-dessus de leurs halos."""
-        for enemy in self.level.enemies:
-            if ghost.reveals(enemy):
-                arcade.draw_sprite(enemy)
-        for spike in self.level.hazards:
-            if ghost.reveals(spike):
-                arcade.draw_sprite(spike)
-        for spike in self.level.falling_spikes:
-            if ghost.reveals(spike):
-                arcade.draw_sprite(spike)
 
     def _draw_mechanism_hints(self) -> None:
-        """Auras silhouette et vrilles d'ame, visibles en projection."""
+        """Plaque lumineuse et vrille fantome vers les paquets, hors du voile."""
         now = time.perf_counter()
         view = self.camera.cull_rect()
         pad = settings.RENDER_CULL_PAD
@@ -515,9 +519,6 @@ class PlayView(arcade.View):
             ghost_duration=self.ghost.stats.duration if self.ghost is not None else settings.GHOST_DURATION,
             leash_ratio=self.ghost.leash_ratio if self.ghost is not None else 0.0,
             fps=self._fps if settings.DEBUG_SHOW_FPS and not self._debug_enabled else None,
-            dash_ratio=self.player.dash_ratio if show_body_hud else None,
-            dash_ready=self.player.dash_ready,
-            dash_flash=self.player.dash_flash,
             controls=(
                 "ghost"
                 if state is GameState.GHOST and not self.ghost_emerging
@@ -614,6 +615,7 @@ class PlayView(arcade.View):
         elif state is GameState.RESPAWNING:
             self._update_respawning(delta_time)
         self._resolve_falling_spike_kills()
+        self._resolve_flame_kills()
         self.atmosphere.update(delta_time)
 
     def _mechanism_weights(self) -> list[arcade.Sprite]:
@@ -636,10 +638,24 @@ class PlayView(arcade.View):
     def _update_playing(self, delta_time: float) -> None:
         self.player.walk(self._horizontal_input())
         self.player.update(delta_time)
+        self._block_hazard_sides()
         self._update_enemies(delta_time)
         self._resolve_player_collisions()
         if self.machine.state is GameState.PLAYING:
             self.camera.follow(self.player, delta_time, zoom=settings.CAMERA_ZOOM_PLAYER)
+
+    def _block_hazard_sides(self) -> None:
+        """Une pique bloque comme un mur si on la touche par le cote (cf Mario)."""
+        player = self.player
+        for hazard in collisions.hazard_side_contacts(player, self.level):
+            overlap = min(player.right, hazard.right) - max(player.left, hazard.left)
+            if overlap <= 0:
+                continue
+            if player.center_x < hazard.center_x:
+                player.center_x -= overlap
+            else:
+                player.center_x += overlap
+            player.change_x = 0.0
 
     def _update_ghost(self, delta_time: float) -> None:
         ghost = self.ghost
@@ -753,6 +769,8 @@ class PlayView(arcade.View):
 
         if collisions.player_hits_hazard(self.player, self.level):
             emit_player_death(self, "spikes")
+        elif collisions.player_hits_flame(self.player, self.level.flamethrowers):
+            emit_player_death(self, "flame")
         elif collisions.player_out_of_bounds(self.player, self.level):
             emit_player_death(self, "out_of_bounds")
         elif collisions.enemy_striking_player(self.player, self.level.enemies) is not None:
@@ -762,6 +780,15 @@ class PlayView(arcade.View):
         """Une pique en chute tue les ennemis (le joueur est deja gere via les hazards)."""
         for enemy in collisions.enemies_hit_by_falling_spikes(
             self.level.enemies, self.level.falling_spikes
+        ):
+            orb = enemy.take_damage()
+            if orb is not None:
+                self.level.spawn_item(orb)
+
+    def _resolve_flame_kills(self) -> None:
+        """Le jet tue les ennemis (le joueur est gere dans les collisions corps)."""
+        for enemy in collisions.enemies_hit_by_flame(
+            self.level.enemies, self.level.flamethrowers
         ):
             orb = enemy.take_damage()
             if orb is not None:

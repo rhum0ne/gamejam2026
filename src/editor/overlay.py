@@ -19,17 +19,21 @@ from src.ui import labels
 SHORTCUTS: tuple[tuple[str, str], ...] = (
     ("Clic gauche", "poser l'element selectionne"),
     ("Clic droit", "effacer la cellule"),
-    ("Molette / + / -", "zoomer (survol carte) / defiler (survol palette)"),
-    ("Clic milieu / Espace", "deplacer la vue"),
-    ("Fleches / ZQSD", "deplacer la vue"),
+    ("Molette / + / -", "zoomer (carte) / defiler (panneau)"),
+    ("Clic milieu / Espace", "glisser la vue"),
+    ("Fleches / ZQSD", "deplacer la camera"),
     ("B / R / G", "pinceau / rectangle / remplir la zone"),
     ("X / I / M", "gomme / pipette / selection"),
+    ("L", "plaques et blocs lies"),
+    (", et .", "portee du lance-flammes sous le curseur"),
+    ("9 et 0", "intervalle du lance-flammes sous le curseur"),
+    ("H", "pivoter le lance-flammes (4 directions)"),
     ("[ et ]", "element precedent / suivant de la palette"),
     ("Ctrl+A", "tout selectionner"),
     ("Ctrl+C / Ctrl+X", "copier / couper la selection"),
     ("Ctrl+V", "coller sous le curseur"),
     ("Entree", "remplir la selection avec l'element courant"),
-    ("Suppr / Retour", "vider la selection"),
+    ("Suppr / Retour", "vider la selection (ou la plaque)"),
     ("Ctrl+R", "remplacer partout le type sous le curseur"),
     ("Ctrl+Z", "annuler"),
     ("Ctrl+Shift+Z / Ctrl+Y", "refaire"),
@@ -62,6 +66,7 @@ class StatusData:
     message: str
     message_color: tuple[int, int, int]
     problems: tuple[str, ...]
+    plates: str = "-"
 
 
 class StatusBar:
@@ -76,33 +81,44 @@ class StatusBar:
         height = settings.EDITOR_STATUS_HEIGHT
         arcade.draw_lrbt_rectangle_filled(0, window_width, 0, height, settings.COLOR_EDITOR_PANEL)
         arcade.draw_line(0, height, window_width, height, settings.COLOR_EDITOR_PANEL_BORDER, 2)
-        marker = "*" if data.dirty else ""
+        marker = "* " if data.dirty else ""
+        margin = 16.0
+        max_width = max(80.0, window_width - margin * 2)
         self._top.draw(
-            f"{marker}{data.filename}  -  {data.name}  -  {data.columns}x{data.rows} tuiles"
-            f"  -  zoom {data.zoom:.2f}",
-            14,
-            height - 22,
+            f"{marker}{data.filename}   {data.name}   {data.columns}x{data.rows}   "
+            f"zoom {data.zoom:.2f}",
+            margin,
+            height - 32,
             settings.COLOR_EDITOR_WARNING if data.dirty else settings.COLOR_EDITOR_TEXT,
+            max_width=max_width,
         )
         cell = f"{data.hover[0]},{data.hover[1]}" if data.hover is not None else "-"
         self._middle.draw(
-            f"outil {data.tool}  -  element {data.element}  -  cellule {cell}"
-            f"  -  selection {data.selection}  -  presse-papiers {data.clipboard}",
-            14,
-            height - 42,
+            f"{data.tool}   {data.element}   cellule {cell}   "
+            f"sel {data.selection}   copier {data.clipboard}   plaques {data.plates}",
+            margin,
+            height - 62,
+            max_width=max_width,
         )
         if data.message:
-            self._bottom.draw(data.message, 14, height - 62, data.message_color)
+            self._bottom.draw(
+                data.message, margin, height - 92, data.message_color, max_width=max_width
+            )
         elif data.problems:
             self._bottom.draw(
-                f"attention : {data.problems[0]}", 14, height - 62, settings.COLOR_EDITOR_WARNING
+                f"!  {data.problems[0]}",
+                margin,
+                height - 92,
+                settings.COLOR_EDITOR_WARNING,
+                max_width=max_width,
             )
         else:
             self._bottom.draw(
-                f"annuler : {data.undo_label}  -  refaire : {data.redo_label}  -  F1 : aide",
-                14,
-                height - 62,
+                f"annuler {data.undo_label}   refaire {data.redo_label}   F1 aide",
+                margin,
+                height - 92,
                 settings.COLOR_EDITOR_TEXT_DIM,
+                max_width=max_width,
             )
 
 
@@ -124,24 +140,24 @@ class HelpOverlay:
         labels.draw(
             "RACCOURCIS DE L'EDITEUR",
             window_width / 2,
-            window_height - 60,
-            settings.EDITOR_TITLE_SIZE + 3,
+            window_height - 56,
+            settings.EDITOR_TITLE_SIZE + 4,
             settings.COLOR_EDITOR_ACCENT,
             anchor_x="center",
         )
         column_width = window_width / 2
-        top = window_height - 110
-        line_height = 26
+        top = window_height - 108
+        line_height = 32
         per_column = (len(SHORTCUTS) + 1) // 2
         for index, (keys, description) in enumerate(SHORTCUTS):
             column = index // per_column
             row = index % per_column
-            x = 60 + column * column_width
+            x = 48 + column * column_width
             y = top - row * line_height
             labels.draw(keys, x, y, settings.EDITOR_TEXT_SIZE, settings.COLOR_EDITOR_TEXT)
             labels.draw(
                 description,
-                x + 210,
+                x + 280,
                 y,
                 settings.EDITOR_TEXT_SIZE,
                 settings.COLOR_EDITOR_TEXT_DIM,
@@ -149,7 +165,7 @@ class HelpOverlay:
         labels.draw(
             "F1 ou Echap pour fermer",
             window_width / 2,
-            40,
+            36,
             settings.EDITOR_TEXT_SIZE,
             settings.COLOR_EDITOR_TEXT_DIM,
             anchor_x="center",
@@ -200,6 +216,14 @@ class TextPrompt:
         self._active = False
         self._on_submit = None
 
+    def _submit(self) -> None:
+        """Valide la saisie : ferme la prompt puis appelle le callback."""
+        callback = self._on_submit
+        value = self._value
+        self.close()
+        if callback is not None:
+            callback(value)
+
     def on_text(self, text: str) -> None:
         """Ajoute les caracteres tapes (ignores en mode confirmation)."""
         if not self._active or self._confirm:
@@ -230,8 +254,8 @@ class TextPrompt:
     def draw(self, window_width: float, window_height: float) -> None:
         if not self._active:
             return
-        box_width = min(720.0, window_width - 80)
-        box_height = 150.0
+        box_width = min(840.0, window_width - 80)
+        box_height = 168.0
         left = (window_width - box_width) / 2
         bottom = (window_height - box_height) / 2
         arcade.draw_lrbt_rectangle_filled(
@@ -248,14 +272,16 @@ class TextPrompt:
             settings.COLOR_EDITOR_ACCENT,
             2,
         )
-        self._title_line.draw(self._title, left + 24, bottom + box_height - 40)
+        inner = box_width - 48
+        self._title_line.draw(
+            self._title, left + 24, bottom + box_height - 44, max_width=inner
+        )
         shown = self._value if self._confirm else f"{self._value}_"
-        self._value_line.draw(shown[-46:], left + 24, bottom + box_height - 80)
-        self._hint_line.draw(self._hint, left + 24, bottom + 26)
-
-    def _submit(self) -> None:
-        callback = self._on_submit
-        value = self._value
-        self.close()
-        if callback is not None:
-            callback(value)
+        self._value_line.draw(
+            shown,
+            left + 24,
+            bottom + box_height - 88,
+            max_width=inner,
+            overflow="end",
+        )
+        self._hint_line.draw(self._hint, left + 24, bottom + 28, max_width=inner)

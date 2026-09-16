@@ -63,8 +63,9 @@ class BrowserView(arcade.View):
         self.clear()
         width = float(self.window.width)
         height = float(self.window.height)
-        self._title.draw("EDITEUR DE NIVEAUX", 48, height - 56)
-        self._hint.draw(self._message, 48, height - 84, self._message_color)
+        inner = max(80.0, width - 96)
+        self._title.draw("EDITEUR DE NIVEAUX", 48, height - 56, max_width=inner)
+        self._hint.draw(self._message, 48, height - 84, self._message_color, max_width=inner)
         if not self._maps:
             self._row.draw(
                 "Aucune carte. Appuie sur N pour en creer une.",
@@ -97,7 +98,13 @@ class BrowserView(arcade.View):
             color = (
                 settings.COLOR_EDITOR_TEXT if index == self._index else settings.COLOR_EDITOR_TEXT_DIM
             )
-            self._row.draw(f"{path.name}", 56, y, color)
+            self._row.draw(
+                f"{path.name}",
+                56,
+                y,
+                color,
+                max_width=max(80.0, float(self.window.width) - 92),
+            )
 
     def on_mouse_press(self, x: float, y: float, button: int, modifiers: int) -> None:
         if self.prompt.active or button != arcade.MOUSE_BUTTON_LEFT:

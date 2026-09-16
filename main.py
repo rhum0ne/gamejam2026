@@ -14,10 +14,19 @@ activation manuelle de `.venv` n'est necessaire.
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+# Sous WSL/WSLg, ALSA n'a pas de vraie carte son et openal-soft spamme la
+# console d'erreurs "ALSA lib ... cannot find card '0'" au demarrage. Un
+# serveur PulseAudio est fourni par WSLg (PULSE_SERVER) : on le priorise pour
+# eviter la sonde ALSA foireuse. Ne s'applique pas quand le systeme n'expose
+# pas PULSE_SERVER (Linux "nature", macOS), pour ne rien changer ailleurs.
+if os.environ.get("PULSE_SERVER") and not os.environ.get("ALSOFT_DRIVERS"):
+    os.environ["ALSOFT_DRIVERS"] = "pulse"
 
 try:
     import arcade

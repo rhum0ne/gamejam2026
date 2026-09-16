@@ -1,20 +1,21 @@
 """Halo additif doux, partage par le fantome et la trainee de dash.
 
 `draw_glow` en mode immediat (`arcade.draw_texture_rect`) coute un draw call
-GPU par halo. Les vrilles de plaques en mode fantome en emettent des
-centaines : d'ou le passage a ~25 FPS. `glow_pass` agrege les halos dans une
-`SpriteList` (une seule soumission).
+GPU par halo. `glow_pass` agrege les halos dans une `SpriteList`.
 """
 
 from __future__ import annotations
 
 import math
+import time
 from collections.abc import Iterator
 from contextlib import contextmanager
 
 import arcade
 from arcade.types import Color, XYWH
 from PIL import Image
+
+import settings
 
 _GLOW_RESOLUTION = 256
 _TEXTURE: arcade.Texture | None = None
@@ -85,6 +86,54 @@ def draw_glow(
     _stamp_glow(center_x, center_y, width, height, color, opacity)
 
 
+def draw_threat_glow(
+    center_x: float,
+    center_y: float,
+    *,
+    bind_blend: bool = True,
+) -> None:
+    """Halo rouge des piques et des ennemis : meme couleur, meme taille.
+
+    Dessine hors du champ de vision (au-dessus du voile) pour signaler
+    la menace a travers le noir.
+    """
+    pulse = 1.0 + settings.HAZARD_GHOST_GLOW_PULSE * math.sin(
+        time.perf_counter() * settings.HAZARD_GHOST_GLOW_PULSE_SPEED
+        + center_x * 0.11
+        + center_y * 0.07
+    )
+    size = settings.HAZARD_GHOST_GLOW_SIZE
+    mid = settings.HAZARD_GHOST_GLOW_MID_SIZE
+    inner = settings.HAZARD_GHOST_GLOW_INNER_SIZE
+    draw_glow(
+        center_x,
+        center_y,
+        size,
+        size,
+        settings.COLOR_HAZARD_GLOW,
+        min(255, int(settings.HAZARD_GHOST_GLOW_ALPHA * pulse)),
+        bind_blend=bind_blend,
+    )
+    draw_glow(
+        center_x,
+        center_y,
+        mid,
+        mid,
+        settings.COLOR_HAZARD_GLOW,
+        min(255, int(settings.HAZARD_GHOST_GLOW_MID_ALPHA * pulse)),
+        bind_blend=bind_blend,
+    )
+    draw_glow(
+        center_x,
+        center_y,
+        inner,
+        inner,
+        settings.COLOR_HAZARD_GLOW_CORE,
+        min(255, int(settings.HAZARD_GHOST_GLOW_INNER_ALPHA * pulse)),
+        bind_blend=bind_blend,
+    )
+
+
 class _GlowBatch:
     """Sprites de halo reutilises d'une frame a l'autre."""
 
@@ -114,6 +163,7 @@ class _GlowBatch:
             sprite = self._sprites[self._count]
             sprite.center_x = center_x
             sprite.center_y = center_y
+        sprite.angle = 0.0
         sprite.visible = True
         sprite.width = width
         sprite.height = height

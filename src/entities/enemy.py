@@ -21,7 +21,6 @@ mode fantome, tireur) en sous-classant `Enemy`.
 
 from __future__ import annotations
 
-import math
 from collections.abc import Sequence
 from enum import Enum, auto
 
@@ -29,7 +28,7 @@ import arcade
 
 import settings
 from src.entities.corpse import Corpse
-from src.entities.glow import draw_glow
+from src.entities.glow import draw_threat_glow
 from src.entities.item import Item, make_soul_orb
 from src.entities.player import Player
 from src.ui import sprites
@@ -104,20 +103,31 @@ class Enemy(arcade.Sprite):
         self._attack_cooldown = 0.0
         self._physics: arcade.PhysicsEnginePlatformer | None = None
         self._ground: arcade.SpriteList | None = None
-        self._glow_time = (center_x * 0.13 + center_y * 0.07) % math.tau
+        self._hazards: arcade.SpriteList | None = None
 
     # ------------------------------------------------------------------ #
     # Initialisation
     # ------------------------------------------------------------------ #
 
-    def bind_world(self, platforms: Sequence[arcade.SpriteList]) -> None:
-        """Branche la physique de l'ennemi sur les plateformes du niveau."""
+    def bind_world(
+        self,
+        platforms: Sequence[arcade.SpriteList],
+        hazards: arcade.SpriteList | None = None,
+    ) -> None:
+        """Branche la physique de l'ennemi sur les plateformes du niveau.
+
+        `hazards` (piques au sol) ne fait pas partie des murs de collision :
+        un ennemi doit marcher dessus sans etre repousse comme par un mur,
+        mais ne doit pas non plus les traverser en marchant (voir
+        `_hazard_ahead`) - seul un joueur (ou une pique en chute) en meurt.
+        """
         self._physics = arcade.PhysicsEnginePlatformer(
             self,
             walls=list(platforms),
             gravity_constant=settings.GRAVITY,
         )
         self._ground = platforms[0] if platforms else None
+        self._hazards = hazards
 
     # ------------------------------------------------------------------ #
     # Attaque
@@ -201,28 +211,8 @@ class Enemy(arcade.Sprite):
     # ------------------------------------------------------------------ #
 
     def draw_ghost_glow(self, *, bind_blend: bool = True) -> None:
-        """Halo rouge intense, dessine aussi hors du champ de vision."""
-        pulse = 1.0 + settings.ENEMY_GHOST_GLOW_PULSE * math.sin(
-            self._glow_time * settings.ENEMY_GHOST_GLOW_PULSE_SPEED
-        )
-        draw_glow(
-            self.center_x,
-            self.center_y,
-            settings.ENEMY_WIDTH * settings.ENEMY_GHOST_GLOW_SCALE,
-            settings.ENEMY_HEIGHT * settings.ENEMY_GHOST_GLOW_SCALE,
-            settings.COLOR_ENEMY_GLOW,
-            int(settings.ENEMY_GHOST_GLOW_ALPHA * pulse),
-            bind_blend=bind_blend,
-        )
-        draw_glow(
-            self.center_x,
-            self.center_y,
-            settings.ENEMY_WIDTH * settings.ENEMY_GHOST_GLOW_INNER_SCALE,
-            settings.ENEMY_HEIGHT * settings.ENEMY_GHOST_GLOW_INNER_SCALE,
-            settings.COLOR_ENEMY_GLOW_CORE,
-            int(settings.ENEMY_GHOST_GLOW_INNER_ALPHA * pulse),
-            bind_blend=bind_blend,
-        )
+        """Halo rouge identique aux piques, visible a travers le voile."""
+        draw_threat_glow(self.center_x, self.center_y, bind_blend=bind_blend)
 
     # ------------------------------------------------------------------ #
     # Boucle de jeu
@@ -252,7 +242,6 @@ class Enemy(arcade.Sprite):
             else:
                 self._patrol()
         self._advance_animation(delta_time)
-        self._glow_time += max(0.0, delta_time)
         if self._physics is not None:
             self._physics.update()
         if self.state is EnemyState.DYING and self._animator.finished:
@@ -312,7 +301,7 @@ class Enemy(arcade.Sprite):
 
     def _patrol(self) -> None:
         self.state = EnemyState.PATROL
-        if self._blocked_ahead() or not self._floor_ahead():
+        if self._blocked_ahead() or self._hazard_ahead() or not self._floor_ahead():
             self.facing = -self.facing
         self.change_x = self.facing * settings.ENEMY_SPEED
 
@@ -333,7 +322,7 @@ class Enemy(arcade.Sprite):
         """
         direction = 1 if target_x > self.center_x else -1
         self.facing = direction
-        if self._blocked_ahead() or not self._floor_ahead():
+        if self._blocked_ahead() or self._hazard_ahead() or not self._floor_ahead():
             self.change_x = 0.0
             return
         self.change_x = direction * settings.ENEMY_SPEED
@@ -343,6 +332,18 @@ class Enemy(arcade.Sprite):
             return False
         probe = (self.center_x + self.facing * (settings.ENEMY_WIDTH / 2 + 4), self.center_y)
         return bool(arcade.get_sprites_at_point(probe, self._ground))
+
+    def _hazard_ahead(self) -> bool:
+        """Une pique au sol juste devant ? Un ennemi n'y marche pas dessus.
+
+        Ne tue pas l'ennemi (seule une pique en chute le fait, voir
+        `enemies_hit_by_falling_spikes`) : il fait juste demi-tour, comme
+        devant un mur ou le bord d'une plateforme.
+        """
+        if not self._hazards:
+            return False
+        probe = (self.center_x + self.facing * (settings.ENEMY_WIDTH / 2 + 4), self.bottom + 4)
+        return bool(arcade.get_sprites_at_point(probe, self._hazards))
 
     def _floor_ahead(self) -> bool:
         if self._ground is None:

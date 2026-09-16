@@ -12,12 +12,22 @@ import arcade
 
 import settings
 from src.editor import palette
+from src.editor.activators import Activator, activator_at, overlaps_any
 from src.editor.canvas import GridCanvas
 from src.editor.document import DocumentError, EditorDocument
 from src.editor.overlay import HelpOverlay, StatusBar, StatusData, TextPrompt
 from src.editor.panel import PalettePanel
 from src.editor.selection import Block, GridRect
 from src.ui.display import handle_display_key, use_default_camera
+from src.world.flamethrower import DIRECTION_ARROW, DIRECTION_LABEL
+
+# 9/0 : rangee du haut (KEY_*) et pave (NUM_*). CCEDILLA/AGRAVE = 9/0 AZERTY sans Shift.
+_FLAME_INTERVAL_SHORTER = frozenset(
+    {arcade.key.KEY_9, arcade.key.NUM_9, getattr(arcade.key, "CCEDILLA", 231)}
+)
+_FLAME_INTERVAL_LONGER = frozenset(
+    {arcade.key.KEY_0, arcade.key.NUM_0, getattr(arcade.key, "AGRAVE", 224)}
+)
 
 
 class Tool(Enum):
@@ -29,6 +39,7 @@ class Tool(Enum):
     ERASE = "gomme"
     PICK = "pipette"
     SELECT = "selection"
+    LINK = "plaques"
 
 
 _CTRL = arcade.key.MOD_CTRL | arcade.key.MOD_ACCEL
@@ -87,6 +98,9 @@ class EditView(arcade.View):
         self._panning = False
         self._space = False
         self._held: set[int] = set()
+        self._link_index: int | None = None
+        self._placing_plate = False
+        self._resizing_plate = False
         self._message = ""
         self._message_time = 0.0
         self._message_color = settings.COLOR_EDITOR_OK
@@ -131,16 +145,29 @@ class EditView(arcade.View):
         if self.tool is Tool.SELECT and self._drag_origin is not None and self._drag_current is not None:
             selection = GridRect.from_corners(self._drag_origin, self._drag_current)
         paste = self.clipboard if self.tool is not Tool.SELECT else None
+        preview_plate = None
+        if self.tool is Tool.LINK and self._placing_plate and self._drag_origin and self._drag_current:
+            preview_plate = _plate_from_drag(self._drag_origin, self._drag_current)
         self.canvas.draw(
             selection=selection,
             hover=self.hover,
             preview=preview,
             clipboard=paste if self.clipboard is not None and self.hover is not None else None,
+            activators=self.document.activators,
+            selected_activator=self._link_index,
+            preview_plate=preview_plate,
         )
         use_default_camera(self.window)
         self.window.ctx.scissor = None
         self.window.ctx.viewport = (0, 0, self.window.width, self.window.height)
-        self.panel.draw(self.kind, self.document.counts(), *self._mouse)
+        self.panel.draw(
+            self.kind,
+            self.document.counts(),
+            *self._mouse,
+            self.document.activators,
+            self._link_index,
+            self.tool is Tool.LINK,
+        )
         self.status.draw(self._status_data(), float(self.window.width))
         self.help.draw(float(self.window.width), float(self.window.height))
         self.prompt.draw(float(self.window.width), float(self.window.height))
@@ -163,7 +190,7 @@ class EditView(arcade.View):
         if self._held & {arcade.key.UP, arcade.key.W, arcade.key.Z}:
             dy += speed
         if dx or dy:
-            self.canvas.pan_by(dx, dy)
+            self.canvas.nudge(dx, dy)
 
     def _status_data(self) -> StatusData:
         selection = "-"
@@ -173,6 +200,21 @@ class EditView(arcade.View):
         if self.clipboard is not None:
             clipboard = f"{self.clipboard.width}x{self.clipboard.height}"
         element = palette.item(self.kind).label if self.kind else "vide"
+        if self.hover is not None and self.document.inside(*self.hover):
+            flame = self.document.flame_at(*self.hover)
+            if flame is not None:
+                arrow = DIRECTION_ARROW[flame.direction]
+                element = (
+                    f"Lance-flammes {arrow} portee {flame.range_tiles} "
+                    f"int {flame.interval:.1f}s"
+                )
+        plates = f"{len(self.document.activators)}"
+        if self._link_index is not None and 0 <= self._link_index < len(self.document.activators):
+            chosen = self.document.activators[self._link_index]
+            plates = (
+                f"#{self._link_index + 1} {chosen.column},{chosen.row} "
+                f"x{chosen.width} -> {len(chosen.targets)}"
+            )
         message = self._message if self._message_time > 0.0 else ""
         return StatusData(
             filename=self.document.filename,
@@ -191,6 +233,7 @@ class EditView(arcade.View):
             message=message,
             message_color=self._message_color,
             problems=self.document.problems(),
+            plates=plates,
         )
 
     def notify(self, text: str, color: tuple[int, int, int] = settings.COLOR_EDITOR_OK) -> None:
@@ -228,14 +271,15 @@ class EditView(arcade.View):
             self._panning = True
             return
         if self.panel.contains(x, y):
-            chosen = self.panel.item_at(x, y)
-            if chosen is not None:
-                self._select_kind(chosen.kind)
+            self._panel_click(x, y, button)
             return
         if not self.canvas.contains_screen(x, y):
             return
         cell = self.canvas.grid_from_screen(x, y)
         self.hover = cell
+        if self.tool is Tool.LINK:
+            self._link_press(cell, button)
+            return
         if button == arcade.MOUSE_BUTTON_RIGHT:
             self._erasing = True
             self.document.begin_stroke("effacer")
@@ -272,6 +316,9 @@ class EditView(arcade.View):
         if self._painting:
             self._finish_stroke()
             self._painting = False
+        if self.tool is Tool.LINK and (self._placing_plate or self._resizing_plate):
+            self._finish_plate_drag()
+            return
         if self._drag_origin is not None and self._drag_current is not None:
             rect = GridRect.from_corners(self._drag_origin, self._drag_current)
             if self.tool is Tool.RECT:
@@ -284,6 +331,8 @@ class EditView(arcade.View):
     def on_mouse_scroll(self, x: float, y: float, scroll_x: float, scroll_y: float) -> None:
         if self.prompt.active:
             return
+        # Molette et trackpad etaient inverses par rapport a ZQSD / au zoom attendu.
+        scroll_y = -scroll_y
         if self.panel.contains(x, y):
             self.panel.scroll_by(-scroll_y)
             return
@@ -315,7 +364,7 @@ class EditView(arcade.View):
 
     def _select_kind(self, kind: str) -> None:
         self.kind = kind
-        if self.tool is Tool.ERASE:
+        if self.tool in (Tool.ERASE, Tool.LINK):
             self.tool = Tool.BRUSH
 
     # ------------------------------------------------------------------ #
@@ -412,6 +461,8 @@ class EditView(arcade.View):
         if symbol == arcade.key.BRACKETRIGHT:
             self._cycle_kind(1)
             return
+        if self._tune_flamethrower(symbol):
+            return
         if symbol in (arcade.key.EQUAL, arcade.key.PLUS, arcade.key.NUM_ADD):
             self.canvas.zoom_by(settings.EDITOR_ZOOM_STEP, *self._mouse)
             return
@@ -428,11 +479,18 @@ class EditView(arcade.View):
             arcade.key.X: Tool.ERASE,
             arcade.key.I: Tool.PICK,
             arcade.key.M: Tool.SELECT,
+            arcade.key.L: Tool.LINK,
         }
         tool = mapping.get(symbol)
         if tool is not None:
             self.tool = tool
-            self.notify(f"outil : {tool.value}")
+            if tool is Tool.LINK:
+                self.notify(
+                    "plaques : glisser pour placer, clic sur un bloc pour lier, "
+                    "Suppr pour retirer"
+                )
+            else:
+                self.notify(f"outil : {tool.value}")
 
     def _cycle_kind(self, step: int) -> None:
         kinds = [item.kind for item in palette.PALETTE]
@@ -442,12 +500,50 @@ class EditView(arcade.View):
         index = (kinds.index(self.kind) + step) % len(kinds)
         self._select_kind(kinds[index])
 
+    def _tune_flamethrower(self, symbol: int) -> bool:
+        """Regle portee / intervalle / orientation du lance-flammes sous le curseur."""
+        if self.hover is None or not self.document.inside(*self.hover):
+            return False
+        if self.document.cell(*self.hover) != "flamethrower":
+            return False
+        range_delta = 0
+        interval_delta = 0.0
+        rotate = False
+        if symbol == arcade.key.PERIOD:
+            range_delta = 1
+        elif symbol == arcade.key.COMMA:
+            range_delta = -1
+        elif symbol in _FLAME_INTERVAL_LONGER:
+            interval_delta = settings.FLAMETHROWER_INTERVAL_STEP
+        elif symbol in _FLAME_INTERVAL_SHORTER:
+            interval_delta = -settings.FLAMETHROWER_INTERVAL_STEP
+        elif symbol == arcade.key.H:
+            rotate = True
+        else:
+            return False
+        spec = self.document.adjust_flame(
+            *self.hover,
+            range_delta=range_delta,
+            interval_delta=interval_delta,
+            rotate=rotate,
+        )
+        if spec is None:
+            return True
+        self.canvas.sync(((*self.hover, "flamethrower"),))
+        facing = DIRECTION_LABEL[spec.direction]
+        self.notify(
+            f"lance-flammes : portee {spec.range_tiles}  "
+            f"intervalle {spec.interval:.1f}s  {facing}"
+        )
+        return True
+
     # ------------------------------------------------------------------ #
     # Actions
     # ------------------------------------------------------------------ #
 
     def _apply(self, states, message: str | None = None, *, silent: bool = False) -> None:
         self.canvas.sync(states)
+        self._clamp_link_index()
         if message and states:
             self.notify(message)
         elif not silent and not states and message:
@@ -459,6 +555,7 @@ class EditView(arcade.View):
             self.notify("rien a annuler", settings.COLOR_EDITOR_TEXT_DIM)
             return
         self.canvas.sync(states)
+        self._clamp_link_index()
         self.notify(f"annule : {self.document.history.redo_label}")
 
     def _redo(self) -> None:
@@ -467,6 +564,7 @@ class EditView(arcade.View):
             self.notify("rien a refaire", settings.COLOR_EDITOR_TEXT_DIM)
             return
         self.canvas.sync(states)
+        self._clamp_link_index()
         self.notify(f"refait : {self.document.history.undo_label}")
 
     def _copy(self, *, cut: bool) -> None:
@@ -496,6 +594,9 @@ class EditView(arcade.View):
         )
 
     def _delete_selection(self) -> None:
+        if self.tool is Tool.LINK and self._link_index is not None:
+            self._delete_plate(self._link_index)
+            return
         if self.selection is None:
             if self.hover is not None:
                 self._apply(self.document.paint((self.hover,), palette.EMPTY), "cellule effacee")
@@ -615,6 +716,139 @@ class EditView(arcade.View):
         from src.editor.browser import BrowserView
 
         self.window.show_view(BrowserView())
+
+    # ------------------------------------------------------------------ #
+    # Plaques et blocs lies
+    # ------------------------------------------------------------------ #
+
+    def _panel_click(self, x: float, y: float, button: int) -> None:
+        hit = self.panel.hit(x, y, self.document.activators)
+        if hit is None:
+            return
+        if hit.activator_index is not None:
+            if button == arcade.MOUSE_BUTTON_RIGHT:
+                self._delete_plate(hit.activator_index)
+                return
+            if button == arcade.MOUSE_BUTTON_LEFT:
+                self._focus_plate(hit.activator_index)
+            return
+        if hit.item is not None and button == arcade.MOUSE_BUTTON_LEFT:
+            self._select_kind(hit.item.kind)
+
+    def _link_press(self, cell: tuple[int, int], button: int) -> None:
+        index = activator_at(self.document.activators, *cell)
+        if button == arcade.MOUSE_BUTTON_RIGHT:
+            if index is not None:
+                self._delete_plate(index)
+                return
+            if self._link_index is not None and self.document.can_link(*cell):
+                current = self.document.activators[self._link_index]
+                if current.has_target(*cell):
+                    self.document.toggle_target(self._link_index, *cell)
+                    self.notify("bloc delie")
+            return
+        if button != arcade.MOUSE_BUTTON_LEFT:
+            return
+        if index is not None:
+            self._link_index = index
+            self._drag_origin = cell
+            self._drag_current = cell
+            self._resizing_plate = True
+            self._placing_plate = False
+            self.notify(f"plaque #{index + 1} selectionnee")
+            return
+        if self._link_index is not None and self.document.can_link(*cell):
+            linked = self.document.toggle_target(self._link_index, *cell)
+            self.notify("bloc lie" if linked else "bloc delie")
+            return
+        self._drag_origin = cell
+        self._drag_current = cell
+        self._placing_plate = True
+        self._resizing_plate = False
+
+    def _finish_plate_drag(self) -> None:
+        origin = self._drag_origin
+        current = self._drag_current or origin
+        placing = self._placing_plate
+        resizing = self._resizing_plate
+        self._placing_plate = False
+        self._resizing_plate = False
+        self._drag_origin = None
+        self._drag_current = None
+        if origin is None or current is None:
+            return
+        plate = _plate_from_drag(origin, current)
+        if not self.document.inside(plate.column, plate.row):
+            return
+        if not self.document.inside(plate.last_column, plate.row):
+            return
+        if placing:
+            clash = overlaps_any(self.document.activators, plate.column, plate.row, plate.width)
+            if clash is not None:
+                self._focus_plate(clash)
+                return
+            index = self.document.add_activator(plate.column, plate.row, plate.width)
+            self._link_index = index
+            self.notify(f"plaque #{index + 1} placee  -  clique un bloc pour le lier")
+            return
+        if resizing and self._link_index is not None:
+            if origin == current:
+                return
+            clash = overlaps_any(
+                self.document.activators,
+                plate.column,
+                plate.row,
+                plate.width,
+                skip=self._link_index,
+            )
+            if clash is not None:
+                self.notify("chevauche une autre plaque", settings.COLOR_EDITOR_WARNING)
+                return
+            current_plate = self.document.activators[self._link_index]
+            self.document.replace_activator(
+                self._link_index,
+                current_plate.resized(plate.column, plate.width),
+                "redimensionner une plaque",
+            )
+            self.notify(f"plaque #{self._link_index + 1} : largeur {plate.width}")
+
+    def _delete_plate(self, index: int) -> None:
+        if index < 0 or index >= len(self.document.activators):
+            return
+        self.document.remove_activator(index)
+        if self._link_index is None:
+            self.notify("plaque supprimee")
+            return
+        if self._link_index == index:
+            self._link_index = None
+        elif self._link_index > index:
+            self._link_index -= 1
+        self.notify("plaque supprimee")
+
+    def _focus_plate(self, index: int) -> None:
+        if index < 0 or index >= len(self.document.activators):
+            return
+        self.tool = Tool.LINK
+        self._link_index = index
+        plate = self.document.activators[index]
+        self.canvas.center_on(plate.column, plate.row)
+        self.notify(f"plaque #{index + 1}  -  clique un bloc pour le lier")
+
+    def _clamp_link_index(self) -> None:
+        count = len(self.document.activators)
+        if self._link_index is None:
+            return
+        if count == 0 or self._link_index >= count:
+            self._link_index = None
+
+
+def _plate_from_drag(origin: tuple[int, int], current: tuple[int, int]) -> Activator:
+    """Plaque horizontale definie par deux cellules (la ligne de depart compte)."""
+    start_column, row = origin
+    end_column, _end_row = current
+    column = min(start_column, end_column)
+    width = abs(end_column - start_column) + 1
+    return Activator(column, row, width)
 
 
 def _slug(value: str) -> str:

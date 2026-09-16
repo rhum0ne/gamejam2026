@@ -90,6 +90,20 @@ _PRESENT_FRAGMENT_SHADER = dedent(
     """
 )
 
+_PRESENT_BLIT_FRAGMENT_SHADER = dedent(
+    """\
+    #version 330
+
+    uniform sampler2D screen_texture;
+    in vec2 out_uv;
+    out vec4 frag_color;
+
+    void main() {
+        frag_color = texture(screen_texture, out_uv);
+    }
+    """
+)
+
 
 class CameraRig:
     """Paire de cameras monde / interface, dessinant a resolution fixe."""
@@ -126,6 +140,10 @@ class CameraRig:
         self._present_program = self._window.ctx.program(
             vertex_shader=_PRESENT_VERTEX_SHADER,
             fragment_shader=_PRESENT_FRAGMENT_SHADER,
+        )
+        self._blit_program = self._window.ctx.program(
+            vertex_shader=_PRESENT_VERTEX_SHADER,
+            fragment_shader=_PRESENT_BLIT_FRAGMENT_SHADER,
         )
         self._present_viewport = (0, 0, settings.WORLD_VIEW_WIDTH, settings.WORLD_VIEW_HEIGHT)
 
@@ -282,6 +300,10 @@ class CameraRig:
         screen.viewport = self._present_viewport
         self._target.color_attachments[0].use(unit=0)
         strength = max(0.0, float(warp_strength))
+        if strength <= 0.0:
+            self._blit_program["screen_texture"] = 0
+            self._present_geometry.render(self._blit_program)
+            return
         self._present_program["screen_texture"] = 0
         self._present_program["warp_barrel"] = strength
         self._present_program["warp_perspective"] = strength * settings.GHOST_WARP_PERSPECTIVE

@@ -1,0 +1,27 @@
+{
+  "name": "Niveau 1",
+  "hint": "",
+  "tile_size": 32,
+  "legend": {
+    ".": "vide",
+    "[": "dirt_corner",
+    "]": "dirt_corner_right",
+    "-": "dirt_top",
+    "D": "door",
+    "K": "key",
+    "P": "player_spawn",
+    "^": "spike",
+    "i": "torch",
+    "T": "wall"
+  },
+  "rows": [
+    "[TTTTTTTTTTTTT]",
+    "T.............T",
+    "T.............T",
+    "T.............T",
+    "T..i...i...i..T",
+    "T.............T",
+    "TK.^^^^^^^.P.DT",
+    "T-------------T"
+  ]
+}

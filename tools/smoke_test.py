@@ -477,6 +477,9 @@ def check_editor_document() -> None:
     document = EditorDocument.from_file("level_1_tuto.json")
     assert document.columns > 0 and document.rows > 0
     assert document.counts().get("player_spawn", 0) >= 1
+    assert len(document.activators) == 2
+    assert document.activators[0].width == 4
+    assert document.activators[0].targets
 
     column, row = 4, 4
     before = document.cell(column, row)
@@ -510,9 +513,93 @@ def check_editor_document() -> None:
     payload = json.loads(saved.read_text(encoding="utf-8"))
     assert payload["rows"], "la carte reecrite doit avoir des lignes"
     assert "player_spawn" in payload["legend"].values()
+    assert len(payload.get("activators", [])) == 2
+    first = payload["activators"][0]
+    assert first["x"] == 13 and first["width"] == 4
+    assert first["activate"]["setBlock"]
     saved.unlink()
+
+    index = document.add_activator(5, 5, 3)
+    assert document.activators[index].width == 3
+    linked = document.toggle_target(index, 2, document.rows - 2)
+    assert linked
+    document.undo()
+    document.undo()
+    assert len(document.activators) == 2
+
+    flame_cell = (6, 6)
+    document.paint((flame_cell,), "flamethrower")
+    placed = document.flame_at(*flame_cell)
+    assert placed is not None, "peindre un lance-flammes doit creer ses reglages"
+    tuned = document.adjust_flame(*flame_cell, range_delta=2, interval_delta=0.4, rotate=True)
+    assert tuned is not None
+    assert tuned.range_tiles == placed.range_tiles + 2
+    assert tuned.direction == "down"
+    flame_path = Path(tempfile.mkdtemp()) / "flamethrower_roundtrip.json"
+    flame_saved = document.save(flame_path)
+    flame_payload = json.loads(flame_saved.read_text(encoding="utf-8"))
+    entries = flame_payload.get("flamethrowers", [])
+    assert entries, "la carte doit ecrire le champ flamethrowers"
+    assert entries[0]["range"] == tuned.range_tiles
+    assert entries[0]["dir"] == "down"
+    reloaded = EditorDocument.from_file(flame_saved)
+    restored = reloaded.flame_at(*flame_cell)
+    assert restored is not None and restored.range_tiles == tuned.range_tiles
+    assert restored.direction == "down"
+    flame_saved.unlink()
+    document.undo()
+    assert document.flame_at(*flame_cell) is None
     print(f"  editeur document -> {document.columns}x{document.rows}, "
           f"{len(palette.PALETTE)} elements de palette")
+
+
+def check_flamethrower(window: arcade.Window) -> None:
+    """Le jet shader se dessine, tue le corps et les ennemis, et se configure."""
+    from src.world.flamethrower import Flamethrower
+    from src.world.level import Level
+
+    data = {
+        "name": "Lance",
+        "tile_size": settings.TILE_SIZE,
+        "legend": {".": "vide", "#": "rock", "f": "flamethrower", "P": "player_spawn"},
+        "rows": [
+            "######",
+            "#P...#",
+            "#f...#",
+            "######",
+        ],
+        "flamethrowers": [
+            {"x": 1, "y": 2, "range": 3, "interval": 0.0, "facing": 1},
+        ],
+    }
+    level = Level.from_dict(data)
+    assert len(level.flamethrowers) == 1
+    thrower = level.flamethrowers[0]
+    thrower.update(0.0)
+    assert thrower.is_lethal, "intervalle 0 = jet permanent"
+    player = Player(*level.player_spawn)
+    player.center_x, player.center_y = thrower.flame_midpoint()
+    assert collisions.player_hits_flame(player, level.flamethrowers)
+    enemy = Enemy(*thrower.flame_midpoint())
+    level.enemies.append(enemy)
+    burned = collisions.enemies_hit_by_flame(level.enemies, level.flamethrowers)
+    assert enemy in burned, "le jet doit tuer les ennemis"
+    thrower.draw_flame()
+    assert thrower.direction == "right"
+
+    down = Flamethrower(200.0, 200.0, range_tiles=3, interval=0.0, direction="down")
+    down.update(0.0)
+    left, right, bottom, top = down.flame_bounds()
+    assert top - bottom >= down.flame_length * 0.99
+    assert right - left <= settings.FLAMETHROWER_HEIGHT + 1.0
+    assert down.flame_midpoint()[1] < down.center_y
+    assert down.nozzle()[1] < down.center_y
+    assert top <= down.center_y + 1.0
+    down.draw_flame()
+    print(
+        f"  lance-flammes -> portee {thrower.range_tiles} tuiles, "
+        f"jet lethal, 4 axes, shader OK"
+    )
 
 
 def check_editor_views(window: arcade.Window) -> None:
@@ -539,6 +626,8 @@ def check_editor_views(window: arcade.Window) -> None:
     view.on_mouse_release(screen_x, screen_y, arcade.MOUSE_BUTTON_LEFT, 0)
     view.on_key_press(arcade.key.Z, arcade.key.MOD_CTRL)
     view.on_key_press(arcade.key.Z, arcade.key.MOD_CTRL | arcade.key.MOD_SHIFT)
+    view.tool = Tool.LINK
+    view._link_index = 0
     view.on_draw()
     print("  editeur vues -> navigateur et grille OK")
 
@@ -577,6 +666,8 @@ def main() -> int:
         check_menus(window)
         print("[10/10] vues de l'editeur")
         check_editor_views(window)
+        print("[11/11] lance-flammes")
+        check_flamethrower(window)
     finally:
         window.close()
     print("OK : le squelette demarre et tourne.")
