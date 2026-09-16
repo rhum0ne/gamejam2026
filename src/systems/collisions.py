@@ -163,6 +163,22 @@ def enemy_striking_player(player: Player, enemies: Iterable[EnemyBase]) -> Enemy
     return None
 
 
+def player_hits_boss_attack(player: Player, enemies: Iterable[EnemyBase]) -> bool:
+    """Projectile ou laser d'un boss touche-t-il le corps physique vivant ?"""
+    if not player.alive:
+        return False
+    for enemy in enemies:
+        shots = getattr(enemy, "shots", None)
+        if shots:
+            for shot in shots:
+                if getattr(shot, "lethal", True) and arcade.check_for_collision(player, shot):
+                    return True
+        laser_hits = getattr(enemy, "laser_hits", None)
+        if laser_hits is not None and laser_hits(player):
+            return True
+    return False
+
+
 def enemies_hit_by_player_attack(player: Player, enemies: arcade.SpriteList) -> list[EnemyBase]:
     """Retourne les ennemis recouverts par la hitbox de la frappe frontale."""
     bounds = player.attack_bounds

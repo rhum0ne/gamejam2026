@@ -75,6 +75,7 @@ import arcade
 
 import settings
 from src.entities.bat import Bat
+from src.entities.boss import Boss
 from src.entities.corpse import Corpse
 from src.entities.enemy import Enemy
 from src.entities.glow import glow_pass
@@ -527,6 +528,10 @@ class Level:
                 body.draw_fx()
         self.items.draw(pixelated=True)
         self.enemies.draw(pixelated=True)
+        for enemy in self.enemies:
+            draw_attacks = getattr(enemy, "draw_attacks", None)
+            if draw_attacks is not None:
+                draw_attacks()
 
     def draw_static_hit_boxes(self, color, view_rect=None) -> None:
         """Contours de collision du terrain, culles comme le rendu."""
@@ -843,6 +848,10 @@ def _add_zombie(level: Level, x: float, y: float) -> None:
     level.enemies.append(Zombie(x, y))
 
 
+def _add_boss(level: Level, x: float, y: float) -> None:
+    level.enemies.append(Boss(x, y))
+
+
 def _coord(raw: dict, *keys: str) -> int:
     for key in keys:
         if key in raw:
@@ -948,6 +957,7 @@ _FACTORIES: dict[str, Callable[[Level, float, float], None]] = {
     "enemy": _add_enemy,
     "bat": _add_bat,
     "zombie": _add_zombie,
+    "boss": _add_boss,
     "torch": _add_torch,
     **{kind: _decoration_factory(kind) for kind in decoration_kinds()},
     "flamethrower": _add_flamethrower,

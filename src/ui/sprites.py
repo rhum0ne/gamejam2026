@@ -261,6 +261,48 @@ def load_strip(
     return strip
 
 
+def load_grid(
+    name: str | Path,
+    frame_width: int,
+    frame_height: int,
+    *,
+    scale: float = 1.0,
+) -> tuple[arcade.Texture, ...]:
+    """Decoupe une planche en grille (ligne par ligne), avec cache."""
+    if frame_width <= 0 or frame_height <= 0:
+        raise ValueError("frame_width et frame_height doivent etre strictement positifs")
+    if scale <= 0:
+        raise ValueError("scale doit etre strictement positif")
+    cache_key = f"grid:{name}|{frame_width}|{frame_height}|{scale:.4f}"
+    cached = _STRIP_CACHE.get(cache_key)
+    if cached is not None:
+        return cached
+
+    image = _open_image(name)
+    columns = image.width // frame_width
+    rows = image.height // frame_height
+    if columns <= 0 or rows <= 0:
+        raise ValueError(
+            f"planche '{name}' trop petite pour des frames {frame_width}x{frame_height}"
+        )
+
+    scaled_width = max(1, round(frame_width * scale))
+    scaled_height = max(1, round(frame_height * scale))
+    frames: list[arcade.Texture] = []
+    for row in range(rows):
+        for column in range(columns):
+            left = column * frame_width
+            top = row * frame_height
+            crop = image.crop((left, top, left + frame_width, top + frame_height))
+            if crop.size != (scaled_width, scaled_height):
+                crop = crop.resize((scaled_width, scaled_height), Image.Resampling.NEAREST)
+            texture_key = f"{cache_key}|{row}|{column}"
+            frames.append(arcade.Texture(crop, hash=texture_key))
+    grid = tuple(frames)
+    _STRIP_CACHE[cache_key] = grid
+    return grid
+
+
 @dataclass(frozen=True, slots=True)
 class StripAnimation:
     """Une sequence de frames a derouler a intervalle fixe."""

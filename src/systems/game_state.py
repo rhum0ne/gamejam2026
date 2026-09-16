@@ -533,6 +533,15 @@ class PlayView(arcade.View):
         view_rect = self.camera.visible_rect()
         self.level.draw_static_hit_boxes(color, view_rect)
         self.level.enemies.draw_hit_boxes(color)
+        for enemy in self.level.enemies:
+            shots = getattr(enemy, "shots", None)
+            if shots:
+                shots.draw_hit_boxes(color)
+            laser_active = getattr(enemy, "laser_active", False)
+            laser_bounds = getattr(enemy, "laser_bounds", None)
+            if laser_active and laser_bounds is not None:
+                left, right, bottom, top = laser_bounds()
+                arcade.draw_lrbt_rectangle_outline(left, right, bottom, top, color, 1)
         self.level.corpses.draw_hit_boxes(color)
         self.level.plates.draw_hit_boxes(color)
         self.level.falling_spikes.draw_hit_boxes(color)
@@ -991,6 +1000,13 @@ class PlayView(arcade.View):
             emit_player_death(self, "flame")
         elif collisions.player_out_of_bounds(self.player, self.level):
             emit_player_death(self, "out_of_bounds")
+        elif collisions.player_hits_boss_attack(self.player, self.level.enemies):
+            self._spill_blood(
+                self.player.center_x,
+                self.player.center_y,
+                count=settings.BLOOD_COUNT_PLAYER,
+            )
+            emit_player_death(self, "enemy")
         else:
             striker = collisions.enemy_striking_player(self.player, self.level.enemies)
             if striker is not None:
