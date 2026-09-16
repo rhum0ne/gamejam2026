@@ -213,6 +213,14 @@ class TextPrompt:
         self._active = False
         self._on_submit = None
 
+    def _submit(self) -> None:
+        """Valide la saisie : ferme la prompt puis appelle le callback."""
+        callback = self._on_submit
+        value = self._value
+        self.close()
+        if callback is not None:
+            callback(value)
+
     def on_text(self, text: str) -> None:
         """Ajoute les caracteres tapes (ignores en mode confirmation)."""
         if not self._active or self._confirm:
