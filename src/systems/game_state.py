@@ -228,7 +228,7 @@ class PlayView(arcade.View):
         self.atmosphere = ForegroundAtmosphere()
         self.hud = Hud(settings.WORLD_VIEW_WIDTH, settings.WORLD_VIEW_HEIGHT)
         self.debug = DebugOverlay()
-        self._debug_enabled = settings.DEBUG_OVERLAY
+        self._debug_enabled = False
         self._reveal_walls = SpriteOverlay()
         self._reveal_actors = SpriteOverlay()
         self.level: Level
@@ -530,9 +530,7 @@ class PlayView(arcade.View):
             return
         fade = emergence.player_fade
         if fade > 0.0:
-            self.player.alpha = int(255 * fade)
-            draw_pixel_sprite(self.player)
-            self.player.alpha = 255
+            self.player.draw_sprite(fade)
         if emergence.shows_fog:
             self._draw_ghost_layer(ghost)
         elif ghost.alpha > 0:
@@ -834,6 +832,8 @@ class PlayView(arcade.View):
             return
         # L'anim de mort continue pendant l'emergence (le corps n'est plus PLAYING).
         self.player.update(delta_time)
+        if self.anchor_corpse is not None and not self.anchor_corpse.is_remnant:
+            self.anchor_corpse.set_appear(1.0 if self.player.death_settled else 0.0)
         if self._update_emergence(delta_time, ghost):
             return
         ghost.steer(self._horizontal_input(), self._vertical_input())
@@ -1059,7 +1059,8 @@ class PlayView(arcade.View):
         if handle_display_key(self.window, symbol, modifiers):
             return
         if symbol == arcade.key.F3:
-            self._debug_enabled = not self._debug_enabled
+            if settings.DEBUG_OVERLAY:
+                self._debug_enabled = not self._debug_enabled
             return
         if self.machine.state is GameState.PAUSED:
             self._pause_overlay().on_key_press(self.window, symbol, modifiers)

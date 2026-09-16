@@ -314,6 +314,7 @@ class Zombie(EnemyBase):
             corpse
             for corpse in corpses
             if arcade.get_distance_between_sprites(self, corpse) <= settings.ZOMBIE_CORPSE_SMELL_RANGE
+            and not corpse.is_remnant
         ]
         if not in_range:
             return None
