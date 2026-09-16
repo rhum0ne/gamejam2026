@@ -803,6 +803,8 @@ class PlayView(arcade.View):
         ghost = self.ghost
         if ghost is None:
             return
+        # L'anim de mort continue pendant l'emergence (le corps n'est plus PLAYING).
+        self.player.update(delta_time)
         if self._update_emergence(delta_time, ghost):
             return
         ghost.steer(self._horizontal_input(), self._vertical_input())

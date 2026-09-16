@@ -595,25 +595,25 @@ class Torch(arcade.SpriteSolidColor):
         return 1.0 + settings.TORCH_FLICKER * (0.65 * slow + 0.35 * fast)
 
 
-class Door(arcade.SpriteSolidColor):
+class Door(arcade.Sprite):
     """Porte de fin de niveau, verrouillee jusqu'a l'obtention de la cle."""
 
     def __init__(self, center_x: float, center_y: float, size: int = settings.TILE_SIZE) -> None:
-        super().__init__(
-            size,
-            size * 2,
-            center_x=center_x,
-            center_y=center_y + size / 2,
-            color=settings.COLOR_DOOR_LOCKED,
-        )
+        display = settings.DOOR_DISPLAY_SIZE
+        self._closed = sprites.load_texture(settings.SPRITE_DOOR_CLOSED, size=display)
+        self._open = sprites.load_texture(settings.SPRITE_DOOR_OPEN, size=display)
+        lift = (display - size) / 2
+        super().__init__(self._closed, center_x=center_x, center_y=center_y + lift)
+        # Collision inchangee : une tuile de large, deux de haut, cales sur la case.
+        sprites.apply_rect_hit_box(self, size, size * 2)
         self.locked = True
 
     def unlock(self) -> None:
-        """Deverrouille la porte (feedback visuel provisoire : changement de couleur)."""
+        """Deverrouille la porte et affiche le vantail ouvert."""
         if not self.locked:
             return
         self.locked = False
-        self.color = settings.COLOR_DOOR_OPEN
+        self.texture = self._open
 
 
 class Checkpoint(arcade.Sprite):
