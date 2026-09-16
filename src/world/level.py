@@ -16,10 +16,11 @@ l'ecran. Chaque caractere est traduit via `legend` :
     - ou le nom d'un sprite de terrain (`wall`, `spike`, `bedrock`, ...).
 
 `wall` est la seule matiere terre/roche : il suffit de dessiner sa forme dans
-`rows`, l'apparence (herbe en surface, coin, terre enterree...) est deduite
-des tuiles voisines a chaque chargement (auto-tiling, cf. `world/obstacles.py`
-:: `GroundNeighbors`). Pas de symbole dedie a l'herbe : ne jamais en ajouter
-un, ce serait de nouveau au level designer de la placer a la main.
+`rows`, l'apparence (herbe en surface, coin, terre enterree, pilier, coin
+interieur...) est deduite de la grille entiere a chaque chargement
+(auto-tiling, cf. `world/obstacles.py` :: `compute_ground_cells`). Pas de
+symbole dedie a l'herbe : ne jamais en ajouter un, ce serait de nouveau au
+level designer de la placer a la main.
 
 Les plaques d'activation sont declarees a part, en coordonnees de grille
 (x = colonne, y = ligne depuis le haut, comme `rows`) :
@@ -72,12 +73,13 @@ from src.world.obstacles import (
     TILE_SPECS,
     Checkpoint,
     Door,
-    GroundNeighbors,
+    GroundCell,
     SpectralWall,
     Spike,
     TileSpec,
     Torch,
     Wall,
+    compute_ground_cells,
     tile_spec,
 )
 
@@ -183,6 +185,7 @@ class Level:
         return level
 
     def _build(self, grid: list[str], legend: dict[str, str]) -> None:
+        ground_cells = _compute_ground_cells(grid, legend)
         for row_index, row in enumerate(grid):
             for column_index, symbol in enumerate(row):
                 kind = legend.get(symbol, "vide" if symbol == "." else None)
@@ -193,6 +196,13 @@ class Level:
                     )
                 if kind == "vide":
                     continue
+                if kind == "spectral_wall":
+                    # Seule fabrique qui a besoin de sa case d'auto-tiling :
+                    # le mur spectral se peint comme un mur normal.
+                    center = self.tile_center(column_index, row_index, len(grid))
+                    cell = ground_cells.get((column_index, row_index))
+                    _add_spectral_wall(self, *center, cell)
+                    continue
                 factory = _FACTORIES.get(kind)
                 if factory is not None:
                     center = self.tile_center(column_index, row_index, len(grid))
@@ -200,12 +210,8 @@ class Level:
                     continue
                 if kind in TILE_SPECS:
                     center = self.tile_center(column_index, row_index, len(grid))
-                    neighbors = (
-                        _ground_neighbors(grid, legend, row_index, column_index)
-                        if TILE_SPECS[kind].autotile
-                        else None
-                    )
-                    _add_terrain(self, *center, kind, neighbors)
+                    cell = ground_cells.get((column_index, row_index))
+                    _add_terrain(self, *center, kind, cell)
                     continue
                 raise LevelFormatError(f"type de tuile inconnu : '{kind}'")
         self._bind_initial_checkpoint()
@@ -544,40 +550,58 @@ class Level:
 
 
 def _add_terrain(
-    level: Level, x: float, y: float, kind: str, neighbors: GroundNeighbors | None = None
+    level: Level, x: float, y: float, kind: str, cell: GroundCell | None = None
 ) -> None:
     spec: TileSpec = tile_spec(kind)
     if spec.role == "spike":
         level.hazards.append(Spike(x, y, size=level.tile_size, tile=kind))
         return
-    level.walls.append(Wall(x, y, size=level.tile_size, tile=kind, neighbors=neighbors))
+    level.walls.append(Wall(x, y, size=level.tile_size, tile=kind, cell=cell))
 
 
-def _ground_neighbors(
-    grid: list[str], legend: dict[str, str], row: int, column: int
-) -> GroundNeighbors:
-    """Occupation des 4 cases cardinales d'une tuile auto-tilee (cf. `GroundNeighbors`).
+def _compute_ground_cells(
+    grid: list[str], legend: dict[str, str]
+) -> dict[tuple[int, int], GroundCell]:
+    """Resout la case `SHEET_GROUND` des tuiles auto-tilees de `grid` (cf. `compute_ground_cells`).
 
-    Une case hors carte compte comme libre : il n'y a pas de mur au-dela du bord.
+    Une case hors carte compte comme solide : les tuiles de bordure se peignent
+    comme du terrain enterre (pas d'herbe au plafond du monde ni de pilier
+    flottant sur les bords), la camera ne montrant jamais l'exterieur.
+    Les murs spectraux sont auto-tiles comme des murs normaux : c'est ce qui
+    les rend indetectables pour le corps physique.
     """
-    return GroundNeighbors(
-        top_open=not _is_solid_ground(grid, legend, row - 1, column),
-        right_open=not _is_solid_ground(grid, legend, row, column + 1),
-        bottom_open=not _is_solid_ground(grid, legend, row + 1, column),
-        left_open=not _is_solid_ground(grid, legend, row, column - 1),
+
+    def out_of_bounds(column: int, row: int) -> bool:
+        return row < 0 or row >= len(grid) or column < 0 or column >= len(grid[row])
+
+    def kind_at(column: int, row: int) -> str | None:
+        if out_of_bounds(column, row):
+            return None
+        symbol = grid[row][column]
+        return legend.get(symbol, "vide" if symbol == "." else None)
+
+    def is_solid(column: int, row: int) -> bool:
+        if out_of_bounds(column, row):
+            return True
+        return kind_at(column, row) in SOLID_GROUND_KINDS
+
+    def is_autotile(column: int, row: int) -> bool:
+        kind = kind_at(column, row)
+        if kind == "spectral_wall":
+            return True
+        spec = TILE_SPECS.get(kind) if kind is not None else None
+        return spec is not None and spec.autotile
+
+    return compute_ground_cells(
+        len(grid[0]) if grid else 0,
+        len(grid),
+        is_solid=is_solid,
+        is_autotile=is_autotile,
     )
 
 
-def _is_solid_ground(grid: list[str], legend: dict[str, str], row: int, column: int) -> bool:
-    if row < 0 or row >= len(grid) or column < 0 or column >= len(grid[row]):
-        return False
-    symbol = grid[row][column]
-    kind = legend.get(symbol, "vide" if symbol == "." else None)
-    return kind in SOLID_GROUND_KINDS
-
-
-def _add_spectral_wall(level: Level, x: float, y: float) -> None:
-    level.spectral_walls.append(SpectralWall(x, y, size=level.tile_size))
+def _add_spectral_wall(level: Level, x: float, y: float, cell: GroundCell | None = None) -> None:
+    level.spectral_walls.append(SpectralWall(x, y, size=level.tile_size, cell=cell))
 
 
 def _add_door(level: Level, x: float, y: float) -> None:

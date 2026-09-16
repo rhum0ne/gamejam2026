@@ -11,17 +11,16 @@ changer l'apparence d'une tuile ne doit jamais modifier la physique.
 
 Une seule matiere terre/roche (planche `settings.SHEET_GROUND`, kind
 `"wall"`) : le level designer pose un seul type de mur, et l'auto-tiling
-choisit la case a afficher selon les tuiles voisines (herbe sur une face
-exposee a l'air libre, coin quand un seul cote voisin est libre, terre
-pleine sinon, bloc dedie pour une tuile totalement isolee). Voir
-`GroundNeighbors` et `_select_ground_cell` plus bas ; le calcul des voisins
-lui-meme vit dans `world/level.py` (jeu) et `editor/canvas.py` (editeur), qui
-connaissent tous deux la grille complete au moment de dessiner une tuile.
+choisit la case a afficher pour toute la grille en un coup, via
+`compute_ground_cells` (herbe/terre/dessous, pilier d'un bloc de large,
+plateforme fine, grotte, ilot 2x2 - cf. `_base_ground_cell`). `world/level.py`
+(jeu) et `editor/canvas.py` (editeur) appellent cette meme fonction sur leur
+grille respective, pour que l'apercu de l'editeur corresponde au rendu en jeu.
 """
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 import math
 import time
 from dataclasses import dataclass
@@ -41,9 +40,9 @@ class TileSpec:
 
     Deux sources possibles pour un mur : `sprite` seul (fichier de
     `assets/sprites/`, tel quel) ou `sheet` + `cell` (case fixe decoupee dans
-    une planche) / `autotile=True` (case choisie dynamiquement selon les
-    voisins, cf. `_select_ground_cell`) - utilise par `terrain_texture` en
-    priorite quand il est renseigne.
+    une planche) / `autotile=True` (case choisie par `compute_ground_cells`,
+    passee a `terrain_texture` au cas par cas) - utilise en priorite quand il
+    est renseigne.
     """
 
     sprite: str = ""
@@ -90,8 +89,11 @@ TILE_SPECS: dict[str, TileSpec] = {
 
 # Kinds qui occupent une case pleine et solide (bloquent la vue d'un cote pour
 # l'auto-tiling). Les piques, decors et entites n'en font pas partie : une
-# tuile "wall" a cote d'un pique affiche quand meme son herbe.
-SOLID_GROUND_KINDS = frozenset({"wall", "bedrock"})
+# tuile "wall" a cote d'un pique affiche quand meme son herbe. Le mur spectral
+# en fait partie : il doit etre indetectable pour le corps physique, donc ni
+# lui ni ses voisins ne doivent trahir sa presence par une bordure ou de
+# l'herbe (fiche concept : "devoile les elements invisibles en mode normal").
+SOLID_GROUND_KINDS = frozenset({"wall", "bedrock", "spectral_wall"})
 
 
 def tile_spec(name: str) -> TileSpec:
@@ -106,72 +108,278 @@ def tile_spec(name: str) -> TileSpec:
 
 @dataclass(frozen=True, slots=True)
 class GroundNeighbors:
-    """Occupation des 4 cases cardinales autour d'une tuile "wall".
+    """Occupation des 8 cases autour d'une tuile "wall".
 
-    `True` = case voisine libre (aucun terrain solide dessus : `vide`, un
-    pique, un decor, une entite, ou hors carte), donc ce bord doit etre
-    habille (herbe, coin) ; `False` = voisine solide (`wall`/`bedrock`,
-    cf. `SOLID_GROUND_KINDS`), donc ce bord est cache et reste de la terre.
-
-    Calculee par l'appelant, qui seul connait la grille complete : voir
-    `world/level.py::_ground_neighbors` (jeu) et `editor/canvas.py` (editeur,
-    meme regle, pour que l'apercu corresponde exactement au rendu en jeu).
+    `True` = case voisine libre (aucun terrain solide : `vide`, un pique, un
+    decor, une entite), donc ce bord/coin doit etre habille ; `False` =
+    voisine solide (`wall`/`bedrock`/`spectral_wall`, ou hors carte).
     """
 
     top_open: bool = True
     right_open: bool = False
     bottom_open: bool = False
     left_open: bool = False
+    top_left_open: bool = True
+    top_right_open: bool = True
+    bottom_left_open: bool = False
+    bottom_right_open: bool = False
 
 
-# Apercu par defaut quand aucun voisinage n'est connu (icone de palette,
-# tuile isolee instanciee hors d'un niveau) : une crete d'herbe ordinaire.
-_DEFAULT_NEIGHBORS = GroundNeighbors()
+GroundCell = tuple[int, int]  # (colonne, ligne) dans SHEET_GROUND
+
+# Apercu par defaut quand aucune case n'est connue (icone de palette, tuile
+# isolee instanciee hors d'un niveau) : une crete d'herbe ordinaire.
+_DEFAULT_CELL: GroundCell = (settings.GROUND_COL_MID, settings.GROUND_ROW_GRASS)
+
+_PLAIN_INTERIOR: GroundCell = (settings.GROUND_COL_MID, settings.GROUND_ROW_DIRT)
+_PLAIN_SURFACE: GroundCell = (settings.GROUND_COL_MID, settings.GROUND_ROW_GRASS)
+
+# Pools de variantes indexes par leur case CANONIQUE : `_pick_variant` remplace
+# une case canonique par l'une de ses variantes selon la position de la tuile.
+_VARIANT_POOLS: dict[GroundCell, tuple[GroundCell, ...]] = {
+    _PLAIN_SURFACE: settings.GROUND_SURFACE_VARIANTS,
+    _PLAIN_INTERIOR: settings.GROUND_DIRT_VARIANTS,
+    (settings.GROUND_COL_MID, settings.GROUND_ROW_BOTTOM): settings.GROUND_BOTTOM_VARIANTS,
+    settings.GROUND_SOLO: settings.GROUND_SOLO_VARIANTS,
+    settings.GROUND_PLATFORM_LEFT: settings.GROUND_PLATFORM_LEFT_VARIANTS,
+    settings.GROUND_PLATFORM_MID: settings.GROUND_PLATFORM_MID_VARIANTS,
+    settings.GROUND_PLATFORM_RIGHT: settings.GROUND_PLATFORM_RIGHT_VARIANTS,
+    settings.GROUND_CAVE_CEILING: settings.GROUND_CAVE_CEILING_VARIANTS,
+}
 
 
-def _select_ground_cell(neighbors: GroundNeighbors) -> tuple[int, int]:
-    """Case (colonne, ligne) du carre 3x3 de `SHEET_GROUND` a afficher pour ces voisins.
+def _pick_variant(cell: GroundCell, column: int, row: int) -> GroundCell:
+    """Choisit une variante graphique stable pour une case canonique.
 
-    La rangee suit l'exposition verticale (herbe si rien au-dessus, dessous si
-    rien en dessous - priorite a l'herbe si les deux, terre sinon) ; la colonne
-    suit l'exposition horizontale (coin gauche/droit si un seul cote est libre,
-    milieu sinon - y compris quand les deux cotes sont libres, faute de case
-    dediee pour l'instant). Voir le schema dans `settings.py`.
+    Deterministe (aucun etat aleatoire) : la meme tuile donne toujours la meme
+    variante, donc le jeu et l'apercu de l'editeur restent identiques. Le
+    melange des deux coordonnees evite les rayures visibles (une seule ligne ou
+    colonne qui prendrait toujours la meme variante).
     """
-    if neighbors.top_open:
+    pool = _VARIANT_POOLS.get(cell)
+    if not pool:
+        return cell
+    index = (column * 73856093) ^ (row * 19349663)
+    return pool[index % len(pool)]
+
+
+def _surface_cell(n: GroundNeighbors) -> GroundCell:
+    """Choisit la tuile d'herbe d'une pelouse (ciel au-dessus, terre en dessous).
+
+    - Bord Sombre Haut : crete plate, ou bosse posee sur un sol plus large
+      (les diagonales du dessous sont pleines, le vide ne descend pas).
+    - Coin Sombre HG/HD : vrai coin de masse profonde, le vide continue
+      sous le cote ouvert (falaise, paroi de puits).
+    - Sommet de pilier : colonne d'une tuile, vide des deux cotes y compris
+      en dessous. Une bosse d'une case sur le sol n'en est pas une.
+    """
+    left_cliff = n.left_open and n.bottom_left_open
+    right_cliff = n.right_open and n.bottom_right_open
+    if n.left_open and n.right_open:
+        if left_cliff and right_cliff:
+            return settings.GROUND_PILLAR_TOP
+        return _PLAIN_SURFACE
+    if left_cliff and not n.right_open:
+        return (settings.GROUND_COL_LEFT, settings.GROUND_ROW_GRASS)
+    if right_cliff and not n.left_open:
+        return (settings.GROUND_COL_RIGHT, settings.GROUND_ROW_GRASS)
+    return _PLAIN_SURFACE
+
+
+def _base_ground_cell(
+    neighbors: GroundNeighbors,
+    *,
+    enclosed_nw: bool,
+    enclosed_ne: bool,
+) -> GroundCell:
+    """Classe une tuile a partir de ses 8 voisins."""
+    n = neighbors
+    if n.top_open and n.right_open and n.bottom_open and n.left_open:
+        return settings.GROUND_SOLO
+
+    if n.top_open and n.bottom_open:
+        if n.left_open:
+            return settings.GROUND_PLATFORM_LEFT
+        if n.right_open:
+            return settings.GROUND_PLATFORM_RIGHT
+        return settings.GROUND_PLATFORM_MID
+
+    # Sol d'un trou d'une tuile de large (parois gauche ET droite, ciel
+    # bouche par la voisine haute-gauche/droite) : pas une pelouse de plaine.
+    cave_floor = (
+        n.top_open
+        and not n.left_open
+        and not n.right_open
+        and not n.top_left_open
+        and not n.top_right_open
+    )
+    if cave_floor:
+        return settings.GROUND_CAVE_FLOOR
+
+    if n.top_open and not n.bottom_open:
+        return _surface_cell(n)
+
+    if n.left_open and n.right_open:
+        if n.bottom_open:
+            return settings.GROUND_PILLAR_BOTTOM
+        return settings.GROUND_PILLAR_MID
+
+    buried = not n.top_open and not n.right_open and not n.bottom_open and not n.left_open
+    if buried:
+        if n.bottom_right_open:
+            return settings.GROUND_INNER_BOTTOM_RIGHT
+        if n.bottom_left_open:
+            return settings.GROUND_INNER_BOTTOM_LEFT
+        if n.top_right_open and enclosed_ne:
+            return settings.GROUND_INNER_TOP_RIGHT
+        if n.top_left_open and enclosed_nw:
+            return settings.GROUND_INNER_TOP_LEFT
+        return _PLAIN_INTERIOR
+
+    # Plafond d'un trou d'une tuile de large.
+    cave_ceiling = (
+        n.bottom_open
+        and not n.left_open
+        and not n.right_open
+        and not n.bottom_left_open
+        and not n.bottom_right_open
+    )
+    if cave_ceiling:
+        return settings.GROUND_CAVE_CEILING
+
+    if not n.top_open and not n.bottom_open:
+        # Paroi gauche du tunnel : le trou est A DROITE, plafond et sol solides.
+        if n.right_open and not n.left_open and not n.top_right_open and not n.bottom_right_open:
+            return settings.GROUND_CAVE_WALL_LEFT
+        if n.left_open and not n.right_open and not n.top_left_open and not n.bottom_left_open:
+            return settings.GROUND_CAVE_WALL_RIGHT
+
+    if n.top_open:
         row = settings.GROUND_ROW_GRASS
-    elif neighbors.bottom_open:
+    elif n.bottom_open:
         row = settings.GROUND_ROW_BOTTOM
     else:
         row = settings.GROUND_ROW_DIRT
 
-    if neighbors.left_open and not neighbors.right_open:
+    if n.left_open and not n.right_open:
         column = settings.GROUND_COL_LEFT
-    elif neighbors.right_open and not neighbors.left_open:
+    elif n.right_open and not n.left_open:
         column = settings.GROUND_COL_RIGHT
     else:
         column = settings.GROUND_COL_MID
-
     return column, row
+
+
+def _hole_is_enclosed(
+    empty_column: int, empty_row: int, is_solid: Callable[[int, int], bool]
+) -> bool:
+    """True seulement pour un trou de grotte d'une tuile, pas un surplomb.
+
+    Un surplomb (plateforme au-dessus d'un vide) a aussi du solide AU-DESSUS
+    du vide : ce n'est pas une grotte. Un vrai trou est serre a gauche ET a
+    droite. Sans ca, le sol sous une corniche recevait un coin herbeux.
+    """
+    if empty_row <= 0:
+        return False
+    if not is_solid(empty_column, empty_row - 1):
+        return False
+    return is_solid(empty_column - 1, empty_row) and is_solid(
+        empty_column + 1, empty_row
+    )
+
+
+def _island_2x2_cell(
+    column: int, row: int, is_solid: Callable[[int, int], bool]
+) -> GroundCell | None:
+    """Retourne le coin d'ilot si la tuile appartient a un 2x2 isole."""
+    roles: tuple[tuple[tuple[int, int], GroundCell], ...] = (
+        ((0, 0), settings.GROUND_ISLAND_TL),
+        ((1, 0), settings.GROUND_ISLAND_TR),
+        ((0, 1), settings.GROUND_ISLAND_BL),
+        ((1, 1), settings.GROUND_ISLAND_BR),
+    )
+    for (dx, dy), cell in roles:
+        origin_c = column - dx
+        origin_r = row - dy
+        if not all(
+            is_solid(origin_c + x, origin_r + y) for x in (0, 1) for y in (0, 1)
+        ):
+            continue
+        ring_solid = False
+        for x in range(-1, 3):
+            for y in range(-1, 3):
+                if 0 <= x <= 1 and 0 <= y <= 1:
+                    continue
+                if is_solid(origin_c + x, origin_r + y):
+                    ring_solid = True
+                    break
+            if ring_solid:
+                break
+        if not ring_solid:
+            return cell
+    return None
+
+
+def compute_ground_cells(
+    columns: int,
+    rows: int,
+    *,
+    is_solid: Callable[[int, int], bool],
+    is_autotile: Callable[[int, int], bool],
+) -> dict[tuple[int, int], GroundCell]:
+    """Choisit la case de `SHEET_GROUND` pour chaque tuile auto-tilee.
+
+    `is_solid(column, row)` dit si une case bloque la vue (`wall`/`bedrock`,
+    hors carte = solide). Une passe unique : ilot 2x2 isole, puis classification
+    8-voisins (`_base_ground_cell`), puis variantes. Meme fonction pour le jeu
+    (`world/level.py`) et l'editeur (`editor/canvas.py`).
+    """
+    final: dict[tuple[int, int], GroundCell] = {}
+    for row in range(rows):
+        for column in range(columns):
+            if not is_autotile(column, row):
+                continue
+            island = _island_2x2_cell(column, row, is_solid)
+            if island is not None:
+                final[(column, row)] = island
+                continue
+            neighbors = GroundNeighbors(
+                top_open=not is_solid(column, row - 1),
+                right_open=not is_solid(column + 1, row),
+                bottom_open=not is_solid(column, row + 1),
+                left_open=not is_solid(column - 1, row),
+                top_left_open=not is_solid(column - 1, row - 1),
+                top_right_open=not is_solid(column + 1, row - 1),
+                bottom_left_open=not is_solid(column - 1, row + 1),
+                bottom_right_open=not is_solid(column + 1, row + 1),
+            )
+            cell = _base_ground_cell(
+                neighbors,
+                enclosed_nw=_hole_is_enclosed(column - 1, row - 1, is_solid),
+                enclosed_ne=_hole_is_enclosed(column + 1, row - 1, is_solid),
+            )
+            final[(column, row)] = _pick_variant(cell, column, row)
+    return final
 
 
 def terrain_texture(
     spec: TileSpec,
     size: int,
     *,
-    neighbors: GroundNeighbors | None = None,
+    cell: GroundCell | None = None,
 ) -> arcade.Texture:
     """Texture d'affichage d'une tuile de mur, deja a la taille de la carte.
 
-    `neighbors` pilote l'auto-tiling (`spec.autotile`) : sans lui, l'apercu par
-    defaut (crete d'herbe) sert pour la palette de l'editeur ou une tuile hors
-    niveau.
+    `cell` est la case deja resolue par `compute_ground_cells` pour une tuile
+    auto-tilee (`spec.autotile`) : sans lui, l'apercu par defaut (crete
+    d'herbe) sert pour la palette de l'editeur ou une tuile hors niveau.
     """
     if spec.role != "wall":
         raise ValueError(f"terrain_texture attend un mur, pas '{spec.role}'")
     if spec.autotile:
-        cell = _select_ground_cell(neighbors or _DEFAULT_NEIGHBORS)
-        return sprites.load_sheet_cell(spec.sheet, *cell, settings.GROUND_CELL, size=size)
+        return sprites.load_sheet_cell(
+            spec.sheet, *(cell or _DEFAULT_CELL), settings.GROUND_CELL, size=size
+        )
     if spec.sheet is not None:
         if spec.cell is None:
             raise ValueError("spec.sheet est renseigne sans spec.cell ni spec.autotile")
@@ -190,12 +398,12 @@ class Wall(arcade.Sprite):
         center_y: float,
         size: int = settings.TILE_SIZE,
         tile: str = "wall",
-        neighbors: GroundNeighbors | None = None,
+        cell: GroundCell | None = None,
     ) -> None:
         spec = tile_spec(tile)
         if spec.role != "wall":
             raise ValueError(f"'{tile}' n'est pas une tuile de mur")
-        texture = terrain_texture(spec, size, neighbors=neighbors)
+        texture = terrain_texture(spec, size, cell=cell)
         super().__init__(
             texture,
             scale=sprites.scale_for_size(texture, size),
@@ -223,8 +431,9 @@ class SpectralWall(Wall):
         center_y: float,
         size: int = settings.TILE_SIZE,
         tile: str = "wall",
+        cell: GroundCell | None = None,
     ) -> None:
-        super().__init__(center_x, center_y, size=size, tile=tile)
+        super().__init__(center_x, center_y, size=size, tile=tile, cell=cell)
         self.revealed = False
 
     def set_revealed(self, revealed: bool) -> None:

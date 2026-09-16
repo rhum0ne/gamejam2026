@@ -6,10 +6,11 @@ vivent dans une seule `SpriteList` (donc un seul appel GPU) mise a jour
 cellule par cellule quand le document change : peindre ne reconstruit jamais
 la grille entiere, seul un redimensionnement le fait.
 
-Le terrain auto-tile ("wall", cf. `world/obstacles.py`) est redessine avec le
-meme calcul de voisinage que le jeu (`GroundNeighbors`), pour que l'apercu
-dans l'editeur soit exactement ce que le joueur verra : peindre ou effacer
-une case invalide aussi la texture de ses 4 voisines orthogonales.
+Le terrain auto-tile ("wall", cf. `world/obstacles.py`) est recalcule avec la
+meme fonction que le jeu (`compute_ground_cells`), sur la carte entiere a
+chaque modification, pour que l'apercu dans l'editeur soit exactement ce que
+le joueur verra (y compris les coins interieurs, qui peuvent changer
+l'apparence d'une case a 2 cases de distance de celle qu'on vient de peindre).
 
 La camera a son propre viewport (la zone hors panneau lateral et barre d'etat)
 et son propre `scissor`, pour que le decor ne bave pas sous l'interface.
@@ -27,7 +28,7 @@ import settings
 from src.editor import icons, palette
 from src.editor.document import CellState, EditorDocument
 from src.editor.selection import Block, GridRect
-from src.world.obstacles import SOLID_GROUND_KINDS, GroundNeighbors, terrain_texture
+from src.world.obstacles import SOLID_GROUND_KINDS, GroundCell, compute_ground_cells, terrain_texture
 
 
 class GridCanvas:
@@ -41,6 +42,7 @@ class GridCanvas:
         self._camera.scissor = self._viewport
         self._sprites = arcade.SpriteList()
         self._by_cell: dict[tuple[int, int], arcade.Sprite] = {}
+        self._ground_cells: dict[tuple[int, int], GroundCell] = {}
         self._layout_version = document.layout_version
         self.rebuild()
         self._camera.zoom = settings.EDITOR_ZOOM_DEFAULT
@@ -176,35 +178,24 @@ class GridCanvas:
         if not states:
             return
         changed = {(column, row) for column, row, _ in states}
-        neighbors_to_refresh: set[tuple[int, int]] = set()
+        previous_ground_cells = self._ground_cells
+        self._ground_cells = self._compute_ground_cells()
         for column, row, kind in states:
             self._set_cell(column, row, kind)
-            neighbors_to_refresh.update(
-                (
-                    (column, row - 1),
-                    (column, row + 1),
-                    (column - 1, row),
-                    (column + 1, row),
-                )
-            )
-        for column, row in neighbors_to_refresh - changed:
-            self._refresh_terrain_preview(column, row)
-
-    def _refresh_terrain_preview(self, column: int, row: int) -> None:
-        """Redessine une tuile auto-tilee dont un voisin vient de changer (pas son propre kind)."""
-        if not self.document.inside(column, row):
-            return
-        kind = self.document.cell(column, row)
-        if not kind:
-            return
-        spec = palette.item(kind).spec
-        if spec is not None and spec.autotile:
-            self._set_cell(column, row, kind)
+        moved = previous_ground_cells.keys() ^ self._ground_cells.keys()
+        moved.update(
+            key
+            for key in previous_ground_cells.keys() & self._ground_cells.keys()
+            if previous_ground_cells[key] != self._ground_cells[key]
+        )
+        for column, row in moved - changed:
+            self._set_cell(column, row, self.document.cell(column, row))
 
     def rebuild(self) -> None:
         """Reconstruit toute la grille (chargement, redimensionnement, undo de forme)."""
         self._sprites.clear()
         self._by_cell.clear()
+        self._ground_cells = self._compute_ground_cells()
         document = self.document
         for row in range(document.rows):
             for column in range(document.columns):
@@ -225,7 +216,7 @@ class GridCanvas:
             texture = terrain_texture(
                 item.spec,
                 self.document.tile_size,
-                neighbors=self._ground_neighbors(column, row),
+                cell=self._ground_cells.get((column, row)),
             )
         else:
             texture = icons.cell_texture(item, self.document.tile_size)
@@ -235,17 +226,33 @@ class GridCanvas:
         self._sprites.append(sprite)
         self._by_cell[(column, row)] = sprite
 
-    def _ground_neighbors(self, column: int, row: int) -> GroundNeighbors:
-        """Occupation des 4 cases voisines, memes regles que `world/level.py`."""
-        return GroundNeighbors(
-            top_open=not self._is_solid_ground(column, row - 1),
-            right_open=not self._is_solid_ground(column + 1, row),
-            bottom_open=not self._is_solid_ground(column, row + 1),
-            left_open=not self._is_solid_ground(column - 1, row),
-        )
+    def _compute_ground_cells(self) -> dict[tuple[int, int], GroundCell]:
+        """Resout la case `SHEET_GROUND` de toute la grille (cf. `obstacles.compute_ground_cells`).
 
-    def _is_solid_ground(self, column: int, row: int) -> bool:
-        return self.document.cell(column, row) in SOLID_GROUND_KINDS
+        Recalculee sur toute la carte a chaque modification (pas seulement les
+        4 voisines directes) : les coins interieurs regardent jusqu'a 2 cases
+        plus loin (la voisine de leur propre voisine), donc une seule tuile
+        modifiee peut changer l'apparence de cases non adjacentes.
+        """
+        document = self.document
+
+        def is_solid(column: int, row: int) -> bool:
+            # Hors carte = solide, comme en jeu (`level._compute_ground_cells`) :
+            # pas d'herbe ni de pilier sur les tuiles de bordure.
+            if not document.inside(column, row):
+                return True
+            return document.cell(column, row) in SOLID_GROUND_KINDS
+
+        def is_autotile(column: int, row: int) -> bool:
+            kind = document.cell(column, row)
+            if not kind:
+                return False
+            spec = palette.item(kind).spec
+            return spec is not None and spec.autotile
+
+        return compute_ground_cells(
+            document.columns, document.rows, is_solid=is_solid, is_autotile=is_autotile
+        )
 
     # ------------------------------------------------------------------ #
     # Dessin
