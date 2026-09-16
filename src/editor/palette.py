@@ -75,7 +75,7 @@ _TERRAIN_META: dict[str, tuple[str, str]] = {
 # kind -> (libelle, categorie, symbole habituel, couleur)
 _GAMEPLAY_META: dict[str, tuple[str, str, str, tuple[int, int, int]]] = {
     "player_spawn": ("Depart du joueur", CATEGORY_GAMEPLAY, "P", settings.COLOR_PLAYER),
-    "checkpoint": ("Checkpoint", CATEGORY_GAMEPLAY, "C", settings.COLOR_CHECKPOINT),
+    "checkpoint": ("Statue de respawn", CATEGORY_GAMEPLAY, "C", settings.COLOR_CHECKPOINT),
     "door": ("Porte de sortie", CATEGORY_GAMEPLAY, "D", settings.COLOR_DOOR_LOCKED),
     "key": ("Cle", CATEGORY_GAMEPLAY, "K", settings.COLOR_KEY),
     "soul_orb": ("Ame (bille bleue)", CATEGORY_GAMEPLAY, "o", settings.COLOR_SOUL_ORB),

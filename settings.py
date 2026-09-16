@@ -90,11 +90,11 @@ SPRITE_PLAYER_IDLE = "player_idle"
 SPRITE_GHOST_WALK = "gost_walk"
 SPRITE_GHOST_DISAPPEAR = "gost_disappears"
 SPRITE_KEY = "key"
-SPRITE_CHECKPOINT = "Check_Point"
-SPRITE_CHECKPOINT_ACTIVE = "Check_Point_actif"
+SPRITE_CHECKPOINT = "phoenix_resurrection-desactive"
+SPRITE_CHECKPOINT_ACTIVE = "phoenix_resurrection-active"
 SPRITE_FLAMETHROWER = "Lance_flamme"
-# PNG natif 32 px, agrandi x2 en nearest-neighbor (pas de flou).
-CHECKPOINT_SIZE = TILE_SIZE * 2
+# Art natif 125 px ; affiche ~3 tuiles, pieds cales sur la case.
+CHECKPOINT_SIZE = TILE_SIZE * 3
 SPRITE_FRAME_SIZE = 32
 # Taille a l'ecran des sprites joueur / fantome (1.0 = 32 px).
 # L'agrandissement est fait en nearest-neighbor dans `load_strip`.
@@ -189,7 +189,7 @@ PLAYER_JUMP_BUFFER = 0.12
 PLAYER_AIR_BRAKE_TIME = 0.90
 PLAYER_AIR_TURN_BOOST = 1.35
 # PLAYER_RESPAWN_DELAY est la somme des phases REBIRTH_* (plus bas).
-# Eclat d'ames bleues sur le totem au moment du respawn.
+# Eclat d'ames bleues sur la statue au moment du respawn.
 CHECKPOINT_BURST_COUNT = 22
 CHECKPOINT_BURST_LIFE = 0.9
 CHECKPOINT_BURST_SPEED_X = 70.0
@@ -202,9 +202,9 @@ CHECKPOINT_BURST_GLOW_ALPHA = 150
 CHECKPOINT_BURST_CORE_ALPHA = 220
 CHECKPOINT_BURST_SPREAD = 10.0
 CHECKPOINT_BURST_MAX = 48
-# Halo du totem : eteint au repos, flash a l'activation, pulse tant qu'il est actif.
-CHECKPOINT_GLOW_LIFT = 0.22  # fraction de la hauteur, vers le crane
-CHECKPOINT_GLOW_WASH = 340.0  # nappe large, derriere le totem
+# Halo de la statue : eteint au repos, flash a l'activation, pulse tant qu'elle est active.
+CHECKPOINT_GLOW_LIFT = 0.10  # fraction de la hauteur, vers le phenix
+CHECKPOINT_GLOW_WASH = 340.0  # nappe large, derriere la statue
 CHECKPOINT_GLOW_OUTER = 240.0
 CHECKPOINT_GLOW_MID = 118.0
 CHECKPOINT_GLOW_INNER = 44.0

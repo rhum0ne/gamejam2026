@@ -301,11 +301,12 @@ class Checkpoint(arcade.Sprite):
 
     def __init__(self, center_x: float, center_y: float, size: int = settings.TILE_SIZE) -> None:
         display = settings.CHECKPOINT_SIZE
-        self._idle = sprites.load_texture(settings.SPRITE_CHECKPOINT, size=display)
-        self._lit = sprites.load_texture(settings.SPRITE_CHECKPOINT_ACTIVE, size=display)
+        self._idle = sprites.load_texture(settings.SPRITE_CHECKPOINT)
+        self._lit = sprites.load_texture(settings.SPRITE_CHECKPOINT_ACTIVE)
+        scale = sprites.scale_for_size(self._idle, display)
         lift = (display - size) / 2
         self._spawn = (center_x, center_y)
-        super().__init__(self._idle, center_x=center_x, center_y=center_y + lift)
+        super().__init__(self._idle, scale=scale, center_x=center_x, center_y=center_y + lift)
         sprites.apply_rect_hit_box(self, size, size, offset_y=-lift)
         self.active = False
         self._ignite = 0.0
@@ -313,7 +314,7 @@ class Checkpoint(arcade.Sprite):
 
     @property
     def spawn_point(self) -> tuple[float, float]:
-        """Centre de la tuile, pas du sprite (le totem est plus haut que la case)."""
+        """Centre de la tuile, pas du sprite (la statue est plus haute que la case)."""
         return self._spawn
 
     def activate(self, *, ignite: bool = True) -> None:
@@ -346,7 +347,7 @@ class Checkpoint(arcade.Sprite):
             self._ignite = max(0.0, self._ignite - delta_time)
 
     def draw_glow(self, *, layer: str = "all") -> None:
-        """Halo du crane : flash d'allumage, puis respiration tant qu'il est actif."""
+        """Halo du phenix : flash d'allumage, puis respiration tant qu'il est actif."""
         if layer not in ("all", "bloom", "core"):
             raise ValueError(f"layer inconnu : {layer!r}")
         idle, flash = self._glow_mix()

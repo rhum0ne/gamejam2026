@@ -233,7 +233,7 @@ class Level:
         self.checkpoint_spawn = self.player_spawn
 
     def activate_checkpoint(self, checkpoint: Checkpoint, *, ignite: bool = True) -> None:
-        """Allume `checkpoint` et eteint les autres totems.
+        """Allume `checkpoint` et eteint les autres statues.
 
         `ignite=False` pose le halo de repos sans le flash d'allumage
         (spawn initial du niveau).
@@ -386,7 +386,7 @@ class Level:
         with glow_pass():
             for checkpoint in self.checkpoints:
                 checkpoint.draw_glow()
-        self.checkpoints.draw(pixelated=True)
+        self.checkpoints.draw()
         self.doors.draw()
         with glow_pass():
             self._queue_torch_glows(view_rect, layer="bloom")
