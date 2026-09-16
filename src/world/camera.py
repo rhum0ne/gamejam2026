@@ -17,13 +17,11 @@ lui-meme lisse, pour eviter les a-coups quand `change_x` / `change_y` basculent
 
 Rendu a resolution fixe (`begin_frame` / `present`)
     Les deux cameras dessinent toujours dans un framebuffer hors-ecran de
-    taille fixe (`settings.WORLD_VIEW_WIDTH/HEIGHT`), jamais directement dans
-    la fenetre. Sans ca, le plein ecran (ou une grande fenetre) demande de
-    soumettre plus de chunks/sprites ET de remplir plus de pixels physiques
-    qu'en petite fenetre, et le FPS chute rien qu'a cause du changement de
-    dimensions. `present()` redimensionne cette image fixe vers la fenetre
-    reelle en une seule passe (un quad texture, mise a l'echelle materielle
-    quasi gratuite), en conservant le ratio d'aspect (bandes noires si besoin).
+    cadrage fixe (`settings.WORLD_VIEW_WIDTH/HEIGHT`), jamais directement dans
+    la fenetre. Le buffer fait `RENDER_SCALE` fois cette taille en pixels
+    (super-echantillonnage) : le zoom et le plein ecran restent nets, sans
+    reveler plus de niveau. `present()` copie cette image vers la fenetre
+    en nearest-neighbor (pixel art), letterbox si le ratio differe.
     Un `warp_strength` non nul (mode fantome) applique une distorsion barillet
     et un leger etirement perspectif sur cette copie.
 """
@@ -36,7 +34,7 @@ from textwrap import dedent
 import arcade
 from arcade.camera import Camera2D
 from arcade.gl import geometry
-from arcade.types import LRBT
+from arcade.types import LBWH, LRBT
 
 import settings
 
@@ -110,19 +108,37 @@ class CameraRig:
 
     def __init__(self, world_width: float = 0.0, world_height: float = 0.0) -> None:
         self._window = arcade.get_window()
-        self._target = self._window.ctx.framebuffer(
-            color_attachments=[
-                self._window.ctx.texture(
-                    (settings.WORLD_VIEW_WIDTH, settings.WORLD_VIEW_HEIGHT),
-                    components=4,
-                )
-            ]
+        ctx = self._window.ctx
+        scale = max(1, int(settings.RENDER_SCALE))
+        fb_width = settings.WORLD_VIEW_WIDTH * scale
+        fb_height = settings.WORLD_VIEW_HEIGHT * scale
+        self._color = ctx.texture(
+            (fb_width, fb_height),
+            components=4,
+            filter=(ctx.NEAREST, ctx.NEAREST),
+            wrap_x=ctx.CLAMP_TO_EDGE,
+            wrap_y=ctx.CLAMP_TO_EDGE,
         )
-        # Le viewport/projection par defaut d'une Camera2D derive de la
-        # taille de son render_target : les deux valent donc deja
-        # WORLD_VIEW_WIDTH/HEIGHT, quelle que soit la taille de la fenetre.
-        self.world = Camera2D(render_target=self._target)
-        self.ui = Camera2D(render_target=self._target)
+        self._target = ctx.framebuffer(color_attachments=[self._color])
+        # Projection = cadrage monde (1280x720), viewport = pixels du FBO
+        # (x RENDER_SCALE). Sans ca, agrandir le buffer revelerait plus de
+        # niveau au lieu d'ajouter des pixels.
+        half_w = settings.WORLD_VIEW_WIDTH / 2
+        half_h = settings.WORLD_VIEW_HEIGHT / 2
+        viewport = LBWH(0, 0, fb_width, fb_height)
+        projection = LRBT(-half_w, half_w, -half_h, half_h)
+        self.world = Camera2D(
+            viewport=viewport,
+            projection=projection,
+            render_target=self._target,
+        )
+        self.world.zoom = settings.CAMERA_ZOOM_PLAYER
+        self.ui = Camera2D(
+            viewport=viewport,
+            projection=projection,
+            position=(half_w, half_h),
+            render_target=self._target,
+        )
         self.world_width = world_width
         self.world_height = world_height
         self._look_x = 0.0
@@ -316,12 +332,18 @@ class CameraRig:
             viewport=(0, 0, self._window.width, self._window.height),
         )
         screen.viewport = self._present_viewport
-        self._target.color_attachments[0].use(unit=0)
+        ctx = self._window.ctx
         strength = max(0.0, float(warp_strength))
+        # Nearest pour le blit net ; lineaire seulement pour le warp fantome
+        # (sinon la distorsion crenele).
         if strength <= 0.0:
+            self._color.filter = (ctx.NEAREST, ctx.NEAREST)
+            self._color.use(unit=0)
             self._blit_program["screen_texture"] = 0
             self._present_geometry.render(self._blit_program)
             return
+        self._color.filter = (ctx.LINEAR, ctx.LINEAR)
+        self._color.use(unit=0)
         self._present_program["screen_texture"] = 0
         self._present_program["warp_barrel"] = strength
         self._present_program["warp_perspective"] = strength * settings.GHOST_WARP_PERSPECTIVE
