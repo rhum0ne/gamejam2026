@@ -663,11 +663,11 @@ CAMERA_DASH_SHAKE_TIME = 0.18
 # Zoom : > 1.0 rapproche (corps), < 1.0 eloigne (fantome). La transition entre
 # les deux, lissee par CAMERA_ZOOM_SMOOTH_TIME, donne l'effet de projection
 # hors du corps (la camera recule) quand on passe humain -> fantome.
-CAMERA_ZOOM_PLAYER = 1.18
-CAMERA_ZOOM_GHOST = 0.82
+CAMERA_ZOOM_PLAYER = 2.4
+CAMERA_ZOOM_GHOST = 0.92
 CAMERA_ZOOM_SMOOTH_TIME = 0.55
 # Mort -> fantome : gros plan rapide, secousse + particules, puis recul.
-CAMERA_ZOOM_DEATH = 1.82
+CAMERA_ZOOM_DEATH = 3.0
 DEATH_ZOOM_IN_TIME = 0.28
 DEATH_BURST_TIME = 0.50
 DEATH_ZOOM_OUT_TIME = 0.78
