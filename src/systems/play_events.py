@@ -122,6 +122,12 @@ def on_player_win(view: PlayView, data: dict) -> None:
 
     view.machine.try_to(GameState.VICTORY)
     if view.session.advance_level():
-        view.setup()
+        from src.ui.menus import show_level_error
+        from src.world.level import LevelFormatError
+
+        try:
+            view.setup()
+        except LevelFormatError as error:
+            show_level_error(view.window, view.session, error)
         return
     view.window.show_view(VictoryView(view.session))

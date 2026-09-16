@@ -39,7 +39,7 @@ def cell_texture(item: PaletteItem, size: int) -> arcade.Texture:
         sprite_name = _SPRITE_KINDS.get(item.kind)
         if item.kind in DECORATION_SPECS:
             texture = _decoration_swatch(item.kind, size)
-        else if sprite_name is not None:
+        elif sprite_name is not None:
             texture = sprites.load_texture(sprite_name, size=size)
         else:
             texture = _placeholder(item, size)

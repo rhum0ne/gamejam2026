@@ -171,10 +171,19 @@ class Level:
         if not map_path.is_absolute():
             map_path = settings.MAPS_DIR / map_path
         if not map_path.exists():
-            raise FileNotFoundError(f"carte introuvable : {map_path}")
-        with map_path.open(encoding="utf-8") as stream:
-            data = json.load(stream)
-        return cls.from_dict(data)
+            raise LevelFormatError(f"carte introuvable : {map_path.name}")
+        try:
+            with map_path.open(encoding="utf-8") as stream:
+                data = json.load(stream)
+        except json.JSONDecodeError as error:
+            raise LevelFormatError(
+                f"JSON invalide dans {map_path.name} : {error.msg} "
+                f"(ligne {error.lineno}, colonne {error.colno})"
+            ) from error
+        try:
+            return cls.from_dict(data)
+        except LevelFormatError as error:
+            raise LevelFormatError(f"{map_path.name} : {error}") from error
 
     @classmethod
     def from_dict(cls, data: dict) -> "Level":
@@ -323,8 +332,15 @@ class Level:
         self._ensure_in_bounds(column, row)
         sprite = self._terrain_at(column, row)
         if sprite is None:
+            occupant = self._non_gated_occupant(column, row)
+            detail = (
+                f"occupe par {occupant}"
+                if occupant is not None
+                else "case vide"
+            )
             raise LevelFormatError(
-                f"setBlock void : aucun bloc a ({column}, {row})"
+                f"setBlock void : aucun bloc a ({column}, {row}) "
+                f"({detail} ; la plaque ne retire que murs, murs spectraux et piques)"
             )
         lists = tuple(sprite.sprite_lists)
         if not lists:
@@ -339,6 +355,24 @@ class Level:
             for sprite in sprite_list:
                 if abs(sprite.center_x - x) < 1 and abs(sprite.center_y - y) < 1:
                     return sprite
+        return None
+
+    def _non_gated_occupant(self, column: int, row: int) -> str | None:
+        """Nom de ce qui occupe la case, si ce n'est pas un bloc void-able."""
+        x, y = self.tile_center(column, row, self.rows)
+        named = (
+            ("un decor", self.decorations),
+            ("une torche", self.torches),
+            ("un lance-flammes", self.flamethrowers),
+            ("une porte", self.doors),
+            ("un checkpoint", self.checkpoints),
+            ("un objet", self.items),
+            ("un ennemi", self.enemies),
+        )
+        for label, sprites in named:
+            for sprite in sprites:
+                if abs(sprite.center_x - x) < 1 and abs(sprite.center_y - y) < 1:
+                    return label
         return None
 
     def _ensure_in_bounds(self, column: int, row: int) -> None:

@@ -12,8 +12,9 @@ from collections.abc import Callable
 import arcade
 
 from src.editor.document import EditorDocument
-from src.systems.game_state import GameSession, PlayView
+from src.systems.game_state import GameSession
 from src.ui.display import use_default_camera
+from src.ui.menus import open_play_view
 
 
 def start_playtest(
@@ -28,4 +29,4 @@ def start_playtest(
         document.save()
     session = GameSession(map_override=document.path.name, on_leave=resume)
     use_default_camera(window)
-    window.show_view(PlayView(session))
+    open_play_view(window, session)

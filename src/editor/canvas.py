@@ -236,7 +236,6 @@ class GridCanvas:
             sprite = arcade.Sprite(texture, center_x=center_x, center_y=center_y)
             if item.spec is not None and item.spec.tint is not None:
                 sprite.color = item.spec.tint
-        sprite = arcade.Sprite(texture, center_x=center_x, center_y=center_y)
         if kind == "flamethrower":
             spec = self.document.flame_at(column, row)
             if spec is not None:

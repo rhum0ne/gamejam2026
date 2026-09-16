@@ -29,8 +29,8 @@ from src.systems.events import PLAYER_DEATH, PLAYER_GHOST_END, PLAYER_WIN  # noq
 from src.systems.game_state import GameSession, GameState, PlayView  # noqa: E402
 from src.systems.upgrades import SoulProgression  # noqa: E402
 from src.ui import keys  # noqa: E402
-from src.ui.menus import TitleView, VictoryView  # noqa: E402
-from src.world.level import Level  # noqa: E402
+from src.ui.menus import LevelErrorView, TitleView, VictoryView  # noqa: E402
+from src.world.level import Level, LevelFormatError  # noqa: E402
 
 FRAME = settings.FRAME_TIME
 
@@ -50,6 +50,37 @@ def check_levels() -> None:
             extra = f", {len(level.mechanisms)} plaque(s), {hanging} pique(s) plafond"
         print(f"  carte '{name}' -> {level.name}: {level.columns}x{level.rows} tuiles, "
               f"{len(level.walls)} murs, {len(level.items)} objets, {len(level.enemies)} ennemis{extra}")
+    check_invalid_activator()
+
+
+def check_invalid_activator() -> None:
+    """Une plaque qui pointe dans le vide doit lever un message explicite."""
+    from src.world.level import LevelFormatError
+
+    data = {
+        "name": "test",
+        "tile_size": 32,
+        "legend": {"#": "wall", "P": "player_spawn"},
+        "rows": ["####", "#P.#", "####"],
+        "activators": [
+            {
+                "x": 1,
+                "y": 1,
+                "width": 1,
+                "activate": {"setBlock": [{"x": 2, "y": 1, "type": "void"}]},
+            }
+        ],
+    }
+    try:
+        Level.from_dict(data)
+    except LevelFormatError as error:
+        message = str(error)
+        assert "activators[0]" in message, message
+        assert "(2, 1)" in message, message
+        assert "case vide" in message, message
+        print(f"  plaque orpheline -> {message}")
+        return
+    raise AssertionError("une plaque sans bloc aurait du etre refusee")
 
 
 def check_progression() -> None:
@@ -433,6 +464,14 @@ def check_menus(window: arcade.Window) -> None:
         advance(view, 1)
         view.on_resize(settings.SCREEN_MIN_WIDTH, settings.SCREEN_MIN_HEIGHT)
         advance(view, 1)
+    error_view = LevelErrorView(
+        session,
+        LevelFormatError(
+            "activators[0] : setBlock void : aucun bloc a (17, 41) (case vide)"
+        ),
+    )
+    window.show_view(error_view)
+    advance(error_view, 2)
     play = PlayView(session)
     window.show_view(play)
     assert play.atmosphere.puff_count > 0, "l'atmosphere de premier plan doit etre peuplee"
