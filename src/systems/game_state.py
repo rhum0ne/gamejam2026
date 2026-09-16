@@ -239,7 +239,7 @@ class PlayView(arcade.View):
         self.player.respawn_point = self.level.checkpoint_spawn
         for checkpoint in self.level.checkpoints:
             if checkpoint.spawn_point == self.level.checkpoint_spawn:
-                self.level.activate_checkpoint(checkpoint)
+                self.level.activate_checkpoint(checkpoint, ignite=False)
                 break
         self.player.bind_world(self.level.static_walls, platforms=[self.level.corpses])
         for enemy in self.level.enemies:

@@ -307,6 +307,7 @@ class Checkpoint(arcade.Sprite):
         super().__init__(self._idle, center_x=center_x, center_y=center_y + lift)
         sprites.apply_rect_hit_box(self, size, size, offset_y=-lift)
         self.active = False
+        self._ignite = 0.0
         self._burst = SoulBurst()
 
     @property
@@ -314,29 +315,136 @@ class Checkpoint(arcade.Sprite):
         """Centre de la tuile, pas du sprite (le totem est plus haut que la case)."""
         return self._spawn
 
-    def activate(self) -> None:
+    def activate(self, *, ignite: bool = True) -> None:
         """Passe a la texture allumee. No-op si deja le checkpoint courant."""
         if self.active:
             return
         self.active = True
         self.texture = self._lit
+        if ignite:
+            self._ignite = settings.CHECKPOINT_IGNITE_TIME
+            self.play_respawn()
+            return
+        self._ignite = 0.0
 
     def deactivate(self) -> None:
         """Revient a la texture eteinte."""
         if not self.active:
             return
         self.active = False
+        self._ignite = 0.0
         self.texture = self._idle
 
     def play_respawn(self) -> None:
         """Eclat de motes bleues : le corps revient ici."""
-        self._burst.emit(self.center_x, self.center_y + self.height * 0.15)
+        self._burst.emit(self.center_x, self.center_y + self.height * settings.CHECKPOINT_GLOW_LIFT)
 
     def update(self, delta_time: float = settings.FRAME_TIME, *args, **kwargs) -> None:
         self._burst.update(delta_time)
+        if self._ignite > 0.0:
+            self._ignite = max(0.0, self._ignite - delta_time)
+
+    def draw_glow(self, *, layer: str = "all") -> None:
+        """Halo du crane : flash d'allumage, puis respiration tant qu'il est actif."""
+        if layer not in ("all", "bloom", "core"):
+            raise ValueError(f"layer inconnu : {layer!r}")
+        idle, flash = self._glow_mix()
+        if idle <= 0.001 and flash <= 0.001:
+            return
+        glow_x, glow_y = self._glow_origin()
+        size_mul = idle + flash * (settings.CHECKPOINT_IGNITE_PEAK - 1.0)
+        alpha_mul = idle + flash * (settings.CHECKPOINT_IGNITE_ALPHA - 1.0)
+        if layer in ("all", "bloom"):
+            self._stamp_bloom(glow_x, glow_y, size_mul, alpha_mul, flash)
+        if layer in ("all", "core"):
+            draw_glow(
+                glow_x,
+                glow_y,
+                settings.CHECKPOINT_GLOW_INNER * size_mul,
+                settings.CHECKPOINT_GLOW_INNER * size_mul,
+                settings.COLOR_CHECKPOINT_GLOW_CORE,
+                _glow_alpha(settings.CHECKPOINT_GLOW_INNER_ALPHA * alpha_mul),
+            )
 
     def draw_fx(self) -> None:
         self._burst.draw()
+
+    def _glow_origin(self) -> tuple[float, float]:
+        return self.center_x, self.center_y + self.height * settings.CHECKPOINT_GLOW_LIFT
+
+    def _glow_mix(self) -> tuple[float, float]:
+        """Retourne (intensite de repos, intensite du flash), chacune dans [0, 1+]."""
+        if not self.active:
+            return 0.0, 0.0
+        pulse = 1.0 + settings.CHECKPOINT_GLOW_PULSE * math.sin(
+            time.perf_counter() * settings.CHECKPOINT_GLOW_PULSE_SPEED
+            + self.center_x * 0.07
+        )
+        if self._ignite <= 0.0:
+            return pulse, 0.0
+        duration = max(settings.CHECKPOINT_IGNITE_TIME, 0.001)
+        progress = 1.0 - self._ignite / duration
+        rise = max(0.04, min(0.6, settings.CHECKPOINT_IGNITE_RISE))
+        if progress < rise:
+            flash = (progress / rise) ** 0.55
+        else:
+            flash = (1.0 - (progress - rise) / (1.0 - rise)) ** 1.55
+        idle_in = min(1.0, progress / 0.38)
+        return pulse * idle_in, flash
+
+    def _stamp_bloom(
+        self,
+        glow_x: float,
+        glow_y: float,
+        size_mul: float,
+        alpha_mul: float,
+        flash: float,
+    ) -> None:
+        width_scale = settings.CHECKPOINT_GLOW_WIDTH_SCALE
+        wash = settings.CHECKPOINT_GLOW_WASH * size_mul
+        outer = settings.CHECKPOINT_GLOW_OUTER * size_mul
+        mid = settings.CHECKPOINT_GLOW_MID * size_mul
+        draw_glow(
+            glow_x,
+            glow_y,
+            wash * width_scale,
+            wash,
+            settings.COLOR_CHECKPOINT_GLOW,
+            _glow_alpha(settings.CHECKPOINT_GLOW_WASH_ALPHA * alpha_mul),
+        )
+        draw_glow(
+            glow_x,
+            glow_y,
+            outer * width_scale,
+            outer,
+            settings.COLOR_CHECKPOINT_GLOW,
+            _glow_alpha(settings.CHECKPOINT_GLOW_ALPHA * alpha_mul),
+        )
+        draw_glow(
+            glow_x,
+            glow_y,
+            mid * width_scale,
+            mid,
+            settings.COLOR_CHECKPOINT_GLOW,
+            _glow_alpha(settings.CHECKPOINT_GLOW_MID_ALPHA * alpha_mul),
+        )
+        if flash <= 0.02:
+            return
+        duration = max(settings.CHECKPOINT_IGNITE_TIME, 0.001)
+        wave = 1.0 - self._ignite / duration
+        flash_size = settings.CHECKPOINT_IGNITE_FLASH_SIZE * (0.28 + 0.72 * wave)
+        draw_glow(
+            glow_x,
+            glow_y,
+            flash_size * width_scale,
+            flash_size,
+            settings.COLOR_CHECKPOINT_GLOW,
+            _glow_alpha(settings.CHECKPOINT_IGNITE_FLASH_ALPHA * (1.0 - wave) ** 1.35),
+        )
+
+
+def _glow_alpha(value: float) -> int:
+    return max(1, min(255, int(value)))
 
 
 def is_solid_for_ghost(wall: arcade.Sprite) -> bool:
