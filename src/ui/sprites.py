@@ -17,7 +17,7 @@ from pathlib import Path
 
 import arcade
 from arcade.hitbox import HitBox
-from PIL import Image
+from PIL import Image, ImageDraw
 
 import settings
 
@@ -56,6 +56,40 @@ def load_texture(name: str, *, size: int | None = None) -> arcade.Texture:
     image = _open_image(name)
     if size is not None and image.size != (size, size):
         image = image.resize((size, size), Image.Resampling.NEAREST)
+    texture = arcade.Texture(image, hash=key)
+    _TEXTURE_CACHE[key] = texture
+    return texture
+
+
+def placeholder_tile(
+    color: tuple[int, int, int],
+    size: int,
+    *,
+    accent: tuple[int, int, int] | None = None,
+) -> arcade.Texture:
+    """Tuile procedurale (placeholder) : fond + cadre clair, mise en cache."""
+    if size <= 0:
+        raise ValueError("size doit etre strictement positif")
+    shine = accent if accent is not None else tuple(
+        min(255, channel + 48) for channel in color
+    )
+    key = f"placeholder|{color}|{shine}|{size}"
+    cached = _TEXTURE_CACHE.get(key)
+    if cached is not None:
+        return cached
+    image = Image.new("RGBA", (size, size), (*color, 255))
+    draw = ImageDraw.Draw(image)
+    inset = max(1, size // 8)
+    draw.rectangle(
+        (inset, inset, size - inset - 1, size - inset - 1),
+        outline=(*shine, 255),
+        width=max(1, size // 16),
+    )
+    draw.line(
+        (inset + 1, inset + 1, size - inset - 2, inset + 1),
+        fill=(*shine, 255),
+        width=max(1, size // 16),
+    )
     texture = arcade.Texture(image, hash=key)
     _TEXTURE_CACHE[key] = texture
     return texture

@@ -81,6 +81,7 @@ class Player(arcade.Sprite):
         self.inventory: set[ItemKind] = set()
         self.respawn_point: tuple[float, float] = (center_x, center_y)
         self._physics: arcade.PhysicsEnginePlatformer | None = None
+        self._solids: list[arcade.SpriteList] = []
         self._time_off_ground = 0.0
         self._place_on_tile(center_x, center_y)
         self._was_on_ground = True
@@ -120,6 +121,9 @@ class Player(arcade.Sprite):
             platforms=list(platforms) if platforms else None,
             gravity_constant=settings.PLAYER_GRAVITY,
         )
+        self._solids = list(walls)
+        if platforms:
+            self._solids.extend(platforms)
 
     def _place_on_tile(self, center_x: float, center_y: float) -> None:
         """Pose les pieds sur le bas de la tuile dont `center` est le milieu."""
@@ -331,7 +335,8 @@ class Player(arcade.Sprite):
         self._cap_fall_speed()
         grounded = self._physics.can_jump()
         if grounded and not self._was_on_ground:
-            self._landing_timer = settings.PLAYER_LANDING_SLOW_TIME
+            if not self._standing_on_ice():
+                self._landing_timer = settings.PLAYER_LANDING_SLOW_TIME
             self._dust.emit_landing(
                 self.center_x,
                 self.bottom,
@@ -386,7 +391,7 @@ class Player(arcade.Sprite):
 
     def _tick_run_dust(self, delta_time: float) -> None:
         full_speed = abs(self.change_x) >= settings.PLAYER_SPEED * settings.PARTICLE_RUN_SPEED_RATIO
-        if not full_speed:
+        if not full_speed or self._standing_on_ice():
             self._dust.stop_run()
             return
         behind_x = self.center_x - self.facing * (self.width * 0.55)
@@ -407,18 +412,25 @@ class Player(arcade.Sprite):
 
     def _apply_horizontal(self, delta_time: float) -> None:
         grounded = self._was_on_ground
-        landing = grounded and self._landing_timer > 0.0
+        on_ice = grounded and self._standing_on_ice()
+        landing = grounded and self._landing_timer > 0.0 and not on_ice
         max_speed = settings.PLAYER_SPEED * (
             settings.PLAYER_LANDING_SPEED_SCALE if landing else 1.0
         )
         accel = max_speed / max(settings.PLAYER_ACCEL_TIME, 0.001)
+        if on_ice:
+            accel *= settings.PLAYER_ICE_ACCEL_SCALE
         direction = self._move_dir
         if grounded:
             if direction == 0:
-                self.change_x += (0.0 - self.change_x) * _exp_alpha(
-                    delta_time, settings.PLAYER_SLIDE_TIME
+                slide = (
+                    settings.PLAYER_ICE_SLIDE_TIME if on_ice else settings.PLAYER_SLIDE_TIME
                 )
-                if abs(self.change_x) < 0.18:
+                self.change_x += (0.0 - self.change_x) * _exp_alpha(delta_time, slide)
+                stop = (
+                    settings.PLAYER_ICE_STOP_SPEED if on_ice else 0.18
+                )
+                if abs(self.change_x) < stop:
                     self.change_x = 0.0
                 return
             if self.change_x * direction < 0.0:
@@ -440,3 +452,19 @@ class Player(arcade.Sprite):
         self.change_x = _approach(
             self.change_x, direction * air_cap, air_accel * delta_time
         )
+
+    def _standing_on_ice(self) -> bool:
+        """True si un pied repose sur un bloc `slippery`."""
+        if not self._solids:
+            return False
+        probes = (
+            (self.center_x, self.bottom - 2),
+            (self.center_x - self.width * 0.28, self.bottom - 2),
+            (self.center_x + self.width * 0.28, self.bottom - 2),
+        )
+        for group in self._solids:
+            for probe_x, probe_y in probes:
+                for sprite in arcade.get_sprites_at_point((probe_x, probe_y), group):
+                    if getattr(sprite, "slippery", False):
+                        return True
+        return False

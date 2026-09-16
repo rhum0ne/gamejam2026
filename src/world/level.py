@@ -73,6 +73,7 @@ from src.world.obstacles import (
     TILE_SPECS,
     Checkpoint,
     Door,
+    IceBlock,
     SpectralWall,
     Spike,
     TileSpec,
@@ -606,6 +607,9 @@ def _add_terrain(level: Level, x: float, y: float, kind: str) -> None:
     spec: TileSpec = tile_spec(kind)
     if spec.role == "spike":
         level.hazards.append(Spike(x, y, size=level.tile_size, tile=kind))
+        return
+    if spec.role == "ice":
+        level.walls.append(IceBlock(x, y, size=level.tile_size, tile=kind))
         return
     level.walls.append(Wall(x, y, size=level.tile_size, tile=kind))
 

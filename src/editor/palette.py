@@ -68,6 +68,7 @@ _TERRAIN_META: dict[str, tuple[str, str]] = {
     "dirt_corner": ("Terre coin gauche", "["),
     "dirt_corner_right": ("Terre coin droit", "]"),
     "dirt_floating_block": ("Bloc flottant", "F"),
+    settings.TILE_KIND_ICE: ("Glace", "~"),
     "spike": ("Piques (sol)", "^"),
     "spike_up": ("Piques (plafond)", "v"),
 }
@@ -113,13 +114,19 @@ def _terrain_items(taken: set[str]) -> list[PaletteItem]:
         symbol = free_symbol(taken, wanted or kind.upper())
         taken.add(symbol)
         hazard = spec.role == "spike"
+        if spec.role == "spike":
+            color = settings.COLOR_SPIKE
+        elif spec.role == "ice":
+            color = settings.COLOR_ICE
+        else:
+            color = settings.COLOR_WALL
         items.append(
             PaletteItem(
                 kind=kind,
                 label=label,
                 category=CATEGORY_HAZARD if hazard else CATEGORY_TERRAIN,
                 symbol=symbol,
-                color=settings.COLOR_SPIKE if hazard else settings.COLOR_WALL,
+                color=color,
                 spec=spec,
             )
         )

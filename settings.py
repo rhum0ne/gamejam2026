@@ -69,6 +69,10 @@ RENDER_CHUNK_TILES = 16
 # chunk de 512 px apparait d'un coup au bord de l'ecran.
 RENDER_CULL_PAD = 120.0
 
+# Identifiants de TYPE de tuile (legende JSON / TILE_SPECS). Ce ne sont PAS
+# des noms de fichiers sprite : les confondre cassait le chargeur.
+TILE_KIND_ICE = "ice_block"
+
 # Noms de fichiers dans SPRITES_DIR, sans extension. La legende d'une carte
 # JSON reprend ces noms (ou un alias : rock, dirt). Le chargeur ajoute `.png`.
 SPRITE_DIRT = "dirt_1"
@@ -225,6 +229,10 @@ CHECKPOINT_IGNITE_RISE = 0.18  # part du flash consacree a la montee
 PLAYER_ACCEL_TIME = 0.25
 # Glissade a l'arret (sol) : 2-3 frames, quelques pixels tout au plus.
 PLAYER_SLIDE_TIME = 0.01
+# Glace : le corps conserve son elan, acceleration et demi-tour sont mous.
+PLAYER_ICE_SLIDE_TIME = 1.7
+PLAYER_ICE_ACCEL_SCALE = 0.38
+PLAYER_ICE_STOP_SPEED = 0.06
 # Fraction de l'acceleration au sol quand le joueur est en l'air (1 = aussi vif qu'au sol).
 PLAYER_AIR_CONTROL = 1.15
 # Ralentissement juste apres l'atterrissage.
@@ -444,6 +452,8 @@ SOUL_LEVEL_THRESHOLDS: tuple[int, ...] = (0, 3, 8, 15, 25, 40)
 
 COLOR_BACKGROUND = (18, 18, 28)
 COLOR_WALL = (72, 76, 96)
+COLOR_ICE = (118, 196, 220)
+COLOR_ICE_INNER = (186, 232, 244)
 COLOR_SPECTRAL_WALL = (96, 84, 140)
 COLOR_SPIKE = (196, 84, 84)
 COLOR_FLAMETHROWER = (232, 96, 36)

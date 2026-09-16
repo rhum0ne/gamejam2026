@@ -65,6 +65,7 @@ TILE_SPECS: dict[str, TileSpec] = {
     "dirt_floating_block": _wall(settings.SPRITE_DIRT_FLOATING, overlay=True),
     "spike": _spike(settings.SPRITE_SPIKE),
     "spike_up": _spike(settings.SPRITE_SPIKE_HANGING, hanging=True),
+    settings.TILE_KIND_ICE: TileSpec(sprite="", role="ice"),
 }
 
 
@@ -80,6 +81,10 @@ def tile_spec(name: str) -> TileSpec:
 
 def terrain_texture(spec: TileSpec, size: int) -> arcade.Texture:
     """Texture d'affichage d'une tuile de mur, deja a la taille de la carte."""
+    if spec.role == "ice":
+        return sprites.placeholder_tile(
+            settings.COLOR_ICE, size, accent=settings.COLOR_ICE_INNER
+        )
     if spec.role != "wall":
         raise ValueError(f"terrain_texture attend un mur, pas '{spec.role}'")
     if spec.overlay:
@@ -96,6 +101,7 @@ class Wall(arcade.Sprite):
     """Bloc de terrain plein, infranchissable pour tout le monde."""
 
     ghost_passable = False
+    slippery = False
 
     def __init__(
         self,
@@ -105,7 +111,7 @@ class Wall(arcade.Sprite):
         tile: str = settings.SPRITE_DIRT,
     ) -> None:
         spec = tile_spec(tile)
-        if spec.role != "wall":
+        if spec.role not in ("wall", "ice"):
             raise ValueError(f"'{tile}' n'est pas une tuile de mur")
         texture = terrain_texture(spec, size)
         super().__init__(
@@ -115,6 +121,21 @@ class Wall(arcade.Sprite):
             center_y=center_y,
         )
         sprites.apply_rect_hit_box(self, size, size)
+
+
+class IceBlock(Wall):
+    """Bloc de glace : solide, mais le corps physique glisse dessus."""
+
+    slippery = True
+
+    def __init__(
+        self,
+        center_x: float,
+        center_y: float,
+        size: int = settings.TILE_SIZE,
+        tile: str = settings.TILE_KIND_ICE,
+    ) -> None:
+        super().__init__(center_x, center_y, size=size, tile=tile)
 
 
 class SpectralWall(Wall):
