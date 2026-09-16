@@ -221,13 +221,17 @@ class Level:
             return
         self.checkpoint_spawn = self.player_spawn
 
-    def activate_checkpoint(self, checkpoint: Checkpoint) -> None:
-        """Allume `checkpoint` et eteint les autres totems."""
+    def activate_checkpoint(self, checkpoint: Checkpoint, *, ignite: bool = True) -> None:
+        """Allume `checkpoint` et eteint les autres totems.
+
+        `ignite=False` pose le halo de repos sans le flash d'allumage
+        (spawn initial du niveau).
+        """
         if checkpoint.active:
             return
         for other in self.checkpoints:
             if other is checkpoint:
-                other.activate()
+                other.activate(ignite=ignite)
             else:
                 other.deactivate()
 
@@ -368,9 +372,10 @@ class Level:
                 self.chunks_drawn = self.chunks_total
         self.plates.draw()
         self.falling_spikes.draw()
+        with glow_pass():
+            for checkpoint in self.checkpoints:
+                checkpoint.draw_glow()
         self.checkpoints.draw(pixelated=True)
-        for checkpoint in self.checkpoints:
-            checkpoint.draw_fx()
         self.doors.draw()
         with glow_pass():
             self._queue_torch_glows(view_rect, layer="bloom")
@@ -380,6 +385,8 @@ class Level:
             self._queue_torch_glows(view_rect, layer="core")
             for item in self.items:
                 item.draw_fx()
+        for checkpoint in self.checkpoints:
+            checkpoint.draw_fx()
         self.corpses.draw()
         self.items.draw()
         self.enemies.draw()
