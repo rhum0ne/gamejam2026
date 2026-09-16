@@ -452,9 +452,9 @@ class Level:
         if tight_cull and view_rect is not None and self._wall_chunks:
             self.walls_drawn, self.tiles_drawn = self._draw_visible_terrain(view_rect)
         else:
-            self.walls.draw()
-            self.spectral_walls.draw()
-            self.hazards.draw()
+            self.walls.draw(pixelated=True)
+            self.spectral_walls.draw(pixelated=True)
+            self.hazards.draw(pixelated=True)
             if view_rect is not None and self._wall_chunks:
                 self.walls_drawn, self.tiles_drawn = self._count_visible_terrain(view_rect)
             else:
@@ -463,18 +463,18 @@ class Level:
                     len(self.walls) + len(self.spectral_walls) + len(self.hazards)
                 )
                 self.chunks_drawn = self.chunks_total
-        self.plates.draw()
-        self.falling_spikes.draw()
+        self.plates.draw(pixelated=True)
+        self.falling_spikes.draw(pixelated=True)
         with glow_pass():
             for checkpoint in self.checkpoints:
                 checkpoint.draw_glow()
-        self.checkpoints.draw()
-        self.doors.draw()
-        self.decorations.draw()
+        self.checkpoints.draw(pixelated=True)
+        self.doors.draw(pixelated=True)
+        self.decorations.draw(pixelated=True)
         with glow_pass():
             self._queue_torch_glows(view_rect, layer="bloom")
-        self.torch_stems.draw()
-        self.torches.draw()
+        self.torch_stems.draw(pixelated=True)
+        self.torches.draw(pixelated=True)
         with glow_pass():
             self._queue_torch_glows(view_rect, layer="core")
             for item in self.items:
@@ -484,9 +484,9 @@ class Level:
         for thrower in self.flamethrowers:
             thrower.draw_flame()
         self.flamethrowers.draw(pixelated=True)
-        self.corpses.draw()
-        self.items.draw()
-        self.enemies.draw()
+        self.corpses.draw(pixelated=True)
+        self.items.draw(pixelated=True)
+        self.enemies.draw(pixelated=True)
 
     def draw_static_hit_boxes(self, color, view_rect=None) -> None:
         """Contours de collision du terrain, culles comme le rendu."""
@@ -616,12 +616,12 @@ class Level:
         for walls, spectral, hazards in self._iter_visible_chunk_triple(view_rect):
             self.chunks_drawn += 1
             if walls:
-                walls.draw()
+                walls.draw(pixelated=True)
                 walls_drawn += len(walls)
             if spectral:
-                spectral.draw()
+                spectral.draw(pixelated=True)
             if hazards:
-                hazards.draw()
+                hazards.draw(pixelated=True)
             tiles_drawn += len(walls) + len(spectral) + len(hazards)
         return walls_drawn, tiles_drawn
 

@@ -65,6 +65,10 @@ FRAME_TIME = 1 / FPS
 # de dimensions : voir `CameraRig` dans `src/world/camera.py`.
 WORLD_VIEW_WIDTH = SCREEN_WIDTH
 WORLD_VIEW_HEIGHT = SCREEN_HEIGHT
+# Pixels du framebuffer hors-ecran par pixel de conception. 2 = image 2560x1440
+# pour une vue 1280x720 : le zoom camera (2.4) et le plein ecran restent nets.
+# Le nombre de chunks soumis ne change pas (le cadrage monde est identique).
+RENDER_SCALE = 2
 
 # --------------------------------------------------------------------------- #
 # Monde / tuiles
