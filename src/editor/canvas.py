@@ -23,6 +23,7 @@ from src.editor import icons, palette
 from src.editor.activators import Activator, cluster_targets
 from src.editor.document import CellState, EditorDocument
 from src.editor.selection import Block, GridRect
+from src.world.flamethrower import aim_sprite, flame_aabb, flame_start
 from src.world.mechanisms import plate_geometry
 
 
@@ -199,6 +200,10 @@ class GridCanvas:
         texture = icons.cell_texture(palette.item(kind), self.document.tile_size)
         center_x, center_y = self.cell_center(column, row)
         sprite = arcade.Sprite(texture, center_x=center_x, center_y=center_y)
+        if kind == "flamethrower":
+            spec = self.document.flame_at(column, row)
+            if spec is not None:
+                aim_sprite(sprite, spec.direction)
         self._sprites.append(sprite)
         self._by_cell[(column, row)] = sprite
 
@@ -236,6 +241,7 @@ class GridCanvas:
         if hover is not None and self.document.inside(*hover):
             cell = GridRect(hover[0], hover[1], hover[0], hover[1])
             self._draw_rect(cell, settings.COLOR_EDITOR_HOVER, settings.COLOR_EDITOR_ACCENT)
+            self._draw_flame_preview(*hover)
         if clipboard is not None and hover is not None:
             self._draw_rect(
                 clipboard.rect_at(*hover), settings.COLOR_EDITOR_PASTE, settings.COLOR_EDITOR_WARNING
@@ -304,6 +310,28 @@ class GridCanvas:
             target_x = center_column * tile + tile / 2
             target_y = (self.document.rows - 1 - center_row) * tile + tile / 2
             arcade.draw_line(start_x, start_y, target_x, target_y, color, 2)
+
+    def _draw_flame_preview(self, column: int, row: int) -> None:
+        """Montre la portee du lance-flammes sous le curseur."""
+        spec = self.document.flame_at(column, row)
+        if spec is None:
+            return
+        tile = self.document.tile_size
+        center_x, center_y = self.cell_center(column, row)
+        origin_x, origin_y = flame_start(center_x, center_y, spec.direction, tile)
+        left, right, bottom, top = flame_aabb(
+            origin_x,
+            origin_y,
+            spec.direction,
+            spec.range_tiles * tile,
+            settings.FLAMETHROWER_HEIGHT,
+        )
+        arcade.draw_lrbt_rectangle_filled(
+            left, right, bottom, top, settings.COLOR_FLAME_PREVIEW
+        )
+        arcade.draw_lrbt_rectangle_outline(
+            left, right, bottom, top, settings.COLOR_FLAMETHROWER, 1
+        )
 
     def _draw_rect(
         self,

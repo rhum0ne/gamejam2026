@@ -41,6 +41,10 @@ l'enregistrer dans `TILE_SPECS` (`src/world/obstacles.py`), puis l'utiliser
 dans la legende de la carte.
 
 `torch` (symbole `i`) est un decor sans collision : placeholder + halo.
+`flamethrower` (symbole `f`) est un piege : buse sprite + jet shader. Les
+reglages (`range` en tuiles, `interval` en secondes, `dir` right/down/left/up)
+vivent dans le champ JSON `flamethrowers`, comme les plaques. L'ancien champ
+`facing` 1/-1 est encore lu.
 """
 
 from __future__ import annotations
@@ -57,6 +61,7 @@ import settings
 from src.entities.enemy import Enemy
 from src.entities.glow import glow_pass
 from src.entities.item import Item, ItemKind
+from src.world.flamethrower import FlameSpec, Flamethrower, parse_flame_specs
 from src.world.mechanisms import (
     GatedTile,
     Mechanism,
@@ -125,6 +130,7 @@ class Level:
     mechanisms: list[Mechanism] = field(default_factory=list)
     torches: arcade.SpriteList = field(default_factory=_dynamic_sprite_list)
     torch_stems: arcade.SpriteList = field(default_factory=_dynamic_sprite_list)
+    flamethrowers: arcade.SpriteList = field(default_factory=_dynamic_sprite_list)
     player_spawn: tuple[float, float] = (0.0, 0.0)
     checkpoint_spawn: tuple[float, float] = (0.0, 0.0)
     tiles_drawn: int = 0
@@ -137,6 +143,7 @@ class Level:
     _wall_chunks: list[arcade.SpriteList] = field(default_factory=list)
     _spectral_chunks: list[arcade.SpriteList] = field(default_factory=list)
     _hazard_chunks: list[arcade.SpriteList] = field(default_factory=list)
+    _flame_specs: dict[tuple[int, int], FlameSpec] = field(default_factory=dict)
 
     # ------------------------------------------------------------------ #
     # Chargement
@@ -173,6 +180,10 @@ class Level:
             columns=widths.pop(),
             rows=len(grid),
         )
+        try:
+            level._flame_specs = parse_flame_specs(data.get("flamethrowers"))
+        except ValueError as error:
+            raise LevelFormatError(str(error)) from error
         level._build(grid, legend)
         level._bind_activators(data.get("activators", []))
         return level
@@ -387,6 +398,9 @@ class Level:
                 item.draw_fx()
         for checkpoint in self.checkpoints:
             checkpoint.draw_fx()
+        for thrower in self.flamethrowers:
+            thrower.draw_flame()
+        self.flamethrowers.draw(pixelated=True)
         self.corpses.draw()
         self.items.draw()
         self.enemies.draw()
@@ -443,6 +457,7 @@ class Level:
             self.falling_spikes,
             self.torches,
             self.torch_stems,
+            self.flamethrowers,
         ):
             sprite_list.initialize()
         for chunks in (self._wall_chunks, self._spectral_chunks, self._hazard_chunks):
@@ -549,6 +564,7 @@ class Level:
         """
         self.corpses.update(delta_time)
         self.checkpoints.update(delta_time)
+        self.flamethrowers.update(delta_time)
         for item in self.items:
             item.update(delta_time, attractor=attractor)
 
@@ -663,10 +679,27 @@ def _parse_set_blocks(activate: object) -> list[tuple[int, int]]:
             )
         tiles.append((_coord(entry, "x"), _coord(entry, "y")))
     return tiles
+
+
 def _add_torch(level: Level, x: float, y: float) -> None:
     torch = Torch(x, y)
     level.torches.append(torch)
     level.torch_stems.append(torch.stem)
+
+
+def _add_flamethrower(level: Level, x: float, y: float) -> None:
+    column = int(x // level.tile_size)
+    row = level.rows - 1 - int(y // level.tile_size)
+    spec = level._flame_specs.get((column, row))
+    thrower = Flamethrower(
+        x,
+        y,
+        size=level.tile_size,
+        range_tiles=spec.range_tiles if spec is not None else settings.FLAMETHROWER_RANGE,
+        interval=spec.interval if spec is not None else settings.FLAMETHROWER_INTERVAL,
+        direction=spec.direction if spec is not None else "right",
+    )
+    level.flamethrowers.append(thrower)
 
 
 _FACTORIES: dict[str, Callable[[Level, float, float], None]] = {
@@ -678,6 +711,7 @@ _FACTORIES: dict[str, Callable[[Level, float, float], None]] = {
     "soul_orb": _add_soul_orb,
     "enemy": _add_enemy,
     "torch": _add_torch,
+    "flamethrower": _add_flamethrower,
 }
 
 

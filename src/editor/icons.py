@@ -12,12 +12,17 @@ from __future__ import annotations
 import arcade
 from PIL import Image, ImageDraw, ImageFont
 
+import settings
 from src.editor.palette import PaletteItem
 from src.ui import sprites
 from src.world.obstacles import terrain_texture
 
 _CACHE: dict[tuple[str, int], arcade.Texture] = {}
 _GLYPH_CANVAS = (12, 14)  # taille de rendu de la police bitmap par defaut
+
+_SPRITE_KINDS = {
+    "flamethrower": settings.SPRITE_FLAMETHROWER,
+}
 
 
 def cell_texture(item: PaletteItem, size: int) -> arcade.Texture:
@@ -30,7 +35,11 @@ def cell_texture(item: PaletteItem, size: int) -> arcade.Texture:
         return cached
     spec = item.spec
     if spec is None:
-        texture = _placeholder(item, size)
+        sprite_name = _SPRITE_KINDS.get(item.kind)
+        if sprite_name is not None:
+            texture = sprites.load_texture(sprite_name, size=size)
+        else:
+            texture = _placeholder(item, size)
     elif spec.role == "spike":
         texture = sprites.load_texture(spec.sprite, size=size)
     else:

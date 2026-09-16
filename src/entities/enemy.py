@@ -103,6 +103,7 @@ class Enemy(arcade.Sprite):
         self._attack_cooldown = 0.0
         self._physics: arcade.PhysicsEnginePlatformer | None = None
         self._ground: arcade.SpriteList | None = None
+        self._hazards: arcade.SpriteList | None = None
 
     # ------------------------------------------------------------------ #
     # Initialisation
