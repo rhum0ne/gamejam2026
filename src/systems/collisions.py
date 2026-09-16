@@ -20,7 +20,7 @@ import arcade
 
 import settings
 from src.entities.corpse import Corpse
-from src.entities.enemy import Enemy, EnemyState
+from src.entities.enemy_base import EnemyBase
 from src.entities.ghost import Ghost
 from src.entities.item import Item
 from src.entities.player import Player
@@ -42,16 +42,16 @@ def player_hits_flame(player: Player, throwers: arcade.SpriteList) -> bool:
 def enemies_hit_by_flame(
     enemies: arcade.SpriteList,
     throwers: arcade.SpriteList,
-) -> list[Enemy]:
+) -> list[EnemyBase]:
     """Ennemis (non mourants) touches par un jet allume."""
-    hit: list[Enemy] = []
+    hit: list[EnemyBase] = []
     seen: set[int] = set()
     for thrower in throwers:
         if not isinstance(thrower, Flamethrower) or not thrower.is_lethal:
             continue
         for enemy in enemies:
             ident = id(enemy)
-            if ident in seen or enemy.state is EnemyState.DYING:
+            if ident in seen or enemy.is_dying:
                 continue
             if thrower.overlaps(enemy):
                 seen.add(ident)
@@ -147,12 +147,13 @@ def corpse_touched_by_ghost(ghost: Ghost, corpses: arcade.SpriteList) -> Corpse 
     return touched[0] if touched else None
 
 
-def enemy_striking_player(player: Player, enemies: Iterable[Enemy]) -> Enemy | None:
-    """Premier ennemi dont le coup d'epee touche le corps physique vivant.
+def enemy_striking_player(player: Player, enemies: Iterable[EnemyBase]) -> EnemyBase | None:
+    """Premier ennemi dont l'attaque touche le corps physique vivant.
 
     Le simple contact avec le corps d'un ennemi ne tue pas : seul le coup,
-    pendant les frames ou la lame est tendue (`Enemy.strike_active`), compte.
-    Un ennemi `DYING` n'est jamais en train de frapper.
+    pendant les frames ou l'attaque est active (`EnemyBase.strike_active`),
+    compte. Un ennemi en train de mourir (`is_dying`) n'est jamais en train
+    de frapper.
     """
     if not player.alive:
         return None
@@ -162,7 +163,7 @@ def enemy_striking_player(player: Player, enemies: Iterable[Enemy]) -> Enemy | N
     return None
 
 
-def enemies_hit_by_player_attack(player: Player, enemies: arcade.SpriteList) -> list[Enemy]:
+def enemies_hit_by_player_attack(player: Player, enemies: arcade.SpriteList) -> list[EnemyBase]:
     """Retourne les ennemis recouverts par la hitbox de la frappe frontale."""
     bounds = player.attack_bounds
     if bounds is None:
@@ -171,7 +172,7 @@ def enemies_hit_by_player_attack(player: Player, enemies: arcade.SpriteList) -> 
     return [
         enemy
         for enemy in enemies
-        if enemy.state is not EnemyState.DYING
+        if not enemy.is_dying
         and not player.attack_has_hit(enemy)
         and enemy.right >= left
         and enemy.left <= right
@@ -181,16 +182,16 @@ def enemies_hit_by_player_attack(player: Player, enemies: arcade.SpriteList) -> 
 
 
 def plate_is_weighted(plate: arcade.Sprite, weights: Sequence[arcade.Sprite]) -> bool:
-    """Un poids (corps, cadavre, ennemi) appuie-t-il sur la plaque ?"""
+    """Un poids (corps, cadavre, ennemi au sol) appuie-t-il sur la plaque ?"""
     return any(arcade.check_for_collision(plate, body) for body in weights)
 
 
 def enemies_hit_by_falling_spikes(
     enemies: arcade.SpriteList,
     falling_spikes: arcade.SpriteList,
-) -> list[Enemy]:
+) -> list[EnemyBase]:
     """Ennemis touches par une pique en chute."""
-    hit: list[Enemy] = []
+    hit: list[EnemyBase] = []
     seen: set[int] = set()
     for spike in falling_spikes:
         for enemy in arcade.check_for_collision_with_list(spike, enemies):

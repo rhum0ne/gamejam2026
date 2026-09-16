@@ -33,12 +33,15 @@ CATEGORY_UNKNOWN = "Inconnu"
 
 # Symboles disponibles pour un type sans symbole habituel. Ni le point (vide),
 # ni l'espace, ni les quotes (le JSON de carte les echappe mal). L'alphabet
-# grec sert de rab quand les ASCII sont pris (beaucoup de decors).
+# grec puis cyrillique servent de rab quand les ASCII sont pris (beaucoup de
+# decors, plus les archetypes d'ennemis).
 _GREEK = "αβγδεζηθικλμνξοπρστυφχψωΑΒΓΔΕΖΗΘΙΚΛΜΝΞΟΠΡΣΤΥΦΧΨΩ"
+_CYRILLIC = "абвгдежзийклмнопрстуфхцчшщъыьэюяАБВГДЕЖЗИЙКЛМНОПРСТУФХЦЧШЩЪЫЬЭЮЯ"
 _SYMBOL_POOL = (
     "dI#TBG=^voPCDKEijklmnpqrstuwxyzabcefhABFHJLMNOQRSUVWXYZ0123456789"
     "()[]{}<>-+*/\\|!$%&@;:?~,_'`"
     + _GREEK
+    + _CYRILLIC
 )
 
 
@@ -80,6 +83,8 @@ _GAMEPLAY_META: dict[str, tuple[str, str, str, tuple[int, int, int]]] = {
     "key": ("Cle", CATEGORY_GAMEPLAY, "K", settings.COLOR_KEY),
     "soul_orb": ("Ame (bille bleue)", CATEGORY_GAMEPLAY, "o", settings.COLOR_SOUL_ORB),
     "enemy": ("Ennemi", CATEGORY_GAMEPLAY, "E", settings.COLOR_ENEMY),
+    "bat": ("Chauve-souris", CATEGORY_GAMEPLAY, "b", settings.COLOR_BAT),
+    "zombie": ("Zombie", CATEGORY_GAMEPLAY, "z", settings.COLOR_ZOMBIE),
     "spectral_wall": ("Mur spectral", CATEGORY_GAMEPLAY, "=", settings.COLOR_SPECTRAL_WALL),
     "torch": ("Torche", CATEGORY_DECOR, "i", settings.COLOR_TORCH_FLAME),
     "flamethrower": ("Lance-flammes", CATEGORY_HAZARD, "f", settings.COLOR_FLAMETHROWER),

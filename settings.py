@@ -584,10 +584,224 @@ ENEMY_CORPSE_SMELL_RANGE = 320.0  # distance d'attraction vers un cadavre
 ENEMY_HIT_FLASH_DURATION = 0.18
 ENEMY_KNOCKBACK_SPEED = 5.0
 ENEMY_KNOCKBACK_FRICTION = 0.72
+# Halo rouge en mode fantome (squelette) : meme vocabulaire que BAT_/ZOMBIE_.
+ENEMY_GHOST_GLOW_SCALE = 5.6
+ENEMY_GHOST_GLOW_ALPHA = 96
+ENEMY_GHOST_GLOW_INNER_SCALE = 2.4
+ENEMY_GHOST_GLOW_INNER_ALPHA = 170
+ENEMY_GHOST_GLOW_PULSE = 0.16
+ENEMY_GHOST_GLOW_PULSE_SPEED = 3.4
 ANIM_ENEMY_IDLE_FRAME_TIME = 0.12
 ANIM_ENEMY_WALK_FRAME_TIME = 0.07
 ANIM_ENEMY_ATTACK_FRAME_TIME = 0.05
 ANIM_ENEMY_DIE_FRAME_TIME = 0.06
+
+# --------------------------------------------------------------------------- #
+# Ennemis - chauve-souris (volant)
+# --------------------------------------------------------------------------- #
+
+# Planches "Bat with VFX" (impacts/trainees dessines dans les planches d'attaque
+# elles-memes) : assets/animations/. Frames natives carrees, contrairement au
+# squelette (96x64) : 64x64.
+BAT_DIR = ANIMATIONS_DIR / "Enemies" / "Bat" / "Bat with VFX"
+BAT_SPRITE_SLEEP = BAT_DIR / "Bat-Sleep.png"
+BAT_SPRITE_WAKE = BAT_DIR / "Bat-WakeUp.png"
+BAT_SPRITE_FLY = BAT_DIR / "Bat-IdleFly.png"
+BAT_SPRITE_RUN = BAT_DIR / "Bat-Run.png"
+BAT_SPRITE_ATTACK_DIVE = BAT_DIR / "Bat-Attack1.png"  # piquet vertical
+BAT_SPRITE_ATTACK_LUNGE = BAT_DIR / "Bat-Attack2.png"  # charge horizontale
+BAT_SPRITE_DIE = BAT_DIR / "Bat-Die.png"
+BAT_FRAME_SIZE = 64
+BAT_SCALE = 1.0
+# Hitbox rectangulaire = corps visible (ailes repliees), pas l'envergure en
+# plein vol : mesuree au centre de la frame, a affiner avec DEBUG_SHOW_HITBOXES.
+BAT_WIDTH = 22
+BAT_HEIGHT = 22
+BAT_HITBOX_OFFSET_X = 0.0
+BAT_HITBOX_OFFSET_Y = -4.0
+# La planche dessine la chauve-souris tournee vers la gauche (le squelette est
+# tourne vers la droite) : `Bat.facing` doit donc s'appliquer en miroir.
+BAT_SPRITE_FACES_LEFT = True
+BAT_HIT_POINTS = 1
+
+# Deplacement (vol libre, sans gravite : cf. Ghost._apply_steering/_move_axis).
+BAT_SPEED = 3.2  # px/frame
+BAT_ACCEL_TIME = 0.18  # secondes pour atteindre BAT_SPEED
+BAT_COAST_TIME = 0.30  # secondes pour freiner une fois la cible hors de portee
+BAT_ARRIVE_DISTANCE = 6.0  # px : assez pres du perchoir pour se rendormir
+
+# Reveil / poursuite / laisse (distances au joueur ou au perchoir d'origine).
+BAT_WAKE_RANGE = 190.0
+BAT_LEASH_RANGE = 340.0  # au-dela du perchoir, la chauve-souris abandonne et rentre
+
+# Attaque : la chauve-souris pique si le joueur est nettement en-dessous, dans
+# un cone autour de la verticale (pas seulement pile en-dessous : un angle
+# genereux, sinon l'attaque ne se declenche presque jamais en jeu reel) ; elle
+# charge a l'horizontale si le joueur est a peu pres a la meme hauteur.
+BAT_ATTACK_RANGE = 70.0  # distance de declenchement (CHASE -> ATTACK)
+BAT_ATTACK_REACH = 46.0  # rayon reel du coup pendant les frames actives, depuis la position apres l'elan
+# RANGE < LURCH_DISTANCE + REACH : un joueur immobile a portee de declenchement
+# est touche ; un joueur qui s'ecarte pendant l'armement peut esquiver.
+BAT_DIVE_MIN_DROP = 16.0  # px : le joueur doit etre au moins ce peu en-dessous
+BAT_DIVE_CONE_ANGLE = 50.0  # degres de part et d'autre de la verticale (piquet)
+BAT_LUNGE_VERTICAL_RANGE = 20.0  # tolerance de hauteur pour la charge horizontale
+BAT_ATTACK_COOLDOWN = 0.5  # secondes de pause entre deux attaques
+# Frames actives de chaque planche d'attaque, calees sur le pic du mouvement
+# dessine (mesure sur les planches, voir le dessin du corps par frame, pas
+# juste la duree totale) : le piquet touche le fond de sa boucle (~13px sous
+# le centre), la charge son extension horizontale maximale (~19px).
+BAT_DIVE_HIT_FRAMES: tuple[int, int] = (5, 6)
+BAT_LUNGE_HIT_FRAMES: tuple[int, int] = (7, 9)
+# La planche anime elle-meme un vrai mouvement (piquet/charge), mais son
+# amplitude est modeste (10-20px autour du centre de la frame 64x64) : bien
+# moins que BAT_ATTACK_RANGE. Sans un minimum de vrai deplacement du sprite,
+# l'attaque semble foncer sur le joueur sans jamais l'atteindre des qu'il
+# n'est pas deja tout pres. On ne va donc pas jusqu'au joueur (ca collerait
+# les deux sprites, cf. retour visuel) : juste un elan court et plafonne vers
+# lui, que l'amplitude dessinee complete jusqu'au contact.
+BAT_ATTACK_LURCH_DISTANCE = 32.0  # px : distance max parcourue par l'ancre pendant l'elan
+# Duree de l'elan (interpolation directe vers la cible, cf. `Bat._advance_attack_lurch`) :
+# volontairement PAS un ressort vitesse/acceleration comme le vol normal, qui
+# survolerait la cible sur un trajet si court et rearmerait sans fin
+# ("picorement"). Doit tenir dans la fenetre entre BAT_ATTACK_LURCH_START_FRAME
+# et le debut des frames actives (le piquet laisse le moins de marge : ~0.1s).
+BAT_ATTACK_LURCH_DURATION = 0.07  # secondes
+# Les toutes premieres frames des deux planches d'attaque dessinent un recul/
+# une montee (l'armement, a l'oppose du joueur : mesure sur les planches,
+# cf. commentaire au-dessus). Faire foncer l'ancre des la frame 0 la ferait
+# avancer pendant que le dessin recule : un contresens visuel tres marque
+# (l'impression de "rejouer" quelque chose). L'elan n'est donc arme qu'a
+# partir de cette frame, une fois le dessin reellement lance vers la cible.
+BAT_ATTACK_LURCH_START_FRAME = 4
+
+ANIM_BAT_SLEEP_FRAME_TIME = 0.20
+ANIM_BAT_WAKE_FRAME_TIME = 0.05
+ANIM_BAT_FLY_FRAME_TIME = 0.09
+ANIM_BAT_RUN_FRAME_TIME = 0.06
+ANIM_BAT_ATTACK_DIVE_FRAME_TIME = 0.045
+ANIM_BAT_ATTACK_LUNGE_FRAME_TIME = 0.04
+ANIM_BAT_DIE_FRAME_TIME = 0.05
+
+BAT_GHOST_GLOW_SCALE = 5.0
+BAT_GHOST_GLOW_ALPHA = 90
+BAT_GHOST_GLOW_INNER_SCALE = 2.2
+BAT_GHOST_GLOW_INNER_ALPHA = 160
+BAT_GHOST_GLOW_PULSE = 0.18
+BAT_GHOST_GLOW_PULSE_SPEED = 3.8
+COLOR_BAT = (150, 96, 190)
+COLOR_BAT_GLOW = (255, 28, 22)
+COLOR_BAT_GLOW_CORE = (255, 92, 64)
+
+# --------------------------------------------------------------------------- #
+# Ennemis - zombie (traqueur au sol)
+# --------------------------------------------------------------------------- #
+
+# Planches "Zombie_Default" : 6 frames 64x64 chacune. Pas de planche de course :
+# la course rejoue Walk en accelere (ANIM_ZOMBIE_RUN_FRAME_TIME).
+ZOMBIE_DIR = ANIMATIONS_DIR / "Enemies" / "Zombie"
+ZOMBIE_SPRITE_IDLE = ZOMBIE_DIR / "Zombie_Default_Idle.png"
+ZOMBIE_SPRITE_WALK = ZOMBIE_DIR / "Zombie_Default_Walk.png"
+ZOMBIE_SPRITE_ATTACK = ZOMBIE_DIR / "Zombie_Default_Attack1.png"
+ZOMBIE_SPRITE_HURT = ZOMBIE_DIR / "Zombie_Default_Hurt.png"
+ZOMBIE_SPRITE_DIE = ZOMBIE_DIR / "Zombie_Default_Dead.png"
+ZOMBIE_FRAME_SIZE = 64
+# Planches agrandies au chargement (nearest-neighbor, cf. ENTITY_SCALE du
+# joueur) : a 1.0, le zombie (~31 px de haut) paraissait minuscule a cote du
+# squelette (~46 px) et du joueur. A 1.5, il fait ~46 px, comme le squelette.
+ZOMBIE_SCALE = 1.5
+# Corps mesure sur les planches natives : x 20-44, y 17-48 (pieds a 16 px du
+# bas de la frame, pas tout en bas comme le squelette) -> hitbox 22x30
+# centree, abaissee d'1 px pour que son bas tombe pile sous les pieds.
+# Valeurs en pixels finaux (apres ZOMBIE_SCALE), comme `apply_rect_hit_box` l'attend.
+ZOMBIE_WIDTH = 22 * ZOMBIE_SCALE
+ZOMBIE_HEIGHT = 30 * ZOMBIE_SCALE
+ZOMBIE_HITBOX_OFFSET_X = 0.0
+ZOMBIE_HITBOX_OFFSET_Y = -1.0 * ZOMBIE_SCALE
+# Les planches dessinent le zombie tourne vers la gauche (cf. BAT_SPRITE_FACES_LEFT).
+ZOMBIE_SPRITE_FACES_LEFT = True
+# 2 PV : le premier stomp le sonne (HURT) et l'enrage, le second le tue.
+ZOMBIE_HIT_POINTS = 2
+
+# Deplacement : traine les pieds en patrouille, sprinte une fois qu'il a vu le
+# joueur. Le joueur (PLAYER_SPEED 5.5) le distance, mais doit s'engager.
+ZOMBIE_PATROL_SPEED = 0.8  # px/frame
+ZOMBIE_RUN_SPEED = 3.4  # px/frame
+ZOMBIE_ACCEL_TIME = 0.30  # secondes (lissage exponentiel de change_x)
+# Demi-tour en course : il freine et met ce temps a se retourner. Sauter
+# par-dessus lui fait donc gagner un vrai temps d'avance.
+ZOMBIE_TURN_TIME = 0.25
+
+# Vision : cone avant (demi-plan du cote ou il regarde) + ligne de vue (les
+# murs bloquent). Dans son dos, il ne "sent" le joueur qu'au contact.
+ZOMBIE_SIGHT_RANGE = 280.0
+ZOMBIE_BACK_SENSE_RANGE = 48.0
+# Asymetrique : il ne peut pas grimper (pas de vision vers le haut au-dela d'un
+# petit ecart, comme ENEMY_AGGRO_VERTICAL_RANGE), mais il peut se laisser
+# tomber jusqu'a ZOMBIE_MAX_DROP_TILES : il voit donc aussi loin vers le bas.
+ZOMBIE_SIGHT_UP_RANGE = 48.0
+ZOMBIE_MAX_DROP_TILES = 4
+ZOMBIE_SIGHT_DOWN_RANGE = (ZOMBIE_MAX_DROP_TILES + 0.5) * TILE_SIZE
+ZOMBIE_EYE_OFFSET_Y = 12.0  # px au-dessus du centre : point de depart de la ligne de vue
+ZOMBIE_SIGHT_CHECK_INTERVAL = 0.1  # secondes entre deux tests de ligne de vue (perf)
+ZOMBIE_SIGHT_CHECK_RESOLUTION = 8  # px entre deux echantillons du rayon
+# Cri d'alerte (PATROL -> CHASE) : laisse au joueur le temps de reagir.
+# Duree reelle = frames x FRAME_TIME / ANIM_SPEED : 5 x 0.04 / 0.5 = 0.4 s.
+ANIM_ZOMBIE_ALERT_FRAME_TIME = 0.04
+
+# Memoire : une fois la vue perdue, il court au dernier point ou il a vu le
+# joueur pendant ZOMBIE_MEMORY_TIME, puis cherche (regarde a gauche/droite)
+# pendant ZOMBIE_SEARCH_TIME avant de reprendre sa patrouille.
+ZOMBIE_MEMORY_TIME = 1.5
+ZOMBIE_SEARCH_TIME = 1.5
+ZOMBIE_SEARCH_LOOK_TIME = 0.5  # secondes entre deux changements de regard
+ZOMBIE_ARRIVE_DISTANCE = 8.0  # px : assez pres du dernier point vu
+
+# Chute : en course, il se laisse tomber d'une plateforme si sa cible est plus
+# bas et qu'un sol existe a au plus ZOMBIE_MAX_DROP_TILES tuiles sous le bord
+# (les puits a piques du tutoriel sont bien plus profonds : il ne s'y jette pas).
+# La cible doit etre au moins ce peu sous le centre du zombie : un joueur au
+# meme etage a son centre a la meme hauteur (a quelques px pres), un joueur une
+# seule tuile plus bas l'a deja ~32 px en dessous.
+ZOMBIE_DROP_MIN_TARGET_DROP = 12.0
+# Pendant la chute, l'elan de course porte le zombie ~1 tuile plus loin que le
+# bord : le sol d'arrivee est aussi cherche une colonne plus loin.
+ZOMBIE_DROP_PROBE_COLUMNS = 2
+
+# Griffe bondissante : il garde son elan pendant l'armement (frames 0-3), puis
+# reste penche (frames 4-5) -> fenetre pour le punir. RANGE > REACH ici, a
+# l'inverse du squelette : c'est le bond qui comble la difference.
+ZOMBIE_ATTACK_RANGE = 64.0
+ZOMBIE_ATTACK_REACH = 60.0
+ZOMBIE_ATTACK_VERTICAL_RANGE = 40.0
+# Frames d'Attack1 (0-5) : 0-1 = armement (bras leve), 2-3 = griffe, 4-5 = penche.
+ZOMBIE_ATTACK_HIT_FRAMES: tuple[int, int] = (2, 3)
+ZOMBIE_ATTACK_LUNGE_LAST_FRAME = 3
+ZOMBIE_ATTACK_LUNGE_SPEED = 2.6  # px/frame au depart du bond (ou la vitesse de course si plus grande)
+ZOMBIE_ATTACK_LUNGE_DECAY = 0.12  # secondes (constante de temps du ralentissement)
+ZOMBIE_ATTACK_COOLDOWN = 1.0
+# Plus gourmand que le squelette : sent de plus loin et y va en courant.
+ZOMBIE_CORPSE_SMELL_RANGE = 400.0
+
+# Temps par frame AVANT ANIM_SPEED (0.5 : les durees reelles sont doublees).
+ANIM_ZOMBIE_IDLE_FRAME_TIME = 0.12
+ANIM_ZOMBIE_WALK_FRAME_TIME = 0.12
+ANIM_ZOMBIE_RUN_FRAME_TIME = 0.035
+# Griffe a 2 x 0.08 / 0.5 = 0.32 s du declenchement ; attaque entiere ~1 s,
+# dont la fin penchee (frames 4-5) est la fenetre pour le punir.
+ANIM_ZOMBIE_ATTACK_FRAME_TIME = 0.08
+ANIM_ZOMBIE_EAT_FRAME_TIME = 0.15  # Attack1 frames 3-4 en boucle (penche, mastique)
+ANIM_ZOMBIE_HURT_FRAME_TIME = 0.035  # sonne ~0.42 s
+ANIM_ZOMBIE_DIE_FRAME_TIME = 0.07
+
+ZOMBIE_GHOST_GLOW_SCALE = 5.2
+ZOMBIE_GHOST_GLOW_ALPHA = 92
+ZOMBIE_GHOST_GLOW_INNER_SCALE = 2.3
+ZOMBIE_GHOST_GLOW_INNER_ALPHA = 165
+ZOMBIE_GHOST_GLOW_PULSE = 0.14
+ZOMBIE_GHOST_GLOW_PULSE_SPEED = 2.6  # plus lent : un zombie "respire" moins vite
+COLOR_ZOMBIE = (84, 170, 132)
+COLOR_ZOMBIE_GLOW = (255, 28, 22)
+COLOR_ZOMBIE_GLOW_CORE = (255, 92, 64)
 
 # --------------------------------------------------------------------------- #
 # Objets et progression

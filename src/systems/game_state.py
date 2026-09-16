@@ -556,7 +556,7 @@ class PlayView(arcade.View):
             if _in_view(thrower, view, pad):
                 thrower.draw_ghost_glow(bind_blend=False)
         for enemy in self.level.enemies:
-            if _in_view(enemy, view, pad):
+            if _in_view(enemy, view, enemy.glow_radius):
                 enemy.draw_ghost_glow(bind_blend=False)
 
     def _draw_mechanism_hints(self) -> None:
@@ -728,12 +728,13 @@ class PlayView(arcade.View):
         self.atmosphere.update(delta_time)
 
     def _mechanism_weights(self) -> list[arcade.Sprite]:
-        """Corps, cadavres et ennemis : le fantome ne pese pas sur les plaques."""
+        """Corps, cadavres et ennemis au sol : le fantome ne pese pas sur les
+        plaques, ni un ennemi volant (`EnemyBase.weighs_on_plates`)."""
         weights: list[arcade.Sprite] = []
         if self.player.alive:
             weights.append(self.player)
         weights.extend(self.level.corpses)
-        weights.extend(self.level.enemies)
+        weights.extend(enemy for enemy in self.level.enemies if enemy.weighs_on_plates)
         return weights
 
     def _update_mechanisms(self) -> None:
