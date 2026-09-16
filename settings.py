@@ -97,14 +97,20 @@ SPRITE_SPIKE_HANGING = "spike_up"
 SPRITE_PLAYER_WALK = "player_walk"
 SPRITE_PLAYER_IDLE = "player_idle"
 SPRITE_PLAYER_ATTACK = "player_attack_1"
+SPRITE_PLAYER_DEATH = "player_death"
+SPRITE_PLAYER_BONES = "player_bones"
 SPRITE_GHOST_WALK = "gost_walk"
 SPRITE_GHOST_DISAPPEAR = "gost_disappears"
 SPRITE_KEY = "key"
+SPRITE_DOOR_CLOSED = "door_close"
+SPRITE_DOOR_OPEN = "door_open"
 SPRITE_CHECKPOINT = "phoenix_resurrection-desactive"
 SPRITE_CHECKPOINT_ACTIVE = "phoenix_resurrection-active"
 SPRITE_FLAMETHROWER = "Lance_flamme"
 # Art natif 125 px ; affiche ~3 tuiles, pieds cales sur la case.
 CHECKPOINT_SIZE = TILE_SIZE * 3
+# Porte : art 32x32 affiche sur 2 tuiles de haut (meme collision qu'avant).
+DOOR_DISPLAY_SIZE = TILE_SIZE * 2
 SPRITE_FRAME_SIZE = 32
 # Taille a l'ecran des sprites joueur / fantome (1.0 = 32 px).
 # L'agrandissement est fait en nearest-neighbor dans `load_strip`.
@@ -112,6 +118,7 @@ ENTITY_SCALE = 1.5
 ANIM_WALK_FRAME_TIME = 0.07
 ANIM_IDLE_FRAME_TIME = 0.12
 ANIM_PLAYER_ATTACK_FRAME_TIME = 0.03
+ANIM_PLAYER_DEATH_FRAME_TIME = 0.08
 ANIM_GHOST_DISAPPEAR_FRAME_TIME = 0.08
 # 1.0 = rythme de base ; plus petit = plus lent (0.5 = deux fois plus lent).
 ANIM_SPEED = 0.5
@@ -1036,7 +1043,7 @@ HUD_GAUGE_LOW = 0.22  # le timer fantome pulse sous ce ratio
 # --------------------------------------------------------------------------- #
 
 DEBUG_OVERLAY = True  # panneau : FPS, etat, tuiles a l'ecran, positions (F3 en jeu)
-DEBUG_SHOW_HITBOXES = False
+DEBUG_SHOW_HITBOXES = True
 DEBUG_SHOW_FPS = True  # si l'overlay est off, affiche quand meme le FPS en bas a gauche
 COLOR_DEBUG = (140, 230, 160)
 COLOR_DEBUG_PANEL = (8, 12, 18, 180)

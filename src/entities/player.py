@@ -58,6 +58,15 @@ def _attack_animation() -> sprites.StripAnimation:
     return sprites.StripAnimation(frames, settings.ANIM_PLAYER_ATTACK_FRAME_TIME, loop=False)
 
 
+def _death_animation() -> sprites.StripAnimation:
+    frames = sprites.load_strip(
+        settings.SPRITE_PLAYER_DEATH,
+        settings.SPRITE_FRAME_SIZE,
+        scale=settings.ENTITY_SCALE,
+    )
+    return sprites.StripAnimation(frames, settings.ANIM_PLAYER_DEATH_FRAME_TIME, loop=False)
+
+
 def _exp_alpha(delta_time: float, smooth_time: float) -> float:
     if smooth_time <= 0.0:
         return 1.0
@@ -79,6 +88,7 @@ class Player(arcade.Sprite):
         self._idle_breathe = _idle_breathe_animation(idle_frames)
         self._walk = _walk_animation()
         self._attack = _attack_animation()
+        self._death = _death_animation()
         super().__init__(self._idle_still.textures[0], center_x=center_x, center_y=center_y)
         sprites.apply_rect_hit_box(
             self,
@@ -265,7 +275,7 @@ class Player(arcade.Sprite):
         self.inventory.add(kind)
 
     def die(self) -> None:
-        """Marque le corps comme mort et l'immobilise."""
+        """Marque le corps comme mort, l'immobilise et lance l'anim de chute."""
         self.alive = False
         self.change_x = 0.0
         self.change_y = 0.0
@@ -285,6 +295,9 @@ class Player(arcade.Sprite):
         self._attack_queued = False
         self._attack_sound_events.clear()
         self._attack_sound_played = False
+        self._animator.play(self._death, restart=True)
+        self.texture = self._death.textures[0]
+        sprites.apply_facing(self, self.facing)
 
     def respawn_at(self, position: tuple[float, float]) -> None:
         """Fait reapparaitre le corps au checkpoint fourni."""
@@ -313,6 +326,9 @@ class Player(arcade.Sprite):
         self._attack_queued = False
         self._attack_sound_events.clear()
         self._attack_sound_played = False
+        self._animator.play(self._idle_still, restart=True)
+        self.texture = self._idle_still.textures[0]
+        sprites.apply_facing(self, self.facing)
 
     # ------------------------------------------------------------------ #
     # Commandes
@@ -485,7 +501,11 @@ class Player(arcade.Sprite):
         self._attack_chain_timer = max(0.0, self._attack_chain_timer - delta_time)
         if was_attacking and self._attack_time_left <= 0.0 and self._attack_queued:
             self._start_attack(self._attack_stage + 1)
-        if not self.alive or self._physics is None:
+        if not self.alive:
+            self.texture = self._animator.update(delta_time)
+            sprites.apply_facing(self, self.facing)
+            return
+        if self._physics is None:
             return
         if self.is_attacking:
             self.texture = self._attack_animator.update(delta_time)
