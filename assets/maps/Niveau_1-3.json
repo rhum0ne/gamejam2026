@@ -5,29 +5,28 @@
   "legend": {
     ".": "vide",
     "C": "checkpoint",
-    "[": "wall",
-    "-": "wall",
     "D": "door",
     "E": "enemy",
     "K": "key",
     "P": "player_spawn",
     "=": "spectral_wall",
     "^": "spike",
-    "i": "torch",
+    "v": "spike_up",
     "T": "wall"
   },
   "rows": [
-    "[TTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTT",
+    "TTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTT",
     "T..................................=...T",
     "T..................................=...T",
     "T..................................=.K.T",
     "T..................................TTTTT",
     "T..................................TTTTT",
     "T..................................TTTTT",
+    "T..................T....T....T.....TTTTT",
+    "T..................v....v....v.....TTTTT",
     "T..................................TTTTT",
-    "T..i.......i......i......i......i..TTTTT",
-    "T..................................TTTTT",
-    "T.CP.^^^^^^^^^^..C........E....E..DTTTTT",
-    "T----------------------------------TT-TT"
+    "T.CP......................E....E..DTTTTT",
+    "TTTTT^^^^^^^^^^TTTTTTTTTTTTTTTTTTTTTTTTT",
+    "TTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTT"
   ]
 }
