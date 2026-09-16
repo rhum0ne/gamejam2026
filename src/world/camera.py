@@ -293,6 +293,27 @@ class CameraRig:
             center_y + half_height,
         )
 
+    def screen_to_world_x(self, screen_x: float) -> float:
+        """Convertit une abscisse souris de la fenetre en coordonnee monde.
+
+        Le rendu passe par un framebuffer haute resolution puis est copie dans
+        une zone parfois letterboxee. Il faut donc retirer cette zone,
+        revenir aux coordonnees de conception, puis appliquer le zoom de la
+        camera. Utiliser directement ``viewport_width`` melangerait les
+        pixels du framebuffer et les unites du monde.
+        """
+        viewport_left, _bottom, viewport_width, _height = self._present_viewport
+        if viewport_width <= 0:
+            return self.world.position[0]
+        design_x = (
+            (screen_x - viewport_left)
+            * settings.WORLD_VIEW_WIDTH
+            / viewport_width
+        )
+        camera_x, _camera_y = self.world.position
+        zoom = max(float(self.world.zoom), 1e-6)
+        return camera_x + (design_x - settings.WORLD_VIEW_WIDTH / 2) / zoom
+
     def cull_rect(self) -> LRBT:
         """Rectangle de culling, plus large que l'ecran pour eviter les pop-in."""
         view = self.visible_rect()

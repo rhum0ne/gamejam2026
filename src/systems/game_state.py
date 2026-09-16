@@ -1031,8 +1031,7 @@ class PlayView(arcade.View):
         """Oriente le corps vers le curseur et lance une attaque au clic gauche."""
         if button != _ATTACK_BUTTON or self.machine.state is not GameState.PLAYING:
             return
-        camera_x, _ = self.camera.world.position
-        world_x = x + camera_x - self.camera.world.viewport_width / 2
+        world_x = self.camera.screen_to_world_x(x)
         if abs(world_x - self.player.center_x) > 2:
             self.player.facing = 1 if world_x > self.player.center_x else -1
         self.player.attack()
