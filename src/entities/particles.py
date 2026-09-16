@@ -1,4 +1,4 @@
-"""Poussiere de pied : burst a l'atterrissage, grains pendant la course."""
+"""Poussiere de pied, eclats d'ames, et eclaboussures de sang."""
 
 from __future__ import annotations
 
@@ -153,6 +153,86 @@ class DustParticles:
                 color=color,
             )
         )
+
+
+class BloodBurst:
+    """Gouttes de sang, emises au coup recu ou porte."""
+
+    def __init__(self, rng: random.Random | None = None) -> None:
+        self._grains: list[_Grain] = []
+        self._rng = rng if rng is not None else random.Random()
+        self._quads = QuadBatch(capacity=max(8, settings.BLOOD_MAX))
+
+    def clear(self) -> None:
+        self._grains.clear()
+
+    def emit(
+        self,
+        x: float,
+        y: float,
+        *,
+        direction: float = 0.0,
+        count: int | None = None,
+    ) -> None:
+        """Projette un jet de sang depuis `(x, y)`.
+
+        `direction` : -1 gauche, +1 droite, 0 dans toutes les directions.
+        """
+        n = settings.BLOOD_COUNT if count is None else max(0, count)
+        for _ in range(n):
+            if direction == 0.0:
+                angle = self._rng.uniform(0.0, math.tau)
+            else:
+                sign = 1.0 if direction > 0 else -1.0
+                angle = sign * (math.pi * 0.15 + self._rng.uniform(-settings.BLOOD_CONE, settings.BLOOD_CONE))
+            speed = self._rng.uniform(0.35, 1.0)
+            vx = math.cos(angle) * settings.BLOOD_SPEED_X * speed
+            vy = abs(math.sin(angle)) * settings.BLOOD_SPEED_Y * speed + self._rng.uniform(20.0, 70.0)
+            if direction == 0.0:
+                vy = math.sin(angle) * settings.BLOOD_SPEED_Y * speed
+            life = settings.BLOOD_LIFE * self._rng.uniform(0.65, 1.2)
+            size = self._rng.uniform(settings.BLOOD_SIZE_MIN, settings.BLOOD_SIZE_MAX)
+            color = settings.COLOR_BLOOD_BRIGHT if self._rng.random() > 0.45 else settings.COLOR_BLOOD
+            self._grains.append(
+                _Grain(
+                    x=x + self._rng.uniform(-settings.BLOOD_SPREAD, settings.BLOOD_SPREAD),
+                    y=y + self._rng.uniform(-settings.BLOOD_SPREAD * 0.5, settings.BLOOD_SPREAD),
+                    vx=vx,
+                    vy=vy,
+                    life=life,
+                    max_life=max(life, 0.001),
+                    size=size,
+                    gravity=settings.BLOOD_GRAVITY,
+                    color=color,
+                )
+            )
+        self._grains = self._grains[-settings.BLOOD_MAX :]
+
+    def update(self, delta_time: float = settings.FRAME_TIME) -> None:
+        dt = max(0.0, delta_time)
+        alive: list[_Grain] = []
+        for grain in self._grains:
+            grain.life -= dt
+            if grain.life <= 0.0:
+                continue
+            grain.vy -= grain.gravity * dt
+            grain.x += grain.vx * dt
+            grain.y += grain.vy * dt
+            grain.vx *= max(0.0, 1.0 - 2.2 * dt)
+            alive.append(grain)
+        self._grains = alive
+
+    def draw(self) -> None:
+        min_size = settings.PARTICLE_MIN_DRAW_SIZE
+        self._quads.begin()
+        for grain in self._grains:
+            fade = max(0.0, min(1.0, grain.life / grain.max_life))
+            size = max(min_size, grain.size * (0.5 + 0.5 * fade))
+            alpha = int(240 * fade)
+            if alpha <= 0:
+                continue
+            self._quads.add(grain.x, grain.y, size, grain.color, alpha)
+        self._quads.flush()
 
 
 class SoulBurst:

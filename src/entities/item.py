@@ -108,20 +108,43 @@ class Item(arcade.Sprite):
         self.center_y = center_y
 
     def draw_fx(self) -> None:
-        """Aura de la bille bleue ; no-op pour les autres objets."""
-        if self.kind is not ItemKind.SOUL_ORB:
+        """Aura de la bille bleue et halo dore des objets importants (cle)."""
+        if self.kind is ItemKind.SOUL_ORB:
+            pulse = 1.0 + settings.SOUL_ORB_GLOW_PULSE * math.sin(
+                self._elapsed * settings.SOUL_ORB_GLOW_PULSE_SPEED
+            )
+            size = self.profile.size * settings.SOUL_ORB_GLOW_SCALE
+            draw_glow(
+                self.center_x,
+                self.center_y,
+                size,
+                size,
+                settings.COLOR_SOUL_ORB,
+                int(settings.SOUL_ORB_GLOW_ALPHA * pulse),
+            )
             return
-        pulse = 1.0 + settings.SOUL_ORB_GLOW_PULSE * math.sin(
-            self._elapsed * settings.SOUL_ORB_GLOW_PULSE_SPEED
+        if self.kind is not ItemKind.KEY:
+            return
+        pulse = 1.0 + settings.KEY_GLOW_PULSE * math.sin(
+            self._elapsed * settings.KEY_GLOW_PULSE_SPEED
         )
-        size = self.profile.size * settings.SOUL_ORB_GLOW_SCALE
+        size = self.profile.size * settings.KEY_GLOW_SCALE
         draw_glow(
             self.center_x,
             self.center_y,
             size,
             size,
-            settings.COLOR_SOUL_ORB,
-            int(settings.SOUL_ORB_GLOW_ALPHA * pulse),
+            settings.COLOR_KEY_GLOW,
+            int(settings.KEY_GLOW_ALPHA * pulse),
+        )
+        inner = self.profile.size * settings.KEY_GLOW_INNER_SCALE
+        draw_glow(
+            self.center_x,
+            self.center_y,
+            inner,
+            inner,
+            settings.COLOR_KEY_GLOW_CORE,
+            int(settings.KEY_GLOW_INNER_ALPHA * pulse),
         )
 
     def update(

@@ -32,6 +32,7 @@ from src.entities.corpse import Corpse
 from src.entities.ghost import Ghost
 from src.entities.glow import draw_glow, glow_pass
 from src.entities.item import ItemKind
+from src.entities.particles import BloodBurst
 from src.entities.player import Player
 from src.systems import collisions
 from src.systems.ghost_emergence import GhostEmergence
@@ -221,6 +222,7 @@ class PlayView(arcade.View):
         self._rebirth: PlayerRebirth | None = None
         self.held_keys: set[int] = set()
         self._hitstop_timer = 0.0
+        self._blood = BloodBurst()
         self._attack_sound = self._load_attack_sound()
         self._delivered_items: list[ItemKind] = []
         bind_play_view(self)
@@ -260,6 +262,7 @@ class PlayView(arcade.View):
         self._rebirth = None
         self.held_keys.clear()
         self._hitstop_timer = 0.0
+        self._blood.clear()
         self._delivered_items.clear()
         self.machine = GameStateMachine(GameState.MENU)
         self.machine.to(GameState.PLAYING)
@@ -354,6 +357,7 @@ class PlayView(arcade.View):
                     self._draw_ghost_or_emergence(self.ghost)
                 elif self.ghost.vanishing:
                     draw_pixel_sprite(self.ghost)
+            self._blood.draw()
             if settings.DEBUG_SHOW_HITBOXES:
                 self._draw_hitboxes()
         self.camera.use_ui()
@@ -725,6 +729,7 @@ class PlayView(arcade.View):
             self._update_respawning(delta_time)
         self._resolve_falling_spike_kills()
         self._resolve_flame_kills()
+        self._blood.update(delta_time)
         self.atmosphere.update(delta_time)
 
     def _mechanism_weights(self) -> list[arcade.Sprite]:
@@ -891,6 +896,11 @@ class PlayView(arcade.View):
     def _resolve_player_collisions(self) -> None:
         for enemy in collisions.enemies_hit_by_player_attack(self.player, self.level.enemies):
             self.player.mark_attack_hit(enemy)
+            self._spill_blood(
+                enemy.center_x,
+                enemy.center_y,
+                direction=float(self.player.facing),
+            )
             orb = enemy.take_damage(
                 self.player.attack_damage,
                 knockback=(
@@ -925,19 +935,41 @@ class PlayView(arcade.View):
             return
 
         if collisions.player_hits_hazard(self.player, self.level):
+            self._spill_blood(self.player.center_x, self.player.center_y, count=settings.BLOOD_COUNT_PLAYER)
             emit_player_death(self, "spikes")
         elif collisions.player_hits_flame(self.player, self.level.flamethrowers):
+            self._spill_blood(self.player.center_x, self.player.center_y, count=settings.BLOOD_COUNT_PLAYER)
             emit_player_death(self, "flame")
         elif collisions.player_out_of_bounds(self.player, self.level):
             emit_player_death(self, "out_of_bounds")
-        elif collisions.enemy_striking_player(self.player, self.level.enemies) is not None:
-            emit_player_death(self, "enemy")
+        else:
+            striker = collisions.enemy_striking_player(self.player, self.level.enemies)
+            if striker is not None:
+                self._spill_blood(
+                    self.player.center_x,
+                    self.player.center_y,
+                    direction=float(striker.facing),
+                    count=settings.BLOOD_COUNT_PLAYER,
+                )
+                emit_player_death(self, "enemy")
+
+    def _spill_blood(
+        self,
+        x: float,
+        y: float,
+        *,
+        direction: float = 0.0,
+        count: int | None = None,
+    ) -> None:
+        """Eclabousse du sang au point d'impact."""
+        self._blood.emit(x, y, direction=direction, count=count)
 
     def _resolve_falling_spike_kills(self) -> None:
         """Une pique en chute tue les ennemis (le joueur est deja gere via les hazards)."""
         for enemy in collisions.enemies_hit_by_falling_spikes(
             self.level.enemies, self.level.falling_spikes
         ):
+            self._spill_blood(enemy.center_x, enemy.center_y)
             orb = enemy.take_damage()
             if orb is not None:
                 self.level.spawn_item(orb)
@@ -947,6 +979,7 @@ class PlayView(arcade.View):
         for enemy in collisions.enemies_hit_by_flame(
             self.level.enemies, self.level.flamethrowers
         ):
+            self._spill_blood(enemy.center_x, enemy.center_y)
             orb = enemy.take_damage()
             if orb is not None:
                 self.level.spawn_item(orb)
