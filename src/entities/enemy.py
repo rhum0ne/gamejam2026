@@ -103,8 +103,6 @@ class Enemy(arcade.Sprite):
         self._attack_cooldown = 0.0
         self._physics: arcade.PhysicsEnginePlatformer | None = None
         self._ground: arcade.SpriteList | None = None
-        self._hazards: arcade.SpriteList | None = None
-        self._glow_time = (center_x * 0.13 + center_y * 0.07) % math.tau
 
     # ------------------------------------------------------------------ #
     # Initialisation
