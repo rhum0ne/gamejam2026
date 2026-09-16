@@ -39,6 +39,19 @@ def _disappear_animation() -> sprites.StripAnimation:
     return sprites.StripAnimation(frames, settings.ANIM_GHOST_DISAPPEAR_FRAME_TIME, loop=False)
 
 
+def _ring_offsets(radius: int, step: int):
+    """Points d'un anneau carre, le haut d'abord, puis les cotes, puis le bas."""
+    yield (0, radius)
+    for x in range(-radius, radius + 1, step):
+        if x != 0:
+            yield (x, radius)
+    for y in range(radius - step, -radius, -step):
+        yield (radius, y)
+        yield (-radius, y)
+    for x in range(-radius, radius + 1, step):
+        yield (x, -radius)
+
+
 class Ghost(arcade.Sprite):
     """Esprit desincarne, ancre sur le cadavre qui vient d'etre laisse."""
 
@@ -54,8 +67,8 @@ class Ghost(arcade.Sprite):
         super().__init__(self._walk.textures[0], center_x=center_x, center_y=center_y)
         sprites.apply_rect_hit_box(
             self,
-            settings.GHOST_WIDTH * settings.ENTITY_SCALE,
-            settings.GHOST_HEIGHT * settings.ENTITY_SCALE,
+            settings.GHOST_HITBOX_WIDTH * settings.ENTITY_SCALE,
+            settings.GHOST_HITBOX_HEIGHT * settings.ENTITY_SCALE,
         )
         self._animator = sprites.Animator(self._walk)
         self.stats = stats
@@ -70,6 +83,7 @@ class Ghost(arcade.Sprite):
         self._emerging = False
         self._emerge_x = center_x
         self._emerge_y = center_y
+        self._emerge_lift = settings.DEATH_EMERGE_LIFT
         self._trail = PointTrail(
             settings.COLOR_TRAIL_GHOST,
             settings.COLOR_TRAIL_GHOST_CORE,
@@ -82,15 +96,41 @@ class Ghost(arcade.Sprite):
     def bind_world(self, solid_walls: arcade.SpriteList) -> None:
         """Definit les murs opaques au fantome (murs spectraux exclus)."""
         self._solid_walls = solid_walls
-        self._separate_from_walls()
+        self.place_safely()
 
-    def _separate_from_walls(self) -> None:
-        """Remonte le fantome s'il nait a cheval sur un mur (sprite agrandi)."""
-        max_lift = int(abs(self.height)) + settings.TILE_SIZE
-        for _ in range(max_lift):
-            if not arcade.check_for_collision_with_list(self, self._solid_walls):
-                return
-            self.center_y += 1
+    def _overlaps_walls(self) -> bool:
+        if self._solid_walls is None or not self._solid_walls:
+            return False
+        return bool(arcade.check_for_collision_with_list(self, self._solid_walls))
+
+    def place_safely(self) -> None:
+        """Decale le fantome vers le plus proche espace libre, en privilegiant le haut."""
+        if not self._overlaps_walls():
+            return
+        start_x, start_y = self.center_x, self.center_y
+        max_radius = int(settings.GHOST_SAFE_SEARCH_RADIUS)
+        step = max(1, int(settings.GHOST_SAFE_SEARCH_STEP))
+        for radius in range(step, max_radius + 1, step):
+            for dx, dy in _ring_offsets(radius, step):
+                self.center_x = start_x + dx
+                self.center_y = start_y + dy
+                if not self._overlaps_walls():
+                    return
+        self.center_x, self.center_y = start_x, start_y
+
+    def _free_lift(self, desired: float) -> float:
+        """Plus grande elevation qui reste hors des murs, depuis la position actuelle."""
+        origin_y = self.center_y
+        step = max(1, int(settings.GHOST_SAFE_SEARCH_STEP))
+        lift = max(0.0, desired)
+        while lift > 0:
+            self.center_y = origin_y + lift
+            if not self._overlaps_walls():
+                self.center_y = origin_y
+                return lift
+            lift -= step
+        self.center_y = origin_y
+        return 0.0
 
     # ------------------------------------------------------------------ #
     # Etat
@@ -133,12 +173,14 @@ class Ghost(arcade.Sprite):
         """Cache le fantome au centre du corps, pret a s'en extraire."""
         self._emerging = True
         self.alpha = 0
-        self.scale = settings.DEATH_EMERGE_SCALE
         self.change_x = 0.0
         self.change_y = 0.0
         self._input = (0.0, 0.0)
         self._emerge_x = self.center_x
         self._emerge_y = self.center_y
+        # Mesurer l'elevation a taille pleine : le sprite est encore petit ici.
+        self._emerge_lift = self._free_lift(settings.DEATH_EMERGE_LIFT)
+        self.scale = settings.DEATH_EMERGE_SCALE
         sprites.apply_facing(self, self.facing)
 
     def tick_emerge(self, progress: float) -> None:
@@ -150,13 +192,14 @@ class Ghost(arcade.Sprite):
         ) * amount
         sprites.apply_facing(self, self.facing)
         self.center_x = self._emerge_x
-        self.center_y = self._emerge_y + settings.DEATH_EMERGE_LIFT * amount
+        self.center_y = self._emerge_y + self._emerge_lift * amount
 
     def end_emerge(self) -> None:
         """Laisse le fantome a sa taille normale, au-dessus du cadavre."""
         self.tick_emerge(1.0)
         self._emerging = False
         self.alpha = 255
+        self.place_safely()
 
     @property
     def vanishing(self) -> bool:
@@ -305,3 +348,5 @@ class Ghost(arcade.Sprite):
             else:
                 self.center_y = previous
                 self.change_y = 0.0
+            if self._overlaps_walls():
+                self.place_safely()

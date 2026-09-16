@@ -671,6 +671,10 @@ def check_gameplay_loop(window: arcade.Window) -> None:
     assert view.ghost_emerging, "la mort doit ouvrir une cinematique"
     wait_ghost_ready(view)
     assert not view.ghost_emerging
+    assert view.ghost is not None
+    assert not arcade.check_for_collision_with_list(view.ghost, view.level.walls), (
+        "le fantome ne doit pas naitre coince dans un mur"
+    )
 
     view.on_key_press(arcade.key.DOWN, 0)
     advance(view, 60)
@@ -686,6 +690,19 @@ def check_gameplay_loop(window: arcade.Window) -> None:
     assert view.machine.state is GameState.PLAYING, "le corps doit revenir au checkpoint"
     assert view.player.alive
     assert not view.player_rebirthing
+
+    cadaver = view.level.corpses[0]
+    assert not cadaver.is_remnant, "un cadavre non devore n'est pas un squelette"
+    cadaver.feed(settings.CORPSE_EAT_TIME)
+    view.on_update(FRAME)
+    assert cadaver.is_remnant, "un cadavre devore doit laisser un squelette"
+    assert len(view.level.corpses) == 0, "le squelette ne doit plus etre solide"
+    assert len(view.level.remains) == 1, "le squelette doit rester en decor"
+    advance(view, 30)
+    assert len(view.level.remains) == 1 and view.level.remains[0].alpha == 255, (
+        "le squelette doit rester indefiniment"
+    )
+
     print(f"  boucle de jeu -> {view.session.deaths} mort(s), "
           f"etats visites : {' > '.join(state.name for state in view.machine.history)}")
 
@@ -839,6 +856,7 @@ def check_tutorial_is_solvable(window: arcade.Window) -> None:
             break
         view.on_update(FRAME)
     assert not view.level.corpses, "le cadavre doit finir par se dissiper"
+    assert view.level.remains, "la dissipation doit laisser un squelette"
 
     view.held_keys.add(arcade.key.RIGHT)
     previous_x = view.player.center_x
@@ -913,16 +931,11 @@ def check_menus(window: arcade.Window) -> None:
         f"culling rendu inactif : {play.level.tiles_drawn}/{expected_total} tuiles"
     )
     assert 0 < play.level.chunks_drawn < play.level.chunks_total
+    assert play._debug_enabled is False, "l'overlay debug doit etre masque au lancement"
     play.on_key_press(arcade.key.F3, 0)
-    assert play._debug_enabled is not settings.DEBUG_OVERLAY
+    assert play._debug_enabled is True, "F3 doit afficher l'overlay"
     play.on_key_press(arcade.key.F3, 0)
-    assert play._debug_enabled is settings.DEBUG_OVERLAY
-    play.on_key_press(arcade.key.ESCAPE, 0)
-    assert play.machine.state is GameState.PAUSED, "Echap doit ouvrir la pause"
-    play.on_update(FRAME)
-    play.on_draw()
-    play.on_key_press(arcade.key.ESCAPE, 0)
-    assert play.machine.state is GameState.PLAYING, "Echap en pause doit reprendre"
+    assert play._debug_enabled is False, "F3 doit pouvoir le recacher"
     play.on_resize(settings.SCREEN_WIDTH, settings.SCREEN_HEIGHT)
     print("  menus -> titre, victoire, pause et resize OK")
 

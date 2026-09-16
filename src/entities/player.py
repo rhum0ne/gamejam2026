@@ -64,7 +64,18 @@ def _death_animation() -> sprites.StripAnimation:
         settings.SPRITE_FRAME_SIZE,
         scale=settings.ENTITY_SCALE,
     )
-    return sprites.StripAnimation(frames, settings.ANIM_PLAYER_DEATH_FRAME_TIME, loop=False)
+    # Frame du milieu : chute. La derniere (corps au sol) est le cadavre.
+    fall = frames[len(frames) // 2]
+    return sprites.StripAnimation(
+        (fall, frames[-1]),
+        settings.ANIM_PLAYER_DEATH_FRAME_TIME,
+        loop=False,
+    )
+
+
+def _smoothstep(t: float) -> float:
+    t = max(0.0, min(1.0, t))
+    return t * t * (3.0 - 2.0 * t)
 
 
 def _exp_alpha(delta_time: float, smooth_time: float) -> float:
@@ -129,6 +140,7 @@ class Player(arcade.Sprite):
         self._attack_queued = False
         self._attack_sound_events: list[int] = []
         self._attack_sound_played = False
+        self._death_elapsed = 0.0
 
     # ------------------------------------------------------------------ #
     # Initialisation
@@ -295,9 +307,56 @@ class Player(arcade.Sprite):
         self._attack_queued = False
         self._attack_sound_events.clear()
         self._attack_sound_played = False
+        self._death_elapsed = 0.0
         self._animator.play(self._death, restart=True)
         self.texture = self._death.textures[0]
         sprites.apply_facing(self, self.facing)
+
+    @property
+    def death_settle_ratio(self) -> float:
+        """0 = chute, 1 = corps au sol (apres le fondu)."""
+        if self.alive:
+            return 0.0
+        hold = settings.ANIM_PLAYER_DEATH_FRAME_TIME
+        blend = settings.ANIM_PLAYER_DEATH_BLEND_TIME
+        if self._death_elapsed <= hold:
+            return 0.0
+        if blend <= 0.0:
+            return 1.0
+        return min(1.0, (self._death_elapsed - hold) / blend)
+
+    @property
+    def death_settled(self) -> bool:
+        return not self.alive and self.death_settle_ratio >= 1.0
+
+    def draw_sprite(self, fade: float = 1.0) -> None:
+        """Dessine le corps, avec un petit fondu entre les poses de mort."""
+        fade = max(0.0, min(1.0, fade))
+        if fade <= 0.0:
+            return
+        if self.alive or self.death_settle_ratio <= 0.0:
+            self.alpha = int(255 * fade)
+            sprites.draw_pixel_sprite(self)
+            self.alpha = 255
+            return
+        blend = _smoothstep(self.death_settle_ratio)
+        if blend >= 1.0:
+            return
+        fall, lie = self._death.textures[0], self._death.textures[-1]
+        saved = self.texture
+        self.texture = fall
+        sprites.apply_facing(self, self.facing)
+        self.alpha = int(255 * fade * (1.0 - blend))
+        if self.alpha > 0:
+            sprites.draw_pixel_sprite(self)
+        self.texture = lie
+        sprites.apply_facing(self, self.facing)
+        self.alpha = int(255 * fade * blend)
+        if self.alpha > 0:
+            sprites.draw_pixel_sprite(self)
+        self.texture = saved
+        sprites.apply_facing(self, self.facing)
+        self.alpha = 255
 
     def respawn_at(self, position: tuple[float, float]) -> None:
         """Fait reapparaitre le corps au checkpoint fourni."""
@@ -326,6 +385,7 @@ class Player(arcade.Sprite):
         self._attack_queued = False
         self._attack_sound_events.clear()
         self._attack_sound_played = False
+        self._death_elapsed = 0.0
         self._animator.play(self._idle_still, restart=True)
         self.texture = self._idle_still.textures[0]
         sprites.apply_facing(self, self.facing)
@@ -502,7 +562,11 @@ class Player(arcade.Sprite):
         if was_attacking and self._attack_time_left <= 0.0 and self._attack_queued:
             self._start_attack(self._attack_stage + 1)
         if not self.alive:
-            self.texture = self._animator.update(delta_time)
+            self._death_elapsed += max(0.0, delta_time)
+            if self.death_settle_ratio >= 1.0:
+                self.texture = self._death.textures[-1]
+            else:
+                self.texture = self._death.textures[0]
             sprites.apply_facing(self, self.facing)
             return
         if self._physics is None:

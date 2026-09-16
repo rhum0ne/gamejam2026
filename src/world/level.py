@@ -76,6 +76,7 @@ import arcade
 
 import settings
 from src.entities.bat import Bat
+from src.entities.corpse import Corpse
 from src.entities.enemy import Enemy
 from src.entities.glow import glow_pass
 from src.entities.item import Item, ItemKind
@@ -172,6 +173,7 @@ class Level:
     items: arcade.SpriteList = field(default_factory=_dynamic_sprite_list)
     enemies: arcade.SpriteList = field(default_factory=_dynamic_sprite_list)
     corpses: arcade.SpriteList = field(default_factory=_dynamic_sprite_list)
+    remains: arcade.SpriteList = field(default_factory=_dynamic_sprite_list)
     plates: arcade.SpriteList = field(default_factory=_dynamic_sprite_list)
     falling_spikes: arcade.SpriteList = field(default_factory=_dynamic_sprite_list)
     mechanisms: list[Mechanism] = field(default_factory=list)
@@ -457,6 +459,14 @@ class Level:
         """Ajoute un cadavre au niveau (il devient solide immediatement)."""
         self.corpses.append(corpse)
 
+    def _collect_remnants(self) -> None:
+        """Un cadavre dissipe ou devore laisse un squelette decoratif, hors collisions."""
+        for corpse in list(self.corpses):
+            if not isinstance(corpse, Corpse) or not corpse.is_remnant:
+                continue
+            corpse.remove_from_sprite_lists()
+            self.remains.append(corpse)
+
     def spawn_item(self, item: Item) -> None:
         self.items.append(item)
 
@@ -504,7 +514,11 @@ class Level:
             thrower.draw_flame()
         self.flamethrowers.draw(pixelated=True)
         self.falling_blocks.draw(pixelated=True)
+        self.remains.draw(pixelated=True)
         self.corpses.draw(pixelated=True)
+        for body in (*self.remains, *self.corpses):
+            if isinstance(body, Corpse):
+                body.draw_fx()
         self.items.draw(pixelated=True)
         self.enemies.draw(pixelated=True)
 
@@ -556,6 +570,7 @@ class Level:
             self.items,
             self.enemies,
             self.corpses,
+            self.remains,
             self.plates,
             self.falling_spikes,
             self.torches,
@@ -667,6 +682,8 @@ class Level:
         derivent quand elles sont assez proches.
         """
         self.corpses.update(delta_time)
+        self._collect_remnants()
+        self.remains.update(delta_time)
         self.checkpoints.update(delta_time)
         self.flamethrowers.update(delta_time)
         self._update_falling_blocks(delta_time)

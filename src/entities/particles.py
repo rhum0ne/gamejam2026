@@ -1,4 +1,4 @@
-"""Poussiere de pied, eclats d'ames, et eclaboussures de sang."""
+"""Poussiere de pied, eclats d'ames, poussiere d'os et eclaboussures de sang."""
 
 from __future__ import annotations
 
@@ -229,6 +229,89 @@ class BloodBurst:
             fade = max(0.0, min(1.0, grain.life / grain.max_life))
             size = max(min_size, grain.size * (0.5 + 0.5 * fade))
             alpha = int(240 * fade)
+            if alpha <= 0:
+                continue
+            self._quads.add(grain.x, grain.y, size, grain.color, alpha)
+        self._quads.flush()
+
+
+class DecayBurst:
+    """Nuage d'os et de poussiere, pour masquer le passage cadavre -> squelette."""
+
+    def __init__(self, rng: random.Random | None = None) -> None:
+        self._grains: list[_Grain] = []
+        self._rng = rng if rng is not None else random.Random()
+        self._quads = QuadBatch(capacity=max(8, settings.CORPSE_DECAY_MAX))
+
+    def clear(self) -> None:
+        self._grains.clear()
+
+    def emit(self, x: float, y: float) -> None:
+        """Souffle un nuage autour du corps, assez dense pour cacher le swap."""
+        for _ in range(settings.CORPSE_DECAY_COUNT):
+            angle = self._rng.uniform(0.0, math.tau)
+            speed = self._rng.uniform(0.2, 1.0)
+            linger = self._rng.random() > 0.55
+            vx = math.cos(angle) * settings.CORPSE_DECAY_SPEED * speed
+            vy = math.sin(angle) * settings.CORPSE_DECAY_SPEED * speed * 0.75
+            if linger:
+                vx *= 0.25
+                vy *= 0.2
+            life = settings.CORPSE_DECAY_LIFE * self._rng.uniform(0.7, 1.2)
+            size = self._rng.uniform(
+                settings.CORPSE_DECAY_SIZE_MIN,
+                settings.CORPSE_DECAY_SIZE_MAX,
+            )
+            if linger:
+                size *= 1.35
+                life *= 1.15
+            color = (
+                settings.COLOR_DUST
+                if self._rng.random() > 0.4
+                else settings.COLOR_DUST_DARK
+            )
+            self._grains.append(
+                _Grain(
+                    x=x + self._rng.uniform(
+                        -settings.CORPSE_DECAY_SPREAD_X,
+                        settings.CORPSE_DECAY_SPREAD_X,
+                    ),
+                    y=y + self._rng.uniform(
+                        -settings.CORPSE_DECAY_SPREAD_Y,
+                        settings.CORPSE_DECAY_SPREAD_Y,
+                    ),
+                    vx=vx,
+                    vy=vy,
+                    life=life,
+                    max_life=max(life, 0.001),
+                    size=size,
+                    gravity=settings.CORPSE_DECAY_GRAVITY * (0.25 if linger else 1.0),
+                    color=color,
+                )
+            )
+        self._grains = self._grains[-settings.CORPSE_DECAY_MAX :]
+
+    def update(self, delta_time: float = settings.FRAME_TIME) -> None:
+        dt = max(0.0, delta_time)
+        alive: list[_Grain] = []
+        for grain in self._grains:
+            grain.life -= dt
+            if grain.life <= 0.0:
+                continue
+            grain.vy -= grain.gravity * dt
+            grain.x += grain.vx * dt
+            grain.y += grain.vy * dt
+            grain.vx *= max(0.0, 1.0 - 2.4 * dt)
+            alive.append(grain)
+        self._grains = alive
+
+    def draw(self) -> None:
+        min_size = settings.PARTICLE_MIN_DRAW_SIZE
+        self._quads.begin()
+        for grain in self._grains:
+            fade = max(0.0, min(1.0, grain.life / grain.max_life))
+            size = max(min_size, grain.size * (0.55 + 0.45 * fade))
+            alpha = int(235 * fade)
             if alpha <= 0:
                 continue
             self._quads.add(grain.x, grain.y, size, grain.color, alpha)
