@@ -999,6 +999,11 @@ def check_editor_views(window: arcade.Window) -> None:
     view.tool = Tool.LINK
     view._link_index = 0
     view.on_draw()
+    view.on_key_press(arcade.key.F1, 0)
+    assert view.help.visible
+    view.on_draw()
+    view.on_key_press(arcade.key.F1, 0)
+    assert not view.help.visible
     print("  editeur vues -> navigateur et grille OK")
 
 
