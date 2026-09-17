@@ -571,6 +571,7 @@ class PlayView(arcade.View):
                 left, right, bottom, top = thrower.flame_bounds()
                 arcade.draw_lrbt_rectangle_outline(left, right, bottom, top, color, 1)
         self.level.falling_blocks.draw_hit_boxes(color)
+        self.level.springs.draw_hit_boxes(color)
         if self.player.alive:
             self.player.draw_hit_box(color)
         if self.ghost is not None:
@@ -903,6 +904,7 @@ class PlayView(arcade.View):
         self._play_attack_sound_events()
         self._play_footstep_events()
         self._resolve_falling_blocks()
+        self._resolve_springs()
         self._block_hazard_sides()
         self._update_enemies(delta_time)
         self._resolve_player_collisions()
@@ -938,6 +940,14 @@ class PlayView(arcade.View):
             if block.supports(player):
                 block.arm()
             block.stick_rider(player)
+
+    def _resolve_springs(self) -> None:
+        """Relance le corps au contact de la face active d'un ressort."""
+        player = self.player
+        if not player.alive:
+            return
+        for spring in collisions.springs_launching_player(player, self.level.springs):
+            spring.launch(player)
 
     def _block_hazard_sides(self) -> None:
         """Une pique bloque comme un mur si on la touche par le cote (cf Mario)."""

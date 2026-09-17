@@ -226,6 +226,10 @@ class EditView(arcade.View):
                     f"Bloc tombant delay {falling.delay:.2f}s "
                     f"respawn {falling.respawn:.1f}s  {visibility}"
                 )
+            spring = self.document.spring_at(*self.hover)
+            if spring is not None:
+                arrow = DIRECTION_ARROW[spring.direction]
+                element = f"Ressort {arrow} {DIRECTION_LABEL[spring.direction]}"
         plates = f"{len(self.document.activators)}"
         if self._link_index is not None and 0 <= self._link_index < len(self.document.activators):
             chosen = self.document.activators[self._link_index]
@@ -496,6 +500,8 @@ class EditView(arcade.View):
             return
         if self._tune_falling_block(symbol):
             return
+        if self._tune_spring(symbol):
+            return
         if symbol in (arcade.key.EQUAL, arcade.key.PLUS, arcade.key.NUM_ADD):
             self.canvas.zoom_by(settings.EDITOR_ZOOM_STEP, *self._mouse)
             return
@@ -606,6 +612,22 @@ class EditView(arcade.View):
             f"bloc tombant : delay {spec.delay:.2f}s  respawn {spec.respawn:.1f}s  "
             f"{visibility}"
         )
+        return True
+
+    def _tune_spring(self, symbol: int) -> bool:
+        """Tourne le ressort sous le curseur (H, comme le lance-flammes)."""
+        if self.hover is None or not self.document.inside(*self.hover):
+            return False
+        if self.document.cell(*self.hover) != settings.TILE_KIND_SPRING:
+            return False
+        if symbol != arcade.key.H:
+            return False
+        spec = self.document.adjust_spring(*self.hover, rotate=True)
+        if spec is None:
+            return True
+        self.canvas.sync(((*self.hover, settings.TILE_KIND_SPRING),))
+        facing = DIRECTION_LABEL[spec.direction]
+        self.notify(f"ressort : {facing}")
         return True
 
     def _tune_activator(self, symbol: int) -> bool:

@@ -17,6 +17,7 @@ from src.editor.palette import PaletteItem
 from src.ui import sprites
 from src.world.decorations import DECORATION_SPECS, decoration_spec
 from src.world.obstacles import terrain_texture
+from src.world.spring import spring_texture
 
 _CACHE: dict[tuple[str, int], arcade.Texture] = {}
 _GLYPH_CANVAS = (12, 14)  # taille de rendu de la police bitmap par defaut
@@ -40,6 +41,8 @@ def cell_texture(item: PaletteItem, size: int) -> arcade.Texture:
         sprite_name = _SPRITE_KINDS.get(item.kind)
         if item.kind in DECORATION_SPECS:
             texture = _decoration_swatch(item.kind, size)
+        elif item.kind == settings.TILE_KIND_SPRING:
+            texture = spring_texture(size)
         elif sprite_name is not None:
             texture = sprites.load_texture(sprite_name, size=size)
         else:

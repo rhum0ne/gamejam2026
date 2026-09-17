@@ -96,6 +96,7 @@ _GAMEPLAY_META: dict[str, tuple[str, str, str, tuple[int, int, int]]] = {
     "torch": ("Torche", CATEGORY_DECOR, "i", settings.COLOR_TORCH_FLAME),
     "flamethrower": ("Lance-flammes", CATEGORY_HAZARD, "f", settings.COLOR_FLAMETHROWER),
     settings.TILE_KIND_FALLING: ("Bloc tombant", CATEGORY_HAZARD, "F", settings.COLOR_FALLING_BLOCK),
+    settings.TILE_KIND_SPRING: ("Ressort", CATEGORY_HAZARD, "S", settings.COLOR_SPRING),
 }
 
 _CATEGORY_ORDER = (

@@ -29,7 +29,7 @@ SHORTCUTS: tuple[tuple[str, str], ...] = (
     ("Clic sur un bloc lie", "changer l'action (cache / montre / allume)"),
     (", et .", "portee du lance-flammes / delay tombant / duree du bouton spectral"),
     ("9 et 0", "intervalle du lance-flammes / respawn du bloc tombant"),
-    ("H", "pivoter le lance-flammes (4 directions)"),
+    ("H", "pivoter le lance-flammes / le ressort (4 directions)"),
     ("[ et ]", "element precedent / suivant de la palette"),
     ("Ctrl+A", "tout selectionner"),
     ("Ctrl+C / Ctrl+X", "copier / couper la selection"),

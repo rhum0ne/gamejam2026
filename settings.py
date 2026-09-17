@@ -138,6 +138,7 @@ RENDER_CULL_PAD = 120.0
 TILE_KIND_ICE = "ice_block"
 TILE_KIND_FALLING = "falling_block"
 TILE_KIND_HIDDEN = "hidden_wall"
+TILE_KIND_SPRING = "spring"
 
 # Noms de fichiers dans SPRITES_DIR, sans extension. Le chargeur ajoute `.png`.
 # Le terrain (dirt/grass/...) vient desormais de `SHEET_GROUND` plus bas
@@ -378,6 +379,16 @@ FALLING_BLOCK_RESPAWN_STEP = 0.2
 FALLING_BLOCK_GRAVITY = GRAVITY
 FALLING_BLOCK_MAX_SPEED = 12.0
 FALLING_BLOCK_SHAKE = 1.6  # pixels, pendant le delay
+
+# Ressorts : H dans l'editeur cycle up / right / down / left.
+# Vertical : conserve change_x, impose une montee d'environ SPRING_LAUNCH_TILES
+# tuiles (v=13.6 et gravite 0.40 : ~7 tuiles). Horizontal : inverse change_x.
+SPRING_LAUNCH_TILES = 7.0
+SPRING_LAUNCH_SPEED = 13.6
+SPRING_MIN_SPEED = 1.0  # si l'elan horizontal est quasi nul, on pousse au moins ca
+SPRING_APPROACH = 0.05  # deja en train de s'eloigner si la vitesse projetee depasse
+SPRING_COOLDOWN = 0.12
+SPRING_HORIZONTAL_LOCK = 0.18  # ignore le frein aerien juste apres un rebond lateral
 
 # Halo rouge des menaces (piques et ennemis), perce le voile fantome.
 # Gros, saturé, identique pour les deux : un signal DANGER, pas un point.
@@ -1148,6 +1159,9 @@ COLOR_FALLING_BLOCK_INNER = (214, 168, 96)
 COLOR_FALLING_BLOCK_ARMED = (212, 96, 64)
 COLOR_FALLING_BLOCK_GHOST = (150, 214, 255)
 COLOR_FALLING_BLOCK_GHOST_ARMED = (214, 168, 255)
+COLOR_SPRING = (168, 116, 64)
+COLOR_SPRING_COIL = (214, 168, 92)
+COLOR_SPRING_PAD = (236, 214, 150)
 FALLING_BLOCK_GHOST_ALPHA = 210
 COLOR_SPECTRAL_WALL = (96, 84, 140)
 # Contour du bloc invisible en mode fantome (bleu tres clair).

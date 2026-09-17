@@ -67,6 +67,11 @@ vivent dans le champ JSON `flamethrowers`, comme les plaques. L'ancien champ
 `falling_block` est une plateforme qui s'effondre : delay puis chute sans
 collision avec le terrain, puis respawn. Les delais vivent dans le champ
 JSON `falling_blocks` (`delay`, `respawn`, et `ghost_only` optionnel).
+
+`spring` est un pad trigger (pas solide). Vertical : conserve l'elan
+horizontal et relance d'environ 7 tuiles. Horizontal : inverse `change_x`.
+L'orientation (`dir` up/right/down/left) vit dans le champ JSON `springs`.
+H dans l'editeur fait tourner la face active.
 """
 
 from __future__ import annotations
@@ -90,6 +95,7 @@ from src.entities.zombie import Zombie
 from src.world.decorations import Decoration, decoration_kinds
 from src.world.falling_block import FallingBlock, FallingSpec, parse_falling_specs
 from src.world.flamethrower import FlameSpec, Flamethrower, parse_flame_specs
+from src.world.spring import Spring, SpringSpec, parse_spring_specs
 from src.world.mechanisms import (
     GatedTile,
     Mechanism,
@@ -198,6 +204,7 @@ class Level:
     torch_stems: arcade.SpriteList = field(default_factory=_dynamic_sprite_list)
     flamethrowers: arcade.SpriteList = field(default_factory=_dynamic_sprite_list)
     falling_blocks: arcade.SpriteList = field(default_factory=_dynamic_sprite_list)
+    springs: arcade.SpriteList = field(default_factory=_dynamic_sprite_list)
     player_spawn: tuple[float, float] = (0.0, 0.0)
     checkpoint_spawn: tuple[float, float] = (0.0, 0.0)
     tiles_drawn: int = 0
@@ -212,6 +219,7 @@ class Level:
     _hazard_chunks: list[arcade.SpriteList] = field(default_factory=list)
     _flame_specs: dict[tuple[int, int], FlameSpec] = field(default_factory=dict)
     _falling_specs: dict[tuple[int, int], FallingSpec] = field(default_factory=dict)
+    _spring_specs: dict[tuple[int, int], SpringSpec] = field(default_factory=dict)
     _falling_gone: list[FallingBlock] = field(default_factory=list)
 
     # ------------------------------------------------------------------ #
@@ -270,6 +278,10 @@ class Level:
             raise LevelFormatError(str(error)) from error
         try:
             level._falling_specs = parse_falling_specs(data.get("falling_blocks"))
+        except ValueError as error:
+            raise LevelFormatError(str(error)) from error
+        try:
+            level._spring_specs = parse_spring_specs(data.get("springs"))
         except ValueError as error:
             raise LevelFormatError(str(error)) from error
         level._build(grid, legend)
@@ -463,6 +475,7 @@ class Level:
             ("un decor", self.decorations),
             ("une torche", self.torches),
             ("un bloc tombant", self.falling_blocks),
+            ("un ressort", self.springs),
             ("une porte", self.doors),
             ("un checkpoint", self.checkpoints),
             ("un objet", self.items),
@@ -582,6 +595,7 @@ class Level:
             thrower.draw_flame()
         self.flamethrowers.draw(pixelated=True)
         self.falling_blocks.draw(pixelated=True)
+        self.springs.draw(pixelated=True)
         self.remains.draw(pixelated=True)
         self.corpses.draw(pixelated=True)
         for body in (*self.remains, *self.corpses):
@@ -653,6 +667,7 @@ class Level:
             self.torch_stems,
             self.flamethrowers,
             self.falling_blocks,
+            self.springs,
         ):
             sprite_list.initialize()
         for chunks in (self._wall_chunks, self._spectral_chunks, self._hazard_chunks):
@@ -763,6 +778,7 @@ class Level:
         self.checkpoints.update(delta_time)
         self.doors.update(delta_time)
         self.flamethrowers.update(delta_time)
+        self.springs.update(delta_time)
         self._update_falling_blocks(delta_time)
         for item in self.items:
             item.update(delta_time, attractor=attractor)
@@ -1015,6 +1031,19 @@ def _add_falling_block(level: Level, x: float, y: float) -> None:
     level.falling_blocks.append(block)
 
 
+def _add_spring(level: Level, x: float, y: float) -> None:
+    column = int(x // level.tile_size)
+    row = level.rows - 1 - int(y // level.tile_size)
+    spec = level._spring_specs.get((column, row))
+    spring = Spring(
+        x,
+        y,
+        size=level.tile_size,
+        direction=spec.direction if spec is not None else "up",
+    )
+    level.springs.append(spring)
+
+
 def _decoration_factory(kind: str) -> Callable[[Level, float, float], None]:
     """Fabrique une fonction `_add_xxx` pour un type de `decorations.DECORATION_SPECS`."""
 
@@ -1040,6 +1069,7 @@ _FACTORIES: dict[str, Callable[[Level, float, float], None]] = {
     **{kind: _decoration_factory(kind) for kind in decoration_kinds()},
     "flamethrower": _add_flamethrower,
     settings.TILE_KIND_FALLING: _add_falling_block,
+    settings.TILE_KIND_SPRING: _add_spring,
 }
 
 

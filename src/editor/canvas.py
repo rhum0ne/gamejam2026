@@ -248,6 +248,10 @@ class GridCanvas:
             if falling is not None and falling.ghost_only:
                 sprite.color = settings.COLOR_FALLING_BLOCK_GHOST
                 sprite.alpha = settings.FALLING_BLOCK_GHOST_ALPHA
+        if kind == settings.TILE_KIND_SPRING:
+            spec = self.document.spring_at(column, row)
+            if spec is not None:
+                aim_sprite(sprite, spec.direction)
         self._sprites.append(sprite)
         self._by_cell[(column, row)] = sprite
 
