@@ -42,6 +42,7 @@ from src.systems.upgrades import SoulProgression
 from src.ui.debug import DebugOverlay, DebugSnapshot
 from src.ui.display import handle_display_key
 from src.ui.hud import Hud, HudData
+from src.ui import cursor
 from src.ui.sfx import (
     play_attack,
     play_boss_fire,
@@ -234,7 +235,7 @@ class GameSession:
 # Touches
 # --------------------------------------------------------------------------- #
 
-_LEFT_KEYS = frozenset({arcade.key.LEFT, arcade.key.A, arcade.key.Q})
+_LEFT_KEYS = frozenset({arcade.key.LEFT, arcade.key.Q})
 _RIGHT_KEYS = frozenset({arcade.key.RIGHT, arcade.key.D})
 _UP_KEYS = frozenset({arcade.key.UP, arcade.key.W, arcade.key.Z})
 _DOWN_KEYS = frozenset({arcade.key.DOWN, arcade.key.S})
@@ -243,6 +244,7 @@ _PROJECT_KEY = arcade.key.F
 _RETURN_KEY = arcade.key.R
 _DASH_KEYS = frozenset({arcade.key.LSHIFT, arcade.key.RSHIFT})
 _ATTACK_BUTTON = arcade.MOUSE_BUTTON_LEFT
+_ATTACK_KEYS = frozenset({arcade.key.A, arcade.key.E})
 
 
 class PlayView(arcade.View):
@@ -269,6 +271,7 @@ class PlayView(arcade.View):
         self._rebirth: PlayerRebirth | None = None
         self.held_keys: set[int] = set()
         self._hitstop_timer = 0.0
+        self._door_win_timer = 0.0
         self._blood = BloodBurst()
         self._soul_pickup_fx = SoulBurst()
         self._delivered_items: list[ItemKind] = []
@@ -313,6 +316,7 @@ class PlayView(arcade.View):
         self._rebirth = None
         self.held_keys.clear()
         self._hitstop_timer = 0.0
+        self._door_win_timer = 0.0
         self._blood.clear()
         self._soul_pickup_fx.clear()
         self._delivered_items.clear()
@@ -335,6 +339,10 @@ class PlayView(arcade.View):
             consume = getattr(enemy, "consume_fire_sound", None)
             if consume is not None and consume():
                 play_boss_fire()
+            shakes = getattr(enemy, "consume_death_shakes", None)
+            if shakes is not None:
+                for amplitude, duration in shakes():
+                    self.camera.shake(amplitude, duration)
 
     @property
     def ghost_emerging(self) -> bool:
@@ -783,8 +791,17 @@ class PlayView(arcade.View):
     # ------------------------------------------------------------------ #
 
     def on_update(self, delta_time: float) -> None:
+        hide_cursor = self.machine.state not in (
+            GameState.PAUSED,
+            GameState.LEVEL_UP,
+            GameState.MENU,
+            GameState.VICTORY,
+            GameState.GAME_OVER,
+        )
+        cursor.tick(self.window, delta_time, hide=hide_cursor)
         if self.machine.state in (GameState.PAUSED, GameState.LEVEL_UP):
             return
+        self._tick_door_win(delta_time)
         if self._hitstop_timer > 0.0:
             self._hitstop_timer = max(0.0, self._hitstop_timer - delta_time)
             return
@@ -813,6 +830,14 @@ class PlayView(arcade.View):
         self._blood.update(delta_time)
         self._soul_pickup_fx.update(delta_time)
         self.atmosphere.update(delta_time)
+
+    def _tick_door_win(self, delta_time: float) -> None:
+        """Laisse le temps de voir la porte s'ouvrir avant de valider le niveau."""
+        if self._door_win_timer <= 0.0:
+            return
+        self._door_win_timer = max(0.0, self._door_win_timer - delta_time)
+        if self._door_win_timer <= 0.0:
+            emit_player_win(self)
 
     def _mechanism_weights(self) -> list[arcade.Sprite]:
         """Corps, cadavres et ennemis au sol : le fantome ne pese pas sur les
@@ -869,6 +894,7 @@ class PlayView(arcade.View):
         self._block_hazard_sides()
         self._update_enemies(delta_time)
         self._resolve_player_collisions()
+        self._play_enemy_sound_events()
         if self.machine.state is GameState.PLAYING:
             if self.player.is_dashing:
                 self.camera.follow(
@@ -1048,10 +1074,13 @@ class PlayView(arcade.View):
 
         door = collisions.door_touched_by_player(self.player, self.level)
         if door is not None and self.player.has_item(ItemKind.KEY):
-            door.unlock()
-            emit_player_win(self)
+            if door.locked:
+                door.unlock()
+                self._door_win_timer = settings.DOOR_WIN_DELAY
             return
 
+        if settings.PLAYER_INVINCIBLE:
+            return
         if collisions.player_hits_hazard(self.player, self.level):
             self._spill_blood(self.player.center_x, self.player.center_y, count=settings.BLOOD_COUNT_PLAYER)
             emit_player_death(self, "spikes")
@@ -1210,6 +1239,7 @@ class PlayView(arcade.View):
             self.player.cut_jump()
 
     def on_mouse_motion(self, x: float, y: float, dx: float, dy: float) -> None:
+        cursor.note(self.window)
         if self.machine.state is GameState.PAUSED:
             ui_x, ui_y = self.camera.window_to_ui(x, y)
             self._pause_overlay().on_mouse_motion(ui_x, ui_y)
@@ -1218,7 +1248,8 @@ class PlayView(arcade.View):
             self._level_up_overlay().on_mouse_motion(ui_x, ui_y)
 
     def on_mouse_press(self, x: float, y: float, button: int, modifiers: int) -> None:
-        """Route le clic vers l'overlay actif, sinon oriente/attaque au clic gauche."""
+        """Route le clic vers l'overlay actif, sinon attaque du cote ou on regarde."""
+        cursor.note(self.window)
         if self.machine.state is GameState.PAUSED:
             if button != arcade.MOUSE_BUTTON_LEFT:
                 return
@@ -1233,12 +1264,10 @@ class PlayView(arcade.View):
             return
         if button != _ATTACK_BUTTON or self.machine.state is not GameState.PLAYING:
             return
-        world_x = self.camera.screen_to_world_x(x)
-        if abs(world_x - self.player.center_x) > 2:
-            self.player.facing = 1 if world_x > self.player.center_x else -1
         self.player.attack()
 
     def on_mouse_release(self, x: float, y: float, button: int, modifiers: int) -> None:
+        cursor.note(self.window)
         if button != arcade.MOUSE_BUTTON_LEFT:
             return
         if self.machine.state is GameState.PAUSED:
@@ -1267,6 +1296,7 @@ class PlayView(arcade.View):
         self._paused_from = self.machine.state
         self.held_keys.clear()
         self.machine.try_to(GameState.PAUSED)
+        cursor.show(self.window)
 
     def leave_pause(self) -> None:
         if self.machine.state is not GameState.PAUSED:

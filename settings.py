@@ -91,6 +91,8 @@ LEVEL_SEQUENCE: tuple[str, ...] = (
     "Niveau_1-3.json",
     "Niveau_1-4.json",
     "Niveau_1-5.json",
+    "Niveau_1-6.json",
+    "Niveau_Bonus_ouvert.json",
 )
 
 # --------------------------------------------------------------------------- #
@@ -166,6 +168,12 @@ SPRITE_FLAMETHROWER = "Lance_flamme"
 CHECKPOINT_SIZE = TILE_SIZE * 3
 # Porte : art 32x32 affiche sur 2 tuiles de haut (meme collision qu'avant).
 DOOR_DISPLAY_SIZE = TILE_SIZE * 2
+# Flash au vantail ouvert (juice), puis delai avant de valider le niveau :
+# laisse le temps de voir la porte s'ouvrir avant l'ecran de victoire.
+DOOR_OPEN_FLASH_TIME = 0.5
+DOOR_OPEN_FLASH_SIZE = 60.0
+DOOR_OPEN_FLASH_ALPHA = 200
+DOOR_WIN_DELAY = 0.9
 SPRITE_FRAME_SIZE = 32
 # Taille a l'ecran des sprites joueur / fantome (1.0 = 32 px).
 # L'agrandissement est fait en nearest-neighbor dans `load_strip`.
@@ -672,21 +680,29 @@ MECHANISM_LINK_CORE_ALPHA = 95
 ENEMY_SKELETON_DIR = (
     ANIMATIONS_DIR / "Enemies" / "Skeletons" / "Skeleton_Sword" / "Skeleton_White" / "Skeleton_Without_VFX"
 )
-ENEMY_SPRITE_IDLE = ENEMY_SKELETON_DIR / "Skeleton_01_White_Idle.png"
-ENEMY_SPRITE_WALK = ENEMY_SKELETON_DIR / "Skeleton_01_White_Walk.png"
-ENEMY_SPRITE_ATTACK = ENEMY_SKELETON_DIR / "Skeleton_01_White_Attack1.png"
-ENEMY_SPRITE_DIE = ENEMY_SKELETON_DIR / "Skeleton_01_White_Die.png"
-# Planches natives en 96x64 : le squelette (dessine vers la droite) n'occupe
-# qu'une partie de la frame (l'epee balaie le reste pendant les attaques).
-ENEMY_FRAME_WIDTH = 96
-ENEMY_FRAME_HEIGHT = 64
+# Idle / marche / attaque / mort : meme planche marche pour idle et marche
+# (Skelleton_dance.png, rejouee plus lentement au repos via
+# ANIM_ENEMY_IDLE_FRAME_TIME) -> tout le squelette vient desormais d'un seul
+# jeu de planches (assets/sprites/), 3 frames de 40x40 chacune.
+ENEMY_SPRITE_IDLE = SPRITES_DIR / "Skelleton_dance.png"
+ENEMY_SPRITE_WALK = SPRITES_DIR / "Skelleton_dance.png"
+ENEMY_SPRITE_ATTACK = SPRITES_DIR / "Skelleton_fight.png"
+ENEMY_SPRITE_DIE = SPRITES_DIR / "Skelleton_Death.png"
+# Frames natives 40x40, personnage quasi plein cadre (38 px de haut) ->
+# agrandies de 46/38 pour retrouver la taille de personnage de l'ancienne
+# planche (idle native en 96x64, 46 px de haut), qui servait de reference a
+# ENEMY_WIDTH/ENEMY_HEIGHT/ENEMY_SPEED et au reste du reglage de l'IA.
+ENEMY_ACTION_FRAME_SIZE = 40
+ENEMY_ACTION_SCALE = 46 / 38
 ENEMY_SCALE = 1.0
 # Hitbox rectangulaire = corps visible du squelette, pas la frame entiere.
-# Offsets mesures sur les planches idle/walk (voir sprites.apply_rect_hit_box).
+# Offsets mesures sur Skelleton_dance.png (frame 0, apres mise a l'echelle) :
+# le squelette est decale vers la gauche et les pieds touchent le bas de la
+# frame (voir sprites.apply_rect_hit_box).
 ENEMY_WIDTH = 34
 ENEMY_HEIGHT = 46
-ENEMY_HITBOX_OFFSET_X = 3.0
-ENEMY_HITBOX_OFFSET_Y = -9.0
+ENEMY_HITBOX_OFFSET_X = -4.84
+ENEMY_HITBOX_OFFSET_Y = -1.21
 ENEMY_SPEED = 1.6
 ENEMY_AGGRO_RANGE = 150.0  # distance de detection du joueur
 # Au-dela, on considere que le joueur n'est pas sur le meme "etage" (une
@@ -705,8 +721,11 @@ ENEMY_AGGRO_VERTICAL_RANGE = 48.0
 ENEMY_ATTACK_RANGE = 48.0
 ENEMY_ATTACK_REACH = 60.0
 ENEMY_ATTACK_VERTICAL_RANGE = 40.0  # tolerance verticale (doit etre a peu pres au meme sol)
-# Frames d'Attack1 (0-9) : 1-4 = armement (epee en arriere), 5-7 = lame tendue.
-ENEMY_ATTACK_HIT_FRAMES: tuple[int, int] = (5, 7)
+# Skelleton_fight.png : 3 frames (0 = armement, 1 = impact/flash, 2 = retour) ;
+# seule frame 1 est dangereuse. Avec 3 frames seulement, la fenetre d'esquive
+# (avant frame 1) est plus courte qu'avec l'ancienne planche a 10 frames ;
+# compense en partie par ANIM_ENEMY_ATTACK_FRAME_TIME plus long (voir plus bas).
+ENEMY_ATTACK_HIT_FRAMES: tuple[int, int] = (1, 1)
 ENEMY_ATTACK_COOLDOWN = 0.4  # secondes de pause entre deux coups
 ENEMY_CORPSE_SMELL_RANGE = 320.0  # distance d'attraction vers un cadavre
 ENEMY_HIT_FLASH_DURATION = 0.18
@@ -720,9 +739,12 @@ ENEMY_GHOST_GLOW_INNER_ALPHA = 170
 ENEMY_GHOST_GLOW_PULSE = 0.16
 ENEMY_GHOST_GLOW_PULSE_SPEED = 3.4
 ANIM_ENEMY_IDLE_FRAME_TIME = 0.12
-ANIM_ENEMY_WALK_FRAME_TIME = 0.07
-ANIM_ENEMY_ATTACK_FRAME_TIME = 0.05
-ANIM_ENEMY_DIE_FRAME_TIME = 0.06
+# Marche/attaque/mort n'ont plus que 3 frames chacune (contre 10-13 avant) :
+# temps par frame augmente pour garder une duree totale d'animation comparable
+# (cycle de marche ~0.5 s, coup ~0.6 s, mort ~1.5 s, a ANIM_SPEED=0.5).
+ANIM_ENEMY_WALK_FRAME_TIME = 0.09
+ANIM_ENEMY_ATTACK_FRAME_TIME = 0.1
+ANIM_ENEMY_DIE_FRAME_TIME = 0.25
 
 # --------------------------------------------------------------------------- #
 # Ennemis - chauve-souris (volant)
@@ -936,7 +958,9 @@ COLOR_ZOMBIE_GLOW_CORE = (255, 92, 64)
 # --------------------------------------------------------------------------- #
 
 BOSS_FRAME = 100
-BOSS_DEATH_FRAME = 60  # planche plus compacte que le walk
+BOSS_DEATH_FRAME = 60  # planche 10x3, personnage a la meme echelle pixel que le walk
+# Decalage vertical de l'anim de mort (negatif = plus bas). Un cran trop haut sans ca.
+BOSS_DEATH_GROUND_OFFSET_Y = -TILE_SIZE/2+3
 BOSS_BEAM_FRAME_WIDTH = 300
 BOSS_BEAM_FRAME_HEIGHT = 100
 BOSS_SCALE = 3.0
@@ -953,8 +977,10 @@ BOSS_LASER_RANGE = 360.0 * BOSS_SCALE
 BOSS_LASER_HEIGHT = 14.0 * BOSS_SCALE  # hitbox du rayon, independante de la hauteur du sprite
 BOSS_LASER_LINGER_FRAMES = 8  # alternance derniere / avant-derniere frame du rayon
 BOSS_LASER_FADE_TIME = 0.16  # fondu leger en fin de rayon, en secondes
-# Retard de visee : le rayon suit le joueur avec un leger lag.
-BOSS_LASER_TRACK_DELAY = 0.5
+# Temps de lissage de la visee (smooth damp) : plus grand = plus inerte.
+BOSS_LASER_SMOOTH_TIME = 0.7
+# Vitesse max de rotation du rayon, en deg/s. 0 = pas de plafond.
+BOSS_LASER_MAX_TURN_SPEED = 80.0
 # Fraction droite du sprite : le rayon s'eteint avant le vide.
 BOSS_LASER_TIP_FADE = 0.12
 # Gemme frontale : ~centre X, 17 px au-dessus du centre d'une frame 100x100.
@@ -964,10 +990,12 @@ BOSS_LASER_ORIGIN_Y = 17.0 * BOSS_SCALE
 BOSS_BEAM_FULL_MIN_WIDTH = 80.0
 BOSS_SHOT_ORIGIN_X = 0.0  # depart au centre du golem
 BOSS_SHOT_ORIGIN_Y = 0.0
-BOSS_SHOT_SPEED = 4.8  # px/frame
+BOSS_SHOT_SPEED = 8.0  # px/frame, vitesse initiale
+BOSS_SHOT_SPEED_END = 4.0  # px/frame, palier en fin de course
 BOSS_SHOT_LIFE = 2.4
 BOSS_SHOT_WIDTH = 16.0 * BOSS_SCALE
 BOSS_SHOT_HEIGHT = 7.0 * BOSS_SCALE
+BOSS_SHOT_SPREAD_DEG = 11.0  # ecart aleatoire autour du joueur
 # La planche pointe vers la gauche ; Arcade.angle est horaire.
 BOSS_SHOT_ART_ANGLE = 180.0
 BOSS_SHOT_BURST_COUNT = 26
@@ -983,6 +1011,19 @@ BOSS_SHOT_BURST_SPREAD = 5.0
 BOSS_SHOT_BURST_GRAVITY = 90.0
 BOSS_ATTACK_COOLDOWN = 1.15
 BOSS_PREFERRED_DISTANCE = 180.0
+BOSS_SPIKE_SIZE = TILE_SIZE
+BOSS_SPIKE_COUNT_MIN = 5
+BOSS_SPIKE_COUNT_MAX = 9
+BOSS_SPIKE_START_GAP = 56.0  # distance au centre du boss avant la 1re pique
+BOSS_SPIKE_WARN_TIME = 0.72
+BOSS_SPIKE_STAGGER = 0.11
+BOSS_SPIKE_HOLD = 0.4
+BOSS_SPIKE_DESPAWN_STAGGER = 0.09
+BOSS_SPIKE_FADE_TIME = 0.18
+BOSS_SPIKE_HIT_WIDTH = 22.0
+BOSS_SPIKE_HIT_HEIGHT = 16.0
+COLOR_BOSS_SPIKE_WARN = (255, 64, 28)
+COLOR_BOSS_SPIKE_WARN_CORE = (255, 170, 90)
 # Frame du lancer (bras tendu, 1re ligne de boss_shot, 10 colonnes).
 BOSS_SHOT_SPAWN_FRAME = 7
 ANIM_BOSS_WALK_FRAME_TIME = 0.12
@@ -1000,6 +1041,52 @@ BOSS_GHOST_GLOW_PULSE_SPEED = 2.8
 COLOR_BOSS = (120, 128, 150)
 COLOR_BOSS_GLOW = (40, 210, 255)
 COLOR_BOSS_GLOW_CORE = (180, 245, 255)
+COLOR_BOSS_DEATH_EMBER = (255, 118, 36)
+COLOR_BOSS_DEATH_EMBER_CORE = (255, 220, 140)
+COLOR_BOSS_DEATH_SHARD = (98, 104, 118)
+COLOR_BOSS_DEATH_SHARD_DARK = (62, 66, 78)
+COLOR_BOSS_DEATH_FLASH = (255, 248, 230)
+COLOR_BOSS_DEATH_FLASH_CORE = (255, 255, 255)
+BOSS_DEATH_FX_SPARKS = 52
+BOSS_DEATH_FX_EMBERS = 38
+BOSS_DEATH_FX_SHARDS = 34
+BOSS_DEATH_FX_MAX = 280
+BOSS_DEATH_FX_MEGA_SCALE = 1.7
+BOSS_DEATH_FX_BOOM_COUNT = 6
+BOSS_DEATH_FX_BOOM_INTERVAL = 0.16
+BOSS_DEATH_FX_BOOM_SPREAD = 70.0
+BOSS_DEATH_FX_STREAM_TIME = 1.1
+BOSS_DEATH_FX_STREAM_INTERVAL = 0.05
+BOSS_DEATH_FX_STREAM_COUNT = 6
+BOSS_DEATH_FX_SPARK_SPEED = 420.0
+BOSS_DEATH_FX_SPARK_LIFE = 0.7
+BOSS_DEATH_FX_SPARK_SIZE_MIN = 10.0
+BOSS_DEATH_FX_SPARK_SIZE_MAX = 26.0
+BOSS_DEATH_FX_SPARK_CORE = 3.4
+BOSS_DEATH_FX_SPARK_GLOW_ALPHA = 190
+BOSS_DEATH_FX_SPARK_CORE_ALPHA = 240
+BOSS_DEATH_FX_SPARK_GRAVITY = 40.0
+BOSS_DEATH_FX_EMBER_SPEED = 260.0
+BOSS_DEATH_FX_EMBER_LIFE = 0.95
+BOSS_DEATH_FX_EMBER_SIZE_MIN = 8.0
+BOSS_DEATH_FX_EMBER_SIZE_MAX = 20.0
+BOSS_DEATH_FX_EMBER_CORE = 2.8
+BOSS_DEATH_FX_EMBER_GLOW_ALPHA = 180
+BOSS_DEATH_FX_EMBER_CORE_ALPHA = 230
+BOSS_DEATH_FX_EMBER_GRAVITY = -70.0  # monte, les braises s'elevent
+BOSS_DEATH_FX_SHARD_SPEED = 340.0
+BOSS_DEATH_FX_SHARD_LIFE = 1.05
+BOSS_DEATH_FX_SHARD_SIZE_MIN = 5.0
+BOSS_DEATH_FX_SHARD_SIZE_MAX = 13.0
+BOSS_DEATH_FX_SHARD_GRAVITY = 780.0
+BOSS_DEATH_FX_SHOCK_LIFE = 0.48
+BOSS_DEATH_FX_SHOCK_SIZE = 420.0
+BOSS_DEATH_FX_FLASH_LIFE = 0.22
+BOSS_DEATH_FX_FLASH_SIZE = 260.0
+CAMERA_BOSS_DEATH_SHAKE = 16.0
+CAMERA_BOSS_DEATH_SHAKE_TIME = 0.62
+CAMERA_BOSS_DEATH_BOOM_SHAKE = 9.0
+CAMERA_BOSS_DEATH_BOOM_SHAKE_TIME = 0.24
 
 # --------------------------------------------------------------------------- #
 # Objets et progression
@@ -1008,7 +1095,12 @@ COLOR_BOSS_GLOW_CORE = (180, 245, 255)
 ITEM_BOB_AMPLITUDE = 4.0  # amplitude du flottement vertical, en pixels
 ITEM_BOB_SPEED = 2.5
 SOUL_ORB_SIZE = 16
-SOUL_ORB_ALPHA = 170
+# Planche assets/sprites/essence-d-ame.png : 4 frames de 32x32 (l'orbe tourne
+# sur elle-meme), deja coloree et translucide -> plus besoin de teinter/alpha
+# via sprite.color comme pour l'ancien placeholder procedural.
+SPRITE_SOUL_ORB = "essence-d-ame"
+SOUL_ORB_FRAME_SIZE = 32
+ANIM_SOUL_ORB_FRAME_TIME = 0.12
 SOUL_ORB_GLOW_SCALE = 4.2
 SOUL_ORB_GLOW_ALPHA = 46
 SOUL_ORB_GLOW_PULSE = 0.18
@@ -1310,6 +1402,9 @@ HUD_GAUGE_LOW = 0.22  # le timer fantome pulse sous ce ratio
 DEBUG_OVERLAY = True  # autorise le panneau FPS/etat (F3 pour l'afficher, masque au lancement)
 DEBUG_SHOW_HITBOXES = False
 DEBUG_SHOW_FPS = True  # si l'overlay est off, affiche quand meme le FPS en bas a gauche
+# Ignore piques, flammes, ennemis et chute hors carte. F (sacrifice) reste actif.
+PLAYER_INVINCIBLE = False
+MOUSE_HIDE_DELAY = 3.0  # cache le curseur en jeu apres ce delai sans mouvement
 COLOR_DEBUG = (140, 230, 160)
 COLOR_DEBUG_PANEL = (8, 12, 18, 180)
 COLOR_DEBUG_HITBOX = (80, 255, 120, 200)

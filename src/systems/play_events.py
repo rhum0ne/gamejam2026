@@ -10,6 +10,7 @@ from __future__ import annotations
 from functools import partial
 from typing import TYPE_CHECKING
 
+import settings
 from src.entities.corpse import Corpse
 from src.entities.ghost import Ghost
 from src.systems.event_manager import event_manager
@@ -37,6 +38,8 @@ def bind_play_view(view: PlayView) -> None:
 def emit_player_death(view: PlayView, cause: str) -> None:
     from src.systems.game_state import GameState
 
+    if settings.PLAYER_INVINCIBLE and cause != "sacrifice":
+        return
     if not view.machine.can(GameState.GHOST):
         return
     event_manager.dispatch(

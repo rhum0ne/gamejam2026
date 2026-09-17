@@ -45,15 +45,23 @@ class EnemyState(Enum):
 
 
 def _idle_animation() -> sprites.StripAnimation:
+    """Meme planche que la marche (`ENEMY_SPRITE_IDLE == ENEMY_SPRITE_WALK`),
+    juste rejouee plus lentement au repos."""
     frames = sprites.load_strip(
-        settings.ENEMY_SPRITE_IDLE, settings.ENEMY_FRAME_WIDTH, settings.ENEMY_FRAME_HEIGHT
+        settings.ENEMY_SPRITE_IDLE,
+        settings.ENEMY_ACTION_FRAME_SIZE,
+        settings.ENEMY_ACTION_FRAME_SIZE,
+        scale=settings.ENEMY_ACTION_SCALE,
     )
     return sprites.StripAnimation(frames, settings.ANIM_ENEMY_IDLE_FRAME_TIME, loop=True)
 
 
 def _walk_animation() -> sprites.StripAnimation:
     frames = sprites.load_strip(
-        settings.ENEMY_SPRITE_WALK, settings.ENEMY_FRAME_WIDTH, settings.ENEMY_FRAME_HEIGHT
+        settings.ENEMY_SPRITE_WALK,
+        settings.ENEMY_ACTION_FRAME_SIZE,
+        settings.ENEMY_ACTION_FRAME_SIZE,
+        scale=settings.ENEMY_ACTION_SCALE,
     )
     return sprites.StripAnimation(frames, settings.ANIM_ENEMY_WALK_FRAME_TIME, loop=True)
 
@@ -62,14 +70,20 @@ def _attack_animation() -> sprites.StripAnimation:
     """Un coup d'epee, rejoue une fois par `Enemy._start_swing`. La lame n'est
     dangereuse que sur `settings.ENEMY_ATTACK_HIT_FRAMES` (voir `strike_active`)."""
     frames = sprites.load_strip(
-        settings.ENEMY_SPRITE_ATTACK, settings.ENEMY_FRAME_WIDTH, settings.ENEMY_FRAME_HEIGHT
+        settings.ENEMY_SPRITE_ATTACK,
+        settings.ENEMY_ACTION_FRAME_SIZE,
+        settings.ENEMY_ACTION_FRAME_SIZE,
+        scale=settings.ENEMY_ACTION_SCALE,
     )
     return sprites.StripAnimation(frames, settings.ANIM_ENEMY_ATTACK_FRAME_TIME, loop=False)
 
 
 def _die_animation() -> sprites.StripAnimation:
     frames = sprites.load_strip(
-        settings.ENEMY_SPRITE_DIE, settings.ENEMY_FRAME_WIDTH, settings.ENEMY_FRAME_HEIGHT
+        settings.ENEMY_SPRITE_DIE,
+        settings.ENEMY_ACTION_FRAME_SIZE,
+        settings.ENEMY_ACTION_FRAME_SIZE,
+        scale=settings.ENEMY_ACTION_SCALE,
     )
     return sprites.StripAnimation(frames, settings.ANIM_ENEMY_DIE_FRAME_TIME, loop=False)
 
@@ -91,9 +105,9 @@ class Enemy(EnemyBase):
             body_height=settings.ENEMY_HEIGHT,
         )
         self.scale = settings.ENEMY_SCALE
-        # La planche fait ENEMY_FRAME_WIDTH x ENEMY_FRAME_HEIGHT px, mais le
-        # squelette n'en occupe qu'une partie (l'epee balaie le reste pendant
-        # les attaques) : hitbox fixe et decalee plutot que la frame entiere.
+        # Les planches (40x40 natif, agrandies via ENEMY_ACTION_SCALE) ne sont
+        # pas entierement occupees par le squelette : hitbox fixe et decalee
+        # plutot que la frame entiere (voir ENEMY_HITBOX_OFFSET_*).
         sprites.apply_rect_hit_box(
             self,
             settings.ENEMY_WIDTH,

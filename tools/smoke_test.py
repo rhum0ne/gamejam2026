@@ -865,9 +865,9 @@ def check_boss_ai() -> None:
     assert attacked, "le boss doit attaquer un joueur a portee"
 
     boss._attack_cooldown = 0.0
-    boss._next_laser = False
+    boss._attack_index = 0
     boss._start_attack(player)
-    assert boss.state is BossState.SHOOT, "attaque alternee : un lancer de projectile"
+    assert boss.state is BossState.SHOOT, "cycle d'attaques : projectile d'abord"
     spawned = False
     for _ in range(int(2.5 / FRAME)):
         boss.update(FRAME, player=player, corpses=None)
@@ -878,16 +878,23 @@ def check_boss_ai() -> None:
     shot = boss.shots[0]
     start_x = shot.center_x
     start_y = shot.center_y
+    speed_start = math.hypot(shot.change_x, shot.change_y)
     boss.update(FRAME, player=player, corpses=None)
     assert shot.center_x < start_x, "le projectile doit partir vers le joueur"
     assert abs(shot.change_y) < abs(shot.change_x), "vise principalement le joueur a gauche"
     # Planche oriente gauche : vol vers la gauche = pas de rotation.
     shot_angle = shot.angle % 360.0
-    assert shot_angle < 12.0 or shot_angle > 348.0, "le sprite projectile doit rester oriente a gauche"
+    assert shot_angle < 22.0 or shot_angle > 338.0, "le sprite projectile doit rester oriente a gauche"
+    for _ in range(int(1.4 / FRAME)):
+        if shot not in boss.shots:
+            break
+        shot.update(FRAME)
+    speed_later = math.hypot(shot.change_x, shot.change_y)
+    assert speed_later < speed_start * 0.75, "le projectile doit ralentir en vol"
 
     boss._clear_shots()
     player.center_y = boss.center_y + 90.0
-    boss._spawn_shot(player)
+    boss._spawn_shot(player, jitter_deg=0.0)
     aimed = boss.shots[0]
     assert aimed.change_y > 0.0, "le projectile doit viser le joueur en hauteur"
     assert aimed.change_x < 0.0, "le projectile doit rester oriente vers le joueur"
@@ -900,7 +907,9 @@ def check_boss_ai() -> None:
     walls = arcade.SpriteList()
     walls.append(wall)
     burst = LaserBurst()
-    exploding = BossShot(start_x, start_y, wall.center_x, wall.center_y, [walls], burst=burst)
+    exploding = BossShot(
+        start_x, start_y, wall.center_x, wall.center_y, [walls], burst=burst, jitter_deg=0.0
+    )
     impact = arcade.SpriteList()
     impact.append(exploding)
     popped = False
@@ -913,15 +922,23 @@ def check_boss_ai() -> None:
     player.center_y = boss.center_y
 
     boss._attack_cooldown = 0.0
-    boss._next_laser = True
+    boss._attack_index = 1
     high = _player_at(boss.center_x - 140.0, boss.center_y + 90.0)
     boss._start_attack(high)
     assert boss.state is BossState.LASER
     assert boss._laser_dir_y > 0.2, "le rayon doit viser le joueur au-dessus des yeux"
+    locked_x, locked_y = boss._laser_dir_x, boss._laser_dir_y
+    high.center_x = boss.center_x + 160.0
+    high.center_y = boss.center_y - 80.0
+    boss._aim_laser(high, FRAME)
+    turned = math.hypot(boss._laser_dir_x - locked_x, boss._laser_dir_y - locked_y)
+    snapped = math.hypot(boss._laser_dir_x - 1.0, boss._laser_dir_y + 0.5)
+    assert turned < 0.25, "le laser doit suivre avec une courbe, pas un snap"
+    assert snapped > 0.8, "le laser ne doit pas rattraper la cible en une frame"
     boss._end_attack()
 
     boss._attack_cooldown = 0.0
-    boss._next_laser = True
+    boss._attack_index = 1
     boss._start_attack(player)
     assert boss.state is BossState.LASER
     assert not boss.laser_active, "les premieres frames de Laser_sheet ne sont pas encore le rayon"
@@ -953,11 +970,36 @@ def check_boss_ai() -> None:
     )
     assert linger >= min_hold, "la derniere frame du laser doit rester affichee"
 
+    player.center_x = boss.center_x - 180.0
+    player.center_y = boss.center_y
+    boss._attack_cooldown = 0.0
+    boss._attack_index = 2
+    boss._start_attack(player)
+    assert boss.state is BossState.SPIKES, "cycle d'attaques : vague de piques"
+    assert boss._spike_wave.slot_count >= settings.BOSS_SPIKE_COUNT_MIN
+    warning_frames = max(1, int(settings.BOSS_SPIKE_WARN_TIME / FRAME) - 2)
+    for _ in range(warning_frames):
+        boss.update(FRAME, player=player, corpses=None)
+        assert not boss.spike_hits(player), "le warning ne doit pas etre mortel"
+    for _ in range(int(0.25 / FRAME)):
+        boss.update(FRAME, player=player, corpses=None)
+        if any(getattr(sprite, "lethal", False) for sprite in boss._spike_wave.sprites):
+            break
+    lethal = next(
+        (sprite for sprite in boss._spike_wave.sprites if getattr(sprite, "lethal", False)),
+        None,
+    )
+    assert lethal is not None, "les piques doivent apparaitre apres le warning"
+    player.center_x = lethal.center_x
+    player.center_y = lethal.center_y
+    assert boss.spike_hits(player), "une pique armee doit toucher le joueur"
+    assert collisions.player_hits_boss_attack(player, [boss])
+
     orb = None
     for _ in range(settings.BOSS_HIT_POINTS):
         orb = boss.take_damage()
     assert orb is not None and boss.state is BossState.DYING
-    print("  IA boss -> projectile, laser, 6 PV OK")
+    print("  IA boss -> projectile, laser, piques, 6 PV OK")
 
 
 def check_combat(window: arcade.Window) -> None:
@@ -991,11 +1033,12 @@ def check_combat(window: arcade.Window) -> None:
     player.change_y = 0.0
 
     view.on_mouse_press(
-        view.camera.world.viewport_width / 2 + 100,
+        0.0,
         view.camera.world.viewport_height / 2,
         arcade.MOUSE_BUTTON_LEFT,
         0,
     )
+    assert player.facing == 1, "le clic ne doit pas changer le cote du coup"
     advance(view, 5)
 
     assert enemy.state is EnemyState.DYING, "un clic gauche doit vaincre l'ennemi a portee"

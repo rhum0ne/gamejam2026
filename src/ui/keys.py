@@ -98,14 +98,16 @@ def _arcade_groups() -> dict[str, frozenset[int]]:
         return _ARCADE_GROUPS
     _ARCADE_GROUPS.update(
         {
-            "left": frozenset({arcade.key.LEFT, arcade.key.A, arcade.key.Q}),
+            "left": frozenset({arcade.key.LEFT, arcade.key.Q}),
             "right": frozenset({arcade.key.RIGHT, arcade.key.D}),
             "up": frozenset({arcade.key.UP, arcade.key.W, arcade.key.Z}),
             "down": frozenset({arcade.key.DOWN, arcade.key.S}),
-            "q": frozenset({arcade.key.Q, arcade.key.A, arcade.key.LEFT}),
+            "q": frozenset({arcade.key.Q, arcade.key.LEFT}),
             "z": frozenset({arcade.key.Z, arcade.key.W, arcade.key.UP}),
             "s": frozenset({arcade.key.S, arcade.key.DOWN}),
             "d": frozenset({arcade.key.D, arcade.key.RIGHT}),
+            "a": frozenset({arcade.key.A}),
+            "e": frozenset({arcade.key.E}),
             "space": frozenset({arcade.key.SPACE}),
             "shift": frozenset({arcade.key.LSHIFT, arcade.key.RSHIFT}),
             "f": frozenset({arcade.key.F}),
@@ -314,6 +316,7 @@ def _sheet(filename: str) -> Image.Image:
 PLAYING_PROMPTS: tuple[tuple[tuple[str, ...], str], ...] = (
     (("z", "q", "s", "d"), "bouger"),
     (("space",), "sauter"),
+    (("a", "e"), "attaquer"),
     (("shift",), "dash"),
 )
 
