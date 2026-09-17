@@ -572,7 +572,7 @@ def check_enemy_ai() -> None:
     assert dodger.state is EnemyState.CHASE, "cible partie pendant l'attente : doit reprendre la poursuite"
 
     # Mort : bille bleue, etat DYING, un 2e coup pendant DYING est ignore.
-    orb = enemy.take_damage()
+    orb = enemy.take_damage(settings.ENEMY_HIT_POINTS)
     assert orb is not None, "take_damage doit renvoyer une bille bleue a la mort"
     assert enemy.state is EnemyState.DYING
     assert enemy.take_damage() is None, "un ennemi DYING ignore les coups suivants"
@@ -758,7 +758,7 @@ def check_bat_ai() -> None:
 
     # Mort : bille bleue, etat DYING, un 2e coup pendant DYING est ignore, animation finie.
     victim = Bat(300.0, 300.0)
-    orb = victim.take_damage()
+    orb = victim.take_damage(settings.BAT_HIT_POINTS)
     assert orb is not None, "take_damage doit renvoyer une bille bleue a la mort"
     assert victim.state is BatState.DYING and victim.is_dying
     assert victim.take_damage() is None, "une chauve-souris DYING ignore les coups suivants"
@@ -862,7 +862,7 @@ def check_zombie_ai() -> None:
     assert frames_to_hit is not None and frames_to_hit > 5, "la griffe doit toucher apres l'armement"
     assert clawer.center_x < start_x - 5.0, "l'attaque doit etre un bond vers le joueur"
 
-    # 2 PV : le 1er coup sonne (et coupe l'attaque en cours), sans bille bleue.
+    # N PV : chaque coup non mortel sonne (et coupe l'attaque en cours), sans bille bleue.
     assert clawer.take_damage() is None, "1er coup : le zombie survit"
     assert clawer.state is ZombieState.HURT and not clawer.is_dying
     assert not clawer.strike_active, "un zombie sonne ne frappe plus"
@@ -871,8 +871,10 @@ def check_zombie_ai() -> None:
     assert clawer.facing == 1 and clawer._memory_timer > 0.0, (
         "enrage : doit se tourner vers le joueur meme sans le voir"
     )
-    orb = clawer.take_damage()
-    assert orb is not None and clawer.state is ZombieState.DYING, "2e coup : mort et bille bleue"
+    orb = None
+    for _ in range(settings.ZOMBIE_HIT_POINTS - 1):
+        orb = clawer.take_damage()
+    assert orb is not None and clawer.state is ZombieState.DYING, "dernier coup : mort et bille bleue"
     assert clawer.take_damage() is None, "un zombie DYING ignore les coups suivants"
     for _ in range(120):
         clawer.update(FRAME, player=prey, corpses=None)
@@ -1055,7 +1057,7 @@ def check_boss_ai() -> None:
     for _ in range(settings.BOSS_HIT_POINTS):
         orb = boss.take_damage()
     assert orb is not None and boss.state is BossState.DYING
-    print("  IA boss -> projectile, laser, piques, 6 PV OK")
+    print(f"  IA boss -> projectile, laser, piques, {settings.BOSS_HIT_POINTS} PV OK")
 
 
 def check_combat(window: arcade.Window) -> None:
@@ -1093,6 +1095,9 @@ def check_combat(window: arcade.Window) -> None:
     enemy.center_x = player.right + abs(enemy.width) / 2 + 6
     enemy.center_y = enemy_start_y
     player.change_y = 0.0
+    # Le nombre de PV est deja couvert par check_enemy_ai : ici on isole le
+    # test de la portee/hitbox du clic, pas du nombre de coups necessaires.
+    enemy.hit_points = 1
 
     view.on_mouse_press(
         0.0,

@@ -18,8 +18,8 @@ Priorites de comportement, de la plus forte a la plus faible :
 Ce qui le distingue du squelette (`Enemy`) :
     * il ne voit que devant lui (dans son dos, seulement au contact) et pas a
       travers les murs : on peut le contourner ;
-    * 2 PV : le premier coup le sonne (HURT, interrompt son attaque) puis il
-      fonce sur le joueur meme sans le voir ;
+    * 3 PV : chaque coup non mortel le sonne (HURT, interrompt son attaque)
+      puis il fonce sur le joueur meme sans le voir ;
     * en course, il met `ZOMBIE_TURN_TIME` a faire demi-tour (sauter par-dessus
       lui fait gagner du temps) ;
     * en course, il se laisse tomber d'une plateforme si sa cible est plus bas

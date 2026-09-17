@@ -15,6 +15,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from collections.abc import Iterable
+from itertools import combinations
 
 import arcade
 
@@ -220,6 +221,39 @@ def plate_is_weighted(plate: arcade.Sprite, weights: Sequence[arcade.Sprite]) ->
 def ghost_overlaps_trigger(ghost: arcade.Sprite, trigger: arcade.Sprite) -> bool:
     """Le fantome recouvre-t-il le bouton spectral ?"""
     return arcade.check_for_collision(ghost, trigger)
+
+
+def stacked_enemy_pairs(enemies: Iterable[EnemyBase]) -> list[tuple[EnemyBase, EnemyBase]]:
+    """Paires d'ennemis vivants quasi superposes (a ecarter).
+
+    Volontairement plus tolerant qu'une simple detection de contact : deux
+    ennemis qui se croisent (patrouille en sens inverse, poursuite du meme
+    joueur) peuvent se chevaucher un instant en se traversant, ce n'est pas
+    genant. Seul un chevauchement tres large (l'un quasiment plante dans
+    l'autre, typiquement deux ennemis immobiles au meme endroit) doit etre
+    corrige : `ENEMY_STACK_OVERLAP_RATIO` regle ce seuil.
+
+    Un ennemi en train de mourir (`is_dying`) ne pousse ni n'est pousse : il
+    est sur le point de disparaitre, le figer en place evite un a-coup visible
+    juste avant que son animation de mort ne se termine.
+    """
+    living = [enemy for enemy in enemies if not enemy.is_dying]
+    ratio = settings.ENEMY_STACK_OVERLAP_RATIO
+    pairs: list[tuple[EnemyBase, EnemyBase]] = []
+    for a, b in combinations(living, 2):
+        overlap_x = min(a.right, b.right) - max(a.left, b.left)
+        overlap_y = min(a.top, b.top) - max(a.bottom, b.bottom)
+        if overlap_x <= 0 or overlap_y <= 0:
+            continue
+        # Taille reelle de la hitbox (`.right - .left`), pas `.width` : ce
+        # dernier reflete la texture source (donc peut differer de la hitbox
+        # rectangulaire appliquee via `apply_rect_hit_box`) et devient negatif
+        # quand `apply_facing` mire le sprite (scale_x < 0).
+        min_width = min(a.right - a.left, b.right - b.left)
+        min_height = min(a.top - a.bottom, b.top - b.bottom)
+        if overlap_x >= min_width * ratio and overlap_y >= min_height * ratio:
+            pairs.append((a, b))
+    return pairs
 
 
 def enemies_hit_by_falling_spikes(
