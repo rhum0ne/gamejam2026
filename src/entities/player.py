@@ -442,7 +442,7 @@ class Player(arcade.Sprite):
         return False
 
     def attack(self) -> bool:
-        """Lance un coup ou memorise le clic pour enchainer le suivant."""
+        """Lance un coup ou memorise l'appui pour enchainer le suivant."""
         if not self.alive:
             return False
         if self.is_attacking:

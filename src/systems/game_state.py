@@ -42,6 +42,7 @@ from src.systems.upgrades import SoulProgression
 from src.ui.debug import DebugOverlay, DebugSnapshot
 from src.ui.display import handle_display_key
 from src.ui.hud import Hud, HudData
+from src.ui import cursor
 from src.ui.sfx import (
     play_attack,
     play_boss_fire,
@@ -233,7 +234,7 @@ class GameSession:
 # Touches
 # --------------------------------------------------------------------------- #
 
-_LEFT_KEYS = frozenset({arcade.key.LEFT, arcade.key.A, arcade.key.Q})
+_LEFT_KEYS = frozenset({arcade.key.LEFT, arcade.key.Q})
 _RIGHT_KEYS = frozenset({arcade.key.RIGHT, arcade.key.D})
 _UP_KEYS = frozenset({arcade.key.UP, arcade.key.W, arcade.key.Z})
 _DOWN_KEYS = frozenset({arcade.key.DOWN, arcade.key.S})
@@ -242,6 +243,7 @@ _PROJECT_KEY = arcade.key.F
 _RETURN_KEY = arcade.key.R
 _DASH_KEYS = frozenset({arcade.key.LSHIFT, arcade.key.RSHIFT})
 _ATTACK_BUTTON = arcade.MOUSE_BUTTON_LEFT
+_ATTACK_KEYS = frozenset({arcade.key.A, arcade.key.E})
 
 
 class PlayView(arcade.View):
@@ -784,6 +786,14 @@ class PlayView(arcade.View):
     # ------------------------------------------------------------------ #
 
     def on_update(self, delta_time: float) -> None:
+        hide_cursor = self.machine.state not in (
+            GameState.PAUSED,
+            GameState.LEVEL_UP,
+            GameState.MENU,
+            GameState.VICTORY,
+            GameState.GAME_OVER,
+        )
+        cursor.tick(self.window, delta_time, hide=hide_cursor)
         if self.machine.state in (GameState.PAUSED, GameState.LEVEL_UP):
             return
         self._tick_door_win(delta_time)
@@ -1182,6 +1192,8 @@ class PlayView(arcade.View):
                     )
             elif symbol == _PROJECT_KEY:
                 emit_player_death(self, "sacrifice")
+            elif symbol in _ATTACK_KEYS:
+                self.player.attack()
         elif state is GameState.GHOST and symbol == _RETURN_KEY:
             if self.ghost_emerging:
                 return
@@ -1196,6 +1208,7 @@ class PlayView(arcade.View):
             self.player.cut_jump()
 
     def on_mouse_motion(self, x: float, y: float, dx: float, dy: float) -> None:
+        cursor.note(self.window)
         if self.machine.state is GameState.PAUSED:
             ui_x, ui_y = self.camera.window_to_ui(x, y)
             self._pause_overlay().on_mouse_motion(ui_x, ui_y)
@@ -1204,7 +1217,8 @@ class PlayView(arcade.View):
             self._level_up_overlay().on_mouse_motion(ui_x, ui_y)
 
     def on_mouse_press(self, x: float, y: float, button: int, modifiers: int) -> None:
-        """Route le clic vers l'overlay actif, sinon oriente/attaque au clic gauche."""
+        """Route le clic vers l'overlay actif, sinon attaque du cote ou on regarde."""
+        cursor.note(self.window)
         if self.machine.state is GameState.PAUSED:
             if button != arcade.MOUSE_BUTTON_LEFT:
                 return
@@ -1219,12 +1233,10 @@ class PlayView(arcade.View):
             return
         if button != _ATTACK_BUTTON or self.machine.state is not GameState.PLAYING:
             return
-        world_x = self.camera.screen_to_world_x(x)
-        if abs(world_x - self.player.center_x) > 2:
-            self.player.facing = 1 if world_x > self.player.center_x else -1
         self.player.attack()
 
     def on_mouse_release(self, x: float, y: float, button: int, modifiers: int) -> None:
+        cursor.note(self.window)
         if button != arcade.MOUSE_BUTTON_LEFT:
             return
         if self.machine.state is GameState.PAUSED:
@@ -1253,6 +1265,7 @@ class PlayView(arcade.View):
         self._paused_from = self.machine.state
         self.held_keys.clear()
         self.machine.try_to(GameState.PAUSED)
+        cursor.show(self.window)
 
     def leave_pause(self) -> None:
         if self.machine.state is not GameState.PAUSED:

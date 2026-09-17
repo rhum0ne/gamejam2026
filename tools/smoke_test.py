@@ -926,11 +926,12 @@ def check_combat(window: arcade.Window) -> None:
     player.change_y = 0.0
 
     view.on_mouse_press(
-        view.camera.world.viewport_width / 2 + 100,
+        0.0,
         view.camera.world.viewport_height / 2,
         arcade.MOUSE_BUTTON_LEFT,
         0,
     )
+    assert player.facing == 1, "le clic ne doit pas changer le cote du coup"
     advance(view, 5)
 
     assert enemy.state is EnemyState.DYING, "un clic gauche doit vaincre l'ennemi a portee"
