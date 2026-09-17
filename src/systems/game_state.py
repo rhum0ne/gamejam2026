@@ -268,6 +268,7 @@ class PlayView(arcade.View):
         self._rebirth: PlayerRebirth | None = None
         self.held_keys: set[int] = set()
         self._hitstop_timer = 0.0
+        self._door_win_timer = 0.0
         self._blood = BloodBurst()
         self._soul_pickup_fx = SoulBurst()
         self._delivered_items: list[ItemKind] = []
@@ -312,6 +313,7 @@ class PlayView(arcade.View):
         self._rebirth = None
         self.held_keys.clear()
         self._hitstop_timer = 0.0
+        self._door_win_timer = 0.0
         self._blood.clear()
         self._soul_pickup_fx.clear()
         self._delivered_items.clear()
@@ -780,6 +782,7 @@ class PlayView(arcade.View):
     def on_update(self, delta_time: float) -> None:
         if self.machine.state in (GameState.PAUSED, GameState.LEVEL_UP):
             return
+        self._tick_door_win(delta_time)
         if self._hitstop_timer > 0.0:
             self._hitstop_timer = max(0.0, self._hitstop_timer - delta_time)
             return
@@ -808,6 +811,14 @@ class PlayView(arcade.View):
         self._blood.update(delta_time)
         self._soul_pickup_fx.update(delta_time)
         self.atmosphere.update(delta_time)
+
+    def _tick_door_win(self, delta_time: float) -> None:
+        """Laisse le temps de voir la porte s'ouvrir avant de valider le niveau."""
+        if self._door_win_timer <= 0.0:
+            return
+        self._door_win_timer = max(0.0, self._door_win_timer - delta_time)
+        if self._door_win_timer <= 0.0:
+            emit_player_win(self)
 
     def _mechanism_weights(self) -> list[arcade.Sprite]:
         """Corps, cadavres et ennemis au sol : le fantome ne pese pas sur les
@@ -1018,8 +1029,9 @@ class PlayView(arcade.View):
 
         door = collisions.door_touched_by_player(self.player, self.level)
         if door is not None and self.player.has_item(ItemKind.KEY):
-            door.unlock()
-            emit_player_win(self)
+            if door.locked:
+                door.unlock()
+                self._door_win_timer = settings.DOOR_WIN_DELAY
             return
 
         if collisions.player_hits_hazard(self.player, self.level):

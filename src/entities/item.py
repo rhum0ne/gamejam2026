@@ -68,10 +68,15 @@ ITEM_BY_MAP_SYMBOL: dict[str, ItemKind] = {
 }
 
 
+def _soul_orb_animation() -> sprites.StripAnimation:
+    frames = sprites.load_strip(settings.SPRITE_SOUL_ORB, settings.SOUL_ORB_FRAME_SIZE)
+    return sprites.StripAnimation(frames, settings.ANIM_SOUL_ORB_FRAME_TIME, loop=True)
+
+
 def _texture_for(kind: ItemKind) -> arcade.Texture:
     if kind is ItemKind.KEY:
         return sprites.load_texture(settings.SPRITE_KEY)
-    return sprites.soul_orb_texture()
+    return _soul_orb_animation().textures[0]
 
 
 class Item(arcade.Sprite):
@@ -87,9 +92,7 @@ class Item(arcade.Sprite):
         self._rest_x = center_x
         self._rest_y = center_y
         self._elapsed = 0.0
-        if kind is ItemKind.SOUL_ORB:
-            self.color = profile.color
-            self.alpha = settings.SOUL_ORB_ALPHA
+        self._animator = sprites.Animator(_soul_orb_animation()) if kind is ItemKind.SOUL_ORB else None
 
     @property
     def is_carried(self) -> bool:
@@ -155,6 +158,8 @@ class Item(arcade.Sprite):
         **kwargs,
     ) -> None:
         self._elapsed += delta_time
+        if self._animator is not None:
+            self.texture = self._animator.update(delta_time)
         if self.carrier is not None:
             self.center_x = self.carrier.center_x
             self.center_y = self.carrier.top + self.height / 2

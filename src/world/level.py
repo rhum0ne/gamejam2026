@@ -527,6 +527,9 @@ class Level:
                 checkpoint.draw_glow()
         self.checkpoints.draw(pixelated=True)
         self.doors.draw(pixelated=True)
+        with glow_pass():
+            for door in self.doors:
+                door.draw_fx()
         self.decorations.draw(pixelated=True)
         with glow_pass():
             self._queue_torch_glows(view_rect, layer="bloom")
@@ -720,6 +723,7 @@ class Level:
         self._collect_remnants()
         self.remains.update(delta_time)
         self.checkpoints.update(delta_time)
+        self.doors.update(delta_time)
         self.flamethrowers.update(delta_time)
         self._update_falling_blocks(delta_time)
         for item in self.items:

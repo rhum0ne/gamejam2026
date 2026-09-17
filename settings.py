@@ -91,6 +91,8 @@ LEVEL_SEQUENCE: tuple[str, ...] = (
     "Niveau_1-3.json",
     "Niveau_1-4.json",
     "Niveau_1-5.json",
+    "Niveau_1-6.json",
+    "Niveau_Bonus_ouvert.json",
 )
 
 # --------------------------------------------------------------------------- #
@@ -166,6 +168,12 @@ SPRITE_FLAMETHROWER = "Lance_flamme"
 CHECKPOINT_SIZE = TILE_SIZE * 3
 # Porte : art 32x32 affiche sur 2 tuiles de haut (meme collision qu'avant).
 DOOR_DISPLAY_SIZE = TILE_SIZE * 2
+# Flash au vantail ouvert (juice), puis delai avant de valider le niveau :
+# laisse le temps de voir la porte s'ouvrir avant l'ecran de victoire.
+DOOR_OPEN_FLASH_TIME = 0.5
+DOOR_OPEN_FLASH_SIZE = 60.0
+DOOR_OPEN_FLASH_ALPHA = 200
+DOOR_WIN_DELAY = 0.9
 SPRITE_FRAME_SIZE = 32
 # Taille a l'ecran des sprites joueur / fantome (1.0 = 32 px).
 # L'agrandissement est fait en nearest-neighbor dans `load_strip`.
@@ -657,21 +665,29 @@ MECHANISM_LINK_CORE_ALPHA = 95
 ENEMY_SKELETON_DIR = (
     ANIMATIONS_DIR / "Enemies" / "Skeletons" / "Skeleton_Sword" / "Skeleton_White" / "Skeleton_Without_VFX"
 )
-ENEMY_SPRITE_IDLE = ENEMY_SKELETON_DIR / "Skeleton_01_White_Idle.png"
-ENEMY_SPRITE_WALK = ENEMY_SKELETON_DIR / "Skeleton_01_White_Walk.png"
-ENEMY_SPRITE_ATTACK = ENEMY_SKELETON_DIR / "Skeleton_01_White_Attack1.png"
-ENEMY_SPRITE_DIE = ENEMY_SKELETON_DIR / "Skeleton_01_White_Die.png"
-# Planches natives en 96x64 : le squelette (dessine vers la droite) n'occupe
-# qu'une partie de la frame (l'epee balaie le reste pendant les attaques).
-ENEMY_FRAME_WIDTH = 96
-ENEMY_FRAME_HEIGHT = 64
+# Idle / marche / attaque / mort : meme planche marche pour idle et marche
+# (Skelleton_dance.png, rejouee plus lentement au repos via
+# ANIM_ENEMY_IDLE_FRAME_TIME) -> tout le squelette vient desormais d'un seul
+# jeu de planches (assets/sprites/), 3 frames de 40x40 chacune.
+ENEMY_SPRITE_IDLE = SPRITES_DIR / "Skelleton_dance.png"
+ENEMY_SPRITE_WALK = SPRITES_DIR / "Skelleton_dance.png"
+ENEMY_SPRITE_ATTACK = SPRITES_DIR / "Skelleton_fight.png"
+ENEMY_SPRITE_DIE = SPRITES_DIR / "Skelleton_Death.png"
+# Frames natives 40x40, personnage quasi plein cadre (38 px de haut) ->
+# agrandies de 46/38 pour retrouver la taille de personnage de l'ancienne
+# planche (idle native en 96x64, 46 px de haut), qui servait de reference a
+# ENEMY_WIDTH/ENEMY_HEIGHT/ENEMY_SPEED et au reste du reglage de l'IA.
+ENEMY_ACTION_FRAME_SIZE = 40
+ENEMY_ACTION_SCALE = 46 / 38
 ENEMY_SCALE = 1.0
 # Hitbox rectangulaire = corps visible du squelette, pas la frame entiere.
-# Offsets mesures sur les planches idle/walk (voir sprites.apply_rect_hit_box).
+# Offsets mesures sur Skelleton_dance.png (frame 0, apres mise a l'echelle) :
+# le squelette est decale vers la gauche et les pieds touchent le bas de la
+# frame (voir sprites.apply_rect_hit_box).
 ENEMY_WIDTH = 34
 ENEMY_HEIGHT = 46
-ENEMY_HITBOX_OFFSET_X = 3.0
-ENEMY_HITBOX_OFFSET_Y = -9.0
+ENEMY_HITBOX_OFFSET_X = -4.84
+ENEMY_HITBOX_OFFSET_Y = -1.21
 ENEMY_SPEED = 1.6
 ENEMY_AGGRO_RANGE = 150.0  # distance de detection du joueur
 # Au-dela, on considere que le joueur n'est pas sur le meme "etage" (une
@@ -690,8 +706,11 @@ ENEMY_AGGRO_VERTICAL_RANGE = 48.0
 ENEMY_ATTACK_RANGE = 48.0
 ENEMY_ATTACK_REACH = 60.0
 ENEMY_ATTACK_VERTICAL_RANGE = 40.0  # tolerance verticale (doit etre a peu pres au meme sol)
-# Frames d'Attack1 (0-9) : 1-4 = armement (epee en arriere), 5-7 = lame tendue.
-ENEMY_ATTACK_HIT_FRAMES: tuple[int, int] = (5, 7)
+# Skelleton_fight.png : 3 frames (0 = armement, 1 = impact/flash, 2 = retour) ;
+# seule frame 1 est dangereuse. Avec 3 frames seulement, la fenetre d'esquive
+# (avant frame 1) est plus courte qu'avec l'ancienne planche a 10 frames ;
+# compense en partie par ANIM_ENEMY_ATTACK_FRAME_TIME plus long (voir plus bas).
+ENEMY_ATTACK_HIT_FRAMES: tuple[int, int] = (1, 1)
 ENEMY_ATTACK_COOLDOWN = 0.4  # secondes de pause entre deux coups
 ENEMY_CORPSE_SMELL_RANGE = 320.0  # distance d'attraction vers un cadavre
 ENEMY_HIT_FLASH_DURATION = 0.18
@@ -705,9 +724,12 @@ ENEMY_GHOST_GLOW_INNER_ALPHA = 170
 ENEMY_GHOST_GLOW_PULSE = 0.16
 ENEMY_GHOST_GLOW_PULSE_SPEED = 3.4
 ANIM_ENEMY_IDLE_FRAME_TIME = 0.12
-ANIM_ENEMY_WALK_FRAME_TIME = 0.07
-ANIM_ENEMY_ATTACK_FRAME_TIME = 0.05
-ANIM_ENEMY_DIE_FRAME_TIME = 0.06
+# Marche/attaque/mort n'ont plus que 3 frames chacune (contre 10-13 avant) :
+# temps par frame augmente pour garder une duree totale d'animation comparable
+# (cycle de marche ~0.5 s, coup ~0.6 s, mort ~1.5 s, a ANIM_SPEED=0.5).
+ANIM_ENEMY_WALK_FRAME_TIME = 0.09
+ANIM_ENEMY_ATTACK_FRAME_TIME = 0.1
+ANIM_ENEMY_DIE_FRAME_TIME = 0.25
 
 # --------------------------------------------------------------------------- #
 # Ennemis - chauve-souris (volant)
@@ -993,7 +1015,12 @@ COLOR_BOSS_GLOW_CORE = (180, 245, 255)
 ITEM_BOB_AMPLITUDE = 4.0  # amplitude du flottement vertical, en pixels
 ITEM_BOB_SPEED = 2.5
 SOUL_ORB_SIZE = 16
-SOUL_ORB_ALPHA = 170
+# Planche assets/sprites/essence-d-ame.png : 4 frames de 32x32 (l'orbe tourne
+# sur elle-meme), deja coloree et translucide -> plus besoin de teinter/alpha
+# via sprite.color comme pour l'ancien placeholder procedural.
+SPRITE_SOUL_ORB = "essence-d-ame"
+SOUL_ORB_FRAME_SIZE = 32
+ANIM_SOUL_ORB_FRAME_TIME = 0.12
 SOUL_ORB_GLOW_SCALE = 4.2
 SOUL_ORB_GLOW_ALPHA = 46
 SOUL_ORB_GLOW_PULSE = 0.18

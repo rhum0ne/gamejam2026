@@ -11,7 +11,6 @@ Les images de tuiles font 16 px ; on les agrandit en nearest-neighbor jusqu'a
 
 from __future__ import annotations
 
-import math
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -92,42 +91,6 @@ def placeholder_tile(
     )
     texture = arcade.Texture(image, hash=key)
     _TEXTURE_CACHE[key] = texture
-    return texture
-
-
-def soul_orb_texture(size: int = 32) -> arcade.Texture:
-    """Boule translucide (degrade radial), a teinter via `sprite.color`."""
-    if size <= 0:
-        raise ValueError("size doit etre strictement positif")
-    cache_key = f"soul-orb|{size}"
-    cached = _TEXTURE_CACHE.get(cache_key)
-    if cached is not None:
-        return cached
-    radius = size / 2
-    pixels = bytearray(size * size * 4)
-    for y in range(size):
-        dy = y + 0.5 - radius
-        row = y * size * 4
-        for x in range(size):
-            dx = x + 0.5 - radius
-            t = math.hypot(dx, dy) / radius
-            if t >= 1.0:
-                continue
-            rest = 1.0 - t
-            falloff = rest * rest
-            core = falloff * falloff
-            value = int(255 * min(1.0, falloff * 0.55 + core * 0.7))
-            alpha = int(255 * min(1.0, falloff * 0.85))
-            if value == 0 and alpha == 0:
-                continue
-            index = row + x * 4
-            pixels[index] = value
-            pixels[index + 1] = value
-            pixels[index + 2] = value
-            pixels[index + 3] = alpha
-    image = Image.frombytes("RGBA", (size, size), bytes(pixels))
-    texture = arcade.Texture(image, hash=cache_key)
-    _TEXTURE_CACHE[cache_key] = texture
     return texture
 
 
