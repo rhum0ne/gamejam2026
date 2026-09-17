@@ -32,7 +32,7 @@ from src.editor.selection import Block, GridRect
 from src.world.decorations import DECORATION_SPECS, Decoration
 from src.world.obstacles import SOLID_GROUND_KINDS, GroundCell, compute_ground_cells, terrain_texture
 from src.world.flamethrower import aim_sprite, flame_aabb, flame_start
-from src.world.mechanisms import plate_geometry
+from src.world.mechanisms import trigger_geometry
 
 
 class GridCanvas:
@@ -335,12 +335,16 @@ class GridCanvas:
             self._draw_links(activator, selected)
 
     def _draw_plate(self, activator: Activator, selected: bool) -> None:
-        if activator.inverted:
-            fill = settings.COLOR_EDITOR_PLATE_SELECTED if selected else settings.COLOR_EDITOR_PLATE_INVERT
+        if activator.is_spectral:
+            fill = settings.COLOR_EDITOR_PLATE_SELECTED if selected else settings.COLOR_EDITOR_SPECTRAL
             border = (
-                settings.COLOR_EDITOR_WARNING if selected else settings.COLOR_EDITOR_PLATE_INVERT_BORDER
+                settings.COLOR_EDITOR_WARNING if selected else settings.COLOR_EDITOR_SPECTRAL_BORDER
             )
-            lamp = settings.COLOR_EDITOR_PLATE_INVERT_BORDER
+            lamp = (
+                settings.COLOR_SPECTRAL_BUTTON_ACTIVE
+                if selected
+                else settings.COLOR_SPECTRAL_BUTTON
+            )
         else:
             fill = settings.COLOR_EDITOR_PLATE_SELECTED if selected else settings.COLOR_EDITOR_PLATE
             border = (
@@ -356,12 +360,13 @@ class GridCanvas:
             activator.row,
         )
         self._draw_rect(rect, fill, border)
-        center_x, center_y, width, height = plate_geometry(
+        center_x, center_y, width, height = trigger_geometry(
             activator.column,
             activator.row,
             activator.width,
             self.document.tile_size,
             self.document.rows,
+            activator.kind,
         )
         arcade.draw_lrbt_rectangle_filled(
             center_x - width / 2,
@@ -375,27 +380,23 @@ class GridCanvas:
         if not activator.targets:
             return
         tile = self.document.tile_size
-        start_x, start_y, _width, _height = plate_geometry(
+        start_x, start_y, _width, _height = trigger_geometry(
             activator.column,
             activator.row,
             activator.width,
             tile,
             self.document.rows,
+            activator.kind,
         )
-        color = (
-            settings.COLOR_EDITOR_WARNING if selected else settings.COLOR_EDITOR_LINK
-        )
-        if activator.inverted:
-            gated_fill = settings.COLOR_EDITOR_GATED_INVERT
-            gated_border = settings.COLOR_EDITOR_GATED_INVERT_BORDER
-            if not selected:
-                color = settings.COLOR_EDITOR_LINK_INVERT
-        else:
-            gated_fill = settings.COLOR_EDITOR_GATED
-            gated_border = settings.COLOR_EDITOR_GATED_BORDER
-        for column, row in activator.targets:
-            self._draw_rect(GridRect(column, row, column, row), gated_fill, gated_border)
-        for center_column, center_row in cluster_targets(activator.targets):
+        for target in activator.targets:
+            fill, border, _link = _action_style(target.action, selected)
+            self._draw_rect(
+                GridRect(target.column, target.row, target.column, target.row),
+                fill,
+                border,
+            )
+        for center_column, center_row, action in cluster_targets(activator.targets):
+            _fill, _border, color = _action_style(action, selected)
             target_x = center_column * tile + tile / 2
             target_y = (self.document.rows - 1 - center_row) * tile + tile / 2
             arcade.draw_line(start_x, start_y, target_x, target_y, color, 2)
@@ -469,3 +470,22 @@ class GridCanvas:
             max(-margin_x, min(self.world_width + margin_x, position_x)),
             max(-margin_y, min(self.world_height + margin_y, position_y)),
         )
+
+
+def _action_style(
+    action: str, selected: bool
+) -> tuple[tuple[int, int, int, int], tuple[int, int, int], tuple[int, int, int]]:
+    """Couleurs (fill, border, lien) d'une cible selon son action."""
+    if action == settings.LINK_ACTION_SHOW:
+        fill = settings.COLOR_EDITOR_GATED_INVERT
+        border = settings.COLOR_EDITOR_GATED_INVERT_BORDER
+        link = settings.COLOR_EDITOR_WARNING if selected else settings.COLOR_EDITOR_LINK_INVERT
+    elif action == settings.LINK_ACTION_IGNITE:
+        fill = settings.COLOR_EDITOR_GATED_IGNITE
+        border = settings.COLOR_EDITOR_GATED_IGNITE_BORDER
+        link = settings.COLOR_EDITOR_WARNING if selected else settings.COLOR_EDITOR_LINK_IGNITE
+    else:
+        fill = settings.COLOR_EDITOR_GATED
+        border = settings.COLOR_EDITOR_GATED_BORDER
+        link = settings.COLOR_EDITOR_WARNING if selected else settings.COLOR_EDITOR_LINK
+    return fill, border, link

@@ -1,14 +1,13 @@
-"""Plaques d'activation et blocs qu'elles commandent.
+"""Plaques, boutons spectraux, et blocs qu'ils commandent.
 
-Une plaque reagit a un poids (corps, cadavre, ennemi). Par defaut, tant
-qu'elle est enfoncee, les tuiles `setBlock type=void` disparaissent. Avec
-`invert`, c'est l'inverse : les blocs sont caches au repos et n'apparaissent
-que tant que la plaque est active. Des qu'ils devraient revenir, ils restent
-absents s'ils recouvriraient encore un corps.
+Chaque lien a sa propre action (`hide`, `show`, `ignite`). Une plaque de
+pression reagit a un poids (corps, cadavre, ennemi). Un bouton spectral n'est
+visible et pressable qu'en mode fantome (touche F) : il reste actif pendant
+`duration` secondes. Le fantome ne pese pas sur les plaques.
 
-Le fantome ne pese pas. Les liens plaque -> paquets de blocs se dessinent
-dans `PlayView`, uniquement en mode fantome : un brin par groupe connexe,
-pas une ligne par tuile.
+Les liens se dessinent dans `PlayView` en mode fantome : un brin par groupe
+connexe de meme action, pas une ligne par tuile. L'ancien champ JSON `invert`
+vaut `show` pour toutes les cibles sans `action`.
 """
 
 from __future__ import annotations
@@ -22,6 +21,7 @@ import arcade
 import settings
 from src.entities.glow import draw_glow
 from src.ui import sprites
+from src.world.flamethrower import Flamethrower
 
 
 class PressurePlate(arcade.SpriteSolidColor):
@@ -63,12 +63,44 @@ class PressurePlate(arcade.SpriteSolidColor):
         )
 
 
+class SpectralButton(arcade.SpriteSolidColor):
+    """Bouton fantome : plein tuile, invisible au corps, pressable avec F."""
+
+    def __init__(
+        self,
+        center_x: float,
+        center_y: float,
+        width: float,
+        height: float,
+    ) -> None:
+        super().__init__(
+            int(width),
+            int(height),
+            center_x=center_x,
+            center_y=center_y,
+            color=settings.COLOR_SPECTRAL_BUTTON,
+        )
+        self.pressed = False
+        sprites.apply_rect_hit_box(self, width, height)
+
+    def set_pressed(self, pressed: bool) -> None:
+        if pressed == self.pressed:
+            return
+        self.pressed = pressed
+        self.color = (
+            settings.COLOR_SPECTRAL_BUTTON_ACTIVE
+            if pressed
+            else settings.COLOR_SPECTRAL_BUTTON
+        )
+
+
 @dataclass(slots=True)
 class GatedTile:
-    """Bloc de terrain que la plaque peut retirer puis remettre."""
+    """Bloc de terrain qu'un activateur peut cacher, montrer ou allumer."""
 
     sprite: arcade.Sprite
     lists: tuple[arcade.SpriteList, ...]
+    action: str = settings.LINK_ACTION_HIDE
     hidden: bool = False
 
     def hide(self) -> None:
@@ -76,6 +108,7 @@ class GatedTile:
             return
         self.sprite.remove_from_sprite_lists()
         self.hidden = True
+        self._sync_flame()
 
     def show(self) -> None:
         if not self.hidden:
@@ -83,9 +116,33 @@ class GatedTile:
         for sprite_list in self.lists:
             sprite_list.append(self.sprite)
         self.hidden = False
+        self._sync_flame()
 
     def overlaps_any(self, sprites: Sequence[arcade.Sprite]) -> bool:
         return any(arcade.check_for_collision(self.sprite, other) for other in sprites)
+
+    def _sync_flame(self) -> None:
+        sync = getattr(self.sprite, "_sync_gated_intensity", None)
+        if sync is not None:
+            sync()
+
+    def apply(self, active: bool, occupants: Sequence[arcade.Sprite]) -> None:
+        """Applique l'action de ce lien selon l'etat de l'activateur."""
+        if self.action == settings.LINK_ACTION_IGNITE:
+            if isinstance(self.sprite, Flamethrower):
+                self.sprite.set_commanded(active)
+                return
+            should_hide = active
+        elif self.action == settings.LINK_ACTION_SHOW:
+            should_hide = not active
+        else:
+            should_hide = active
+        if should_hide:
+            self.hide()
+            return
+        if self.overlaps_any(occupants):
+            return
+        self.show()
 
 
 @dataclass(frozen=True, slots=True)
@@ -101,32 +158,61 @@ class GatedChunk:
 
 @dataclass(slots=True)
 class Mechanism:
-    """Une plaque et les blocs qu'elle commande."""
+    """Une plaque (ou un bouton spectral) et les blocs qu'elle commande."""
 
-    plate: PressurePlate
+    plate: arcade.Sprite
     targets: list[GatedTile] = field(default_factory=list)
     chunks: tuple[GatedChunk, ...] = ()
     pressed: bool = False
-    inverted: bool = False
+    kind: str = settings.ACTIVATOR_KIND_PLATE
+    duration: float = settings.SPECTRAL_BUTTON_DURATION
+    time_left: float = 0.0
 
     def __post_init__(self) -> None:
-        if self.inverted:
-            for tile in self.targets:
-                tile.hide()
+        self.kind = parse_activator_kind(self.kind)
+        self.duration = clamp_spectral_duration(self.duration)
+        for tile in self.targets:
+            tile.action = parse_link_action(tile.action)
+            if isinstance(tile.sprite, Flamethrower):
+                tile.sprite.bind_to_activator()
+            tile.apply(False, ())
+
+    @property
+    def inverted(self) -> bool:
+        """Compat : True si toutes les cibles apparaissent a l'activation."""
+        return bool(self.targets) and all(
+            tile.action == settings.LINK_ACTION_SHOW for tile in self.targets
+        )
+
+    @property
+    def active(self) -> bool:
+        return self.pressed
 
     def set_pressed(self, pressed: bool, occupants: Sequence[arcade.Sprite]) -> None:
-        """Applique l'etat de la plaque : retire ou restitue les cibles."""
+        """Applique l'etat de l'activateur a chaque lien."""
         self.pressed = pressed
-        self.plate.set_pressed(pressed)
-        hide = pressed != self.inverted
-        if hide:
-            for tile in self.targets:
-                tile.hide()
-            return
+        setter = getattr(self.plate, "set_pressed", None)
+        if setter is not None:
+            setter(pressed)
         for tile in self.targets:
-            if tile.overlaps_any(occupants):
-                continue
-            tile.show()
+            tile.apply(pressed, occupants)
+
+    def press(self, occupants: Sequence[arcade.Sprite]) -> None:
+        """Enfonce le bouton spectral et relance son minuteur."""
+        self.time_left = self.duration
+        self.set_pressed(True, occupants)
+
+    def tick(self, delta_time: float, occupants: Sequence[arcade.Sprite]) -> bool:
+        """Compte a rebours du bouton spectral. True s'il vient de s'eteindre."""
+        if self.kind != settings.ACTIVATOR_KIND_SPECTRAL:
+            return False
+        if self.time_left <= 0.0:
+            return False
+        self.time_left = max(0.0, self.time_left - max(0.0, delta_time))
+        if self.time_left > 0.0:
+            return False
+        self.set_pressed(False, occupants)
+        return True
 
     def draw_soul(self, now: float) -> None:
         """Plaque lumineuse, vrille fantome, paquets discrets."""
@@ -187,6 +273,100 @@ def plate_geometry(
     center_x = origin_x + (width_tiles * tile_size) / 2
     center_y = origin_y + height / 2
     return center_x, center_y, width, height
+
+
+def button_geometry(
+    column: int,
+    row: int,
+    width_tiles: int,
+    tile_size: int,
+    total_rows: int,
+) -> tuple[float, float, float, float]:
+    """Retourne (center_x, center_y, width, height) d'un bouton spectral."""
+    inset = settings.SPECTRAL_BUTTON_INSET
+    width = width_tiles * tile_size - 2 * inset
+    height = tile_size - 2 * inset
+    origin_x = column * tile_size
+    origin_y = (total_rows - 1 - row) * tile_size
+    center_x = origin_x + (width_tiles * tile_size) / 2
+    center_y = origin_y + tile_size / 2
+    return center_x, center_y, width, height
+
+
+def trigger_geometry(
+    column: int,
+    row: int,
+    width_tiles: int,
+    tile_size: int,
+    total_rows: int,
+    kind: str = settings.ACTIVATOR_KIND_PLATE,
+) -> tuple[float, float, float, float]:
+    """Geometrie monde de la plaque ou du bouton, selon `kind`."""
+    if kind == settings.ACTIVATOR_KIND_SPECTRAL:
+        return button_geometry(column, row, width_tiles, tile_size, total_rows)
+    return plate_geometry(column, row, width_tiles, tile_size, total_rows)
+
+
+def parse_activator_kind(value: object) -> str:
+    """`plate` par defaut ; refuse tout autre mot que `spectral`."""
+    if value is None:
+        return settings.ACTIVATOR_KIND_PLATE
+    if not isinstance(value, str):
+        raise ValueError("kind doit etre plate ou spectral")
+    key = value.strip().lower()
+    if not key:
+        return settings.ACTIVATOR_KIND_PLATE
+    if key not in settings.ACTIVATOR_KINDS:
+        raise ValueError(f"kind inconnu : {value!r}")
+    return key
+
+
+def parse_link_action(
+    value: object,
+    default: str = settings.LINK_ACTION_HIDE,
+) -> str:
+    """Valide hide / show / ignite, ou retombe sur `default` si absent."""
+    if value is None:
+        value = default
+    if not isinstance(value, str):
+        raise ValueError("action doit etre hide, show ou ignite")
+    key = value.strip().lower()
+    if key not in settings.LINK_ACTIONS:
+        raise ValueError(f"action inconnue : {value!r}")
+    return key
+
+
+def clamp_spectral_duration(value: float) -> float:
+    """Borne la duree d'un bouton spectral, en secondes."""
+    duration = float(value)
+    return max(
+        settings.SPECTRAL_BUTTON_DURATION_MIN,
+        min(settings.SPECTRAL_BUTTON_DURATION_MAX, duration),
+    )
+
+
+def default_link_action(cell_kind: str) -> str:
+    """Action proposee a la creation d'un lien, selon le type de tuile."""
+    if cell_kind == "flamethrower":
+        return settings.LINK_ACTION_IGNITE
+    return settings.LINK_ACTION_HIDE
+
+
+def cycle_link_action(action: str, cell_kind: str) -> str:
+    """Passe a l'action suivante autorisee pour ce type de tuile."""
+    if cell_kind == "flamethrower":
+        order = (
+            settings.LINK_ACTION_IGNITE,
+            settings.LINK_ACTION_HIDE,
+            settings.LINK_ACTION_SHOW,
+        )
+    else:
+        order = (settings.LINK_ACTION_HIDE, settings.LINK_ACTION_SHOW)
+    try:
+        index = order.index(action)
+    except ValueError:
+        index = -1
+    return order[(index + 1) % len(order)]
 
 
 def draw_organic_link(
@@ -327,6 +507,8 @@ def _draw_box_aura(
 
 def _tiles_adjacent(left: GatedTile, right: GatedTile, tile_size: float) -> bool:
     """Voisins ortho (4-connexes), avec un slop d'un pixel sur le centrage."""
+    if left.action != right.action:
+        return False
     delta_x = abs(left.sprite.center_x - right.sprite.center_x)
     delta_y = abs(left.sprite.center_y - right.sprite.center_y)
     slop = 1.0

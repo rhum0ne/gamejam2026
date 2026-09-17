@@ -12,7 +12,7 @@ import arcade
 
 import settings
 from src.editor import palette
-from src.editor.activators import Activator, activator_at, overlaps_any
+from src.editor.activators import ACTION_LABEL, Activator, KIND_LABEL, activator_at, overlaps_any
 from src.editor.canvas import GridCanvas
 from src.editor.document import DocumentError, EditorDocument
 from src.editor.overlay import HelpOverlay, StatusBar, StatusData, TextPrompt
@@ -100,6 +100,7 @@ class EditView(arcade.View):
         self._space = False
         self._held: set[int] = set()
         self._link_index: int | None = None
+        self._place_kind = settings.ACTIVATOR_KIND_PLATE
         self._placing_plate = False
         self._resizing_plate = False
         self._message = ""
@@ -148,7 +149,9 @@ class EditView(arcade.View):
         paste = self.clipboard if self.tool is not Tool.SELECT else None
         preview_plate = None
         if self.tool is Tool.LINK and self._placing_plate and self._drag_origin and self._drag_current:
-            preview_plate = _plate_from_drag(self._drag_origin, self._drag_current)
+            preview_plate = _plate_from_drag(
+                self._drag_origin, self._drag_current, self._place_kind
+            )
         self.canvas.draw(
             selection=selection,
             hover=self.hover,
@@ -169,6 +172,7 @@ class EditView(arcade.View):
             self._link_index,
             self.tool is Tool.LINK,
             current_theme=self.document.theme,
+            place_kind=self._place_kind,
         )
         self.status.draw(self._status_data(), float(self.window.width))
         self.help.draw(float(self.window.width), float(self.window.height))
@@ -227,9 +231,11 @@ class EditView(arcade.View):
             chosen = self.document.activators[self._link_index]
             plates = (
                 f"#{self._link_index + 1} {chosen.column},{chosen.row} "
-                f"x{chosen.width} -> {len(chosen.targets)}"
-                f"{'  montre' if chosen.inverted else '  cache'}"
+                f"x{chosen.width} -> {len(chosen.targets)}  "
+                f"{KIND_LABEL.get(chosen.kind, chosen.kind)}"
             )
+            if chosen.is_spectral:
+                plates += f"  {chosen.duration:.1f}s"
         message = self._message if self._message_time > 0.0 else ""
         return StatusData(
             filename=self.document.filename,
@@ -484,11 +490,11 @@ class EditView(arcade.View):
         if symbol == arcade.key.BRACKETRIGHT:
             self._cycle_kind(1)
             return
+        if self._tune_activator(symbol):
+            return
         if self._tune_flamethrower(symbol):
             return
         if self._tune_falling_block(symbol):
-            return
-        if self._tune_activator(symbol):
             return
         if symbol in (arcade.key.EQUAL, arcade.key.PLUS, arcade.key.NUM_ADD):
             self.canvas.zoom_by(settings.EDITOR_ZOOM_STEP, *self._mouse)
@@ -514,8 +520,8 @@ class EditView(arcade.View):
             if tool is Tool.LINK:
                 self.panel.select_tab(TAB_PLAQUES)
                 self.notify(
-                    "plaques : glisser pour placer, clic sur un bloc pour lier, "
-                    "bouton cache/montre pour inverser"
+                    "activateurs : glisser pour placer, clic pour lier, "
+                    "reclic pour changer l'action"
                 )
             else:
                 self.notify(f"outil : {tool.value}")
@@ -603,18 +609,30 @@ class EditView(arcade.View):
         return True
 
     def _tune_activator(self, symbol: int) -> bool:
-        """Inverse cache / montre de la plaque selectionnee ou sous le curseur."""
-        if symbol != arcade.key.V:
-            return False
+        """Type sol/esprit (V) et duree du bouton spectral (, / .)."""
         index = self._link_index
         if index is None and self.hover is not None and self.document.inside(*self.hover):
             index = activator_at(self.document.activators, *self.hover)
         if index is None:
             return False
-        inverted = self.document.toggle_activator_invert(index)
+        if symbol == arcade.key.V:
+            kind = self.document.toggle_activator_kind(index)
+            self._link_index = index
+            self._place_kind = kind
+            self.notify(f"activateur #{index + 1} : {KIND_LABEL.get(kind, kind)}")
+            return True
+        activator = self.document.activators[index]
+        if self.tool is not Tool.LINK or not activator.is_spectral:
+            return False
+        if symbol == arcade.key.PERIOD:
+            delta = settings.SPECTRAL_BUTTON_DURATION_STEP
+        elif symbol == arcade.key.COMMA:
+            delta = -settings.SPECTRAL_BUTTON_DURATION_STEP
+        else:
+            return False
+        duration = self.document.adjust_activator_duration(index, delta)
         self._link_index = index
-        mode = "montre a l'activation" if inverted else "cache a l'activation"
-        self.notify(f"plaque #{index + 1} : {mode}")
+        self.notify(f"bouton spectral #{index + 1} : {duration:.1f}s")
         return True
 
     # ------------------------------------------------------------------ #
@@ -824,18 +842,26 @@ class EditView(arcade.View):
             if hit.tab == TAB_PLAQUES:
                 self.tool = Tool.LINK
                 self.notify(
-                    "plaques : glisser pour placer, clic un bloc pour lier, "
-                    "cache/montre pour inverser"
+                    "activateurs : glisser pour placer, clic un bloc pour lier, "
+                    "reclic pour changer l'action"
                 )
             elif self.tool is Tool.LINK:
                 self.tool = Tool.BRUSH
             return
-        if hit.invert_index is not None:
-            inverted = self.document.toggle_activator_invert(hit.invert_index)
-            self._link_index = hit.invert_index
+        if hit.place_kind is not None:
+            self._place_kind = hit.place_kind
             self.tool = Tool.LINK
-            mode = "montre a l'activation" if inverted else "cache a l'activation"
-            self.notify(f"plaque #{hit.invert_index + 1} : {mode}")
+            self.notify(
+                "prochain activateur : "
+                f"{KIND_LABEL.get(hit.place_kind, hit.place_kind)}"
+            )
+            return
+        if hit.kind_index is not None:
+            kind = self.document.toggle_activator_kind(hit.kind_index)
+            self._link_index = hit.kind_index
+            self._place_kind = kind
+            self.tool = Tool.LINK
+            self.notify(f"activateur #{hit.kind_index + 1} : {KIND_LABEL.get(kind, kind)}")
             return
         if hit.delete_index is not None:
             if button in (arcade.MOUSE_BUTTON_LEFT, arcade.MOUSE_BUTTON_RIGHT):
@@ -874,10 +900,21 @@ class EditView(arcade.View):
             self.notify(f"plaque #{index + 1} selectionnee")
             return
         if self._link_index is not None and self.document.can_link(*cell):
+            current = self.document.activators[self._link_index]
+            if current.has_target(*cell):
+                action = self.document.cycle_target_action(self._link_index, *cell)
+                label = ACTION_LABEL.get(action or "", action or "")
+                self.notify(f"lien : {label}")
+                return
             linked = self.document.toggle_target(self._link_index, *cell)
             kind = self.document.cell(*cell)
-            label = palette.item(kind).label if kind else "bloc"
-            self.notify(f"{label} lie" if linked else f"{label} delie")
+            name = palette.item(kind).label if kind else "bloc"
+            if linked:
+                target = self.document.activators[self._link_index].target_at(*cell)
+                action = target.action if target is not None else ""
+                self.notify(f"{name} lie ({ACTION_LABEL.get(action, action)})")
+            else:
+                self.notify(f"{name} delie")
             return
         if self._link_index is not None:
             kind = self.document.cell(*cell) if self.document.inside(*cell) else ""
@@ -903,7 +940,7 @@ class EditView(arcade.View):
         self._drag_current = None
         if origin is None or current is None:
             return
-        plate = _plate_from_drag(origin, current)
+        plate = _plate_from_drag(origin, current, self._place_kind)
         if not self.document.inside(plate.column, plate.row):
             return
         if not self.document.inside(plate.last_column, plate.row):
@@ -913,9 +950,12 @@ class EditView(arcade.View):
             if clash is not None:
                 self._focus_plate(clash)
                 return
-            index = self.document.add_activator(plate.column, plate.row, plate.width)
+            index = self.document.add_activator(
+                plate.column, plate.row, plate.width, kind=self._place_kind
+            )
             self._link_index = index
-            self.notify(f"plaque #{index + 1} placee  -  clic un bloc pour le lier")
+            label = KIND_LABEL.get(self._place_kind, self._place_kind)
+            self.notify(f"{label} #{index + 1} place  -  clic un bloc pour le lier")
             return
         if resizing and self._link_index is not None:
             if origin == current:
@@ -958,7 +998,9 @@ class EditView(arcade.View):
         self._link_index = index
         plate = self.document.activators[index]
         self.canvas.center_on(plate.column, plate.row)
-        self.notify(f"plaque #{index + 1}  -  clic un bloc pour lier, cache/montre pour inverser")
+        self.notify(
+            f"activateur #{index + 1}  -  clic un bloc pour lier, reclic pour l'action"
+        )
 
     def _clamp_link_index(self) -> None:
         count = len(self.document.activators)
@@ -968,13 +1010,17 @@ class EditView(arcade.View):
             self._link_index = None
 
 
-def _plate_from_drag(origin: tuple[int, int], current: tuple[int, int]) -> Activator:
+def _plate_from_drag(
+    origin: tuple[int, int],
+    current: tuple[int, int],
+    kind: str = settings.ACTIVATOR_KIND_PLATE,
+) -> Activator:
     """Plaque horizontale definie par deux cellules (la ligne de depart compte)."""
     start_column, row = origin
     end_column, _end_row = current
     column = min(start_column, end_column)
     width = abs(end_column - start_column) + 1
-    return Activator(column, row, width)
+    return Activator(column, row, width, kind=kind)
 
 
 def _slug(value: str) -> str:

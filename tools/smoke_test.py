@@ -62,6 +62,8 @@ def check_levels() -> None:
     check_invalid_activator()
     check_inverted_activator()
     check_gated_flamethrower()
+    check_link_actions()
+    check_spectral_button()
     check_ground_theme()
     check_sfx_files()
     check_hidden_wall()
@@ -183,6 +185,111 @@ def check_gated_flamethrower() -> None:
     shown.mechanisms[0].set_pressed(True, ())
     assert len(shown.flamethrowers) == 1, "inverse : le lance-flammes apparait a l'activation"
     print("  plaque + lance-flammes -> cache a l'activation, montre si inverse")
+
+
+def check_link_actions() -> None:
+    """Chaque cible a sa propre action : cacher, montrer, allumer."""
+    data = {
+        "name": "actions",
+        "tile_size": 32,
+        "legend": {"#": "wall", "P": "player_spawn", "f": "flamethrower"},
+        "rows": [
+            "#######",
+            "#P##.f#",
+            "#######",
+        ],
+        "activators": [
+            {
+                "x": 1,
+                "y": 1,
+                "width": 1,
+                "activate": {
+                    "setBlock": [
+                        {"x": 2, "y": 1, "type": "void", "action": "hide"},
+                        {"x": 3, "y": 1, "type": "void", "action": "show"},
+                        {"x": 5, "y": 1, "type": "void", "action": "ignite"},
+                    ]
+                },
+            }
+        ],
+        "flamethrowers": [{"x": 5, "y": 1, "interval": 8.0, "dir": "right"}],
+    }
+    level = Level.from_dict(data)
+    mechanism = level.mechanisms[0]
+    hide_tile, show_tile, ignite_tile = mechanism.targets
+    thrower = ignite_tile.sprite
+    assert hide_tile.action == settings.LINK_ACTION_HIDE
+    assert show_tile.action == settings.LINK_ACTION_SHOW
+    assert ignite_tile.action == settings.LINK_ACTION_IGNITE
+    assert not hide_tile.hidden
+    assert show_tile.hidden
+    assert thrower in level.flamethrowers
+    assert not thrower.commanded_on
+    assert not thrower.is_lethal
+    mechanism.set_pressed(True, ())
+    assert hide_tile.hidden
+    assert not show_tile.hidden
+    assert thrower in level.flamethrowers
+    assert thrower.commanded_on
+    assert thrower.activator_driven
+    thrower._age = 0.0
+    thrower.update(thrower.interval * 0.9)
+    assert thrower.intensity == 1.0
+    assert thrower.is_lethal, "un lance-flammes d'activateur ignore son intervalle"
+    mechanism.set_pressed(False, ())
+    assert not hide_tile.hidden
+    assert show_tile.hidden
+    assert not thrower.commanded_on
+    assert not thrower.is_lethal
+    print("  actions par lien -> hide / show / ignite independants")
+
+
+def check_spectral_button() -> None:
+    """Bouton spectral : pas de poids, timer, invisible au corps."""
+    data = {
+        "name": "spectral",
+        "tile_size": 32,
+        "legend": {"#": "wall", "P": "player_spawn"},
+        "rows": [
+            "#####",
+            "#P..#",
+            "#.#.#",
+            "#####",
+        ],
+        "activators": [
+            {
+                "x": 2,
+                "y": 1,
+                "width": 1,
+                "kind": "spectral",
+                "duration": 1.0,
+                "activate": {
+                    "setBlock": [{"x": 2, "y": 2, "type": "void", "action": "show"}]
+                },
+            }
+        ],
+    }
+    level = Level.from_dict(data)
+    assert len(level.spectral_buttons) == 1
+    assert len(level.plates) == 0
+    mechanism = level.mechanisms[0]
+    assert mechanism.kind == settings.ACTIVATOR_KIND_SPECTRAL
+    assert mechanism.duration == 1.0
+    tile = mechanism.targets[0]
+    assert tile.hidden, "show : cache au repos"
+    mechanism.set_pressed(True, ())
+    assert not tile.hidden
+    mechanism.press(())
+    assert mechanism.time_left == 1.0
+    assert mechanism.pressed
+    released = mechanism.tick(0.4, ())
+    assert not released
+    assert mechanism.pressed
+    released = mechanism.tick(0.7, ())
+    assert released
+    assert not mechanism.pressed
+    assert tile.hidden
+    print("  bouton spectral -> visible seulement en fantome, duree 1s")
 
 
 def check_ground_theme() -> None:
@@ -1348,9 +1455,16 @@ def check_editor_document() -> None:
     assert document.activators[index].width == 3
     linked = document.toggle_target(index, 2, document.rows - 2)
     assert linked
-    assert not document.activators[index].inverted
-    assert document.toggle_activator_invert(index)
-    invert_path = Path(tempfile.mkdtemp()) / "activator_invert.json"
+    target = document.activators[index].target_at(2, document.rows - 2)
+    assert target is not None
+    assert target.action == settings.LINK_ACTION_HIDE
+    cycled = document.cycle_target_action(index, 2, document.rows - 2)
+    assert cycled == settings.LINK_ACTION_SHOW
+    kind = document.toggle_activator_kind(index)
+    assert kind == settings.ACTIVATOR_KIND_SPECTRAL
+    duration = document.adjust_activator_duration(index, 1.5)
+    assert duration == settings.SPECTRAL_BUTTON_DURATION + 1.5
+    invert_path = Path(tempfile.mkdtemp()) / "activator_actions.json"
     invert_saved = document.save(invert_path)
     invert_payload = json.loads(invert_saved.read_text(encoding="utf-8"))
     inverted_entry = next(
@@ -1358,15 +1472,20 @@ def check_editor_document() -> None:
         for entry in invert_payload["activators"]
         if entry["x"] == 5 and entry["y"] == 5
     )
-    assert inverted_entry.get("invert") is True
+    assert "invert" not in inverted_entry
+    assert inverted_entry.get("kind") == settings.ACTIVATOR_KIND_SPECTRAL
+    assert inverted_entry["activate"]["setBlock"][0]["action"] == settings.LINK_ACTION_SHOW
     reloaded_invert = EditorDocument.from_file(invert_saved)
     restored_plate = next(
         plate
         for plate in reloaded_invert.activators
         if plate.column == 5 and plate.row == 5
     )
-    assert restored_plate.inverted
+    assert restored_plate.is_spectral
+    assert restored_plate.targets[0].action == settings.LINK_ACTION_SHOW
     invert_saved.unlink()
+    document.undo()
+    document.undo()
     document.undo()
     document.undo()
     document.undo()
