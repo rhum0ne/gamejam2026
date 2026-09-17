@@ -60,6 +60,7 @@ from src.world.atmosphere import ForegroundAtmosphere
 from src.world.camera import CameraRig
 from src.world.fog import GhostFog
 from src.world.level import Level
+from src.world.mechanisms import Mechanism
 
 
 class GameState(Enum):
@@ -552,6 +553,7 @@ class PlayView(arcade.View):
                 arcade.draw_lrbt_rectangle_outline(left, right, bottom, top, color, 1)
         self.level.corpses.draw_hit_boxes(color)
         self.level.plates.draw_hit_boxes(color)
+        self.level.spectral_buttons.draw_hit_boxes(color)
         self.level.falling_spikes.draw_hit_boxes(color)
         for thrower in self.level.flamethrowers:
             if thrower.is_lethal:
@@ -588,6 +590,7 @@ class PlayView(arcade.View):
             if wall.revealed:
                 revealed_walls.append(wall)
         self.fog.draw(ghost, self.camera.world)
+        self.level.spectral_buttons.draw()
         self._draw_hidden_wall_outlines()
         self._reveal_walls.draw(revealed_walls)
         with glow_pass():
@@ -718,6 +721,8 @@ class PlayView(arcade.View):
         ):
             return self.level.hint
         if state is GameState.GHOST:
+            if self._spectral_button_under_ghost() is not None:
+                return "F : bouton spectral    R : revenir au checkpoint"
             return "R : ecourter le mode fantome et revenir au checkpoint"
         return ""
 
@@ -795,7 +800,7 @@ class PlayView(arcade.View):
         ):
             attractor = self.ghost
         self.level.update(delta_time, attractor)
-        self._update_mechanisms()
+        self._update_mechanisms(delta_time)
         self.level.update_spikes()
         if state is GameState.PLAYING:
             self._update_playing(delta_time)
@@ -819,15 +824,40 @@ class PlayView(arcade.View):
         weights.extend(enemy for enemy in self.level.enemies if enemy.weighs_on_plates)
         return weights
 
-    def _update_mechanisms(self) -> None:
+    def _update_mechanisms(self, delta_time: float) -> None:
         if not self.level.mechanisms:
             return
         weights = self._mechanism_weights()
         for mechanism in self.level.mechanisms:
+            if mechanism.kind == settings.ACTIVATOR_KIND_SPECTRAL:
+                if mechanism.tick(delta_time, weights):
+                    play_menu_click(echo=True)
+                continue
             pressed = collisions.plate_is_weighted(mechanism.plate, weights)
             if pressed != mechanism.pressed:
                 play_menu_click(echo=True)
             mechanism.set_pressed(pressed, weights)
+
+    def _spectral_button_under_ghost(self) -> Mechanism | None:
+        """Bouton spectral sous le fantome, ou None."""
+        ghost = self.ghost
+        if ghost is None or ghost.vanishing or self.ghost_emerging:
+            return None
+        for mechanism in self.level.mechanisms:
+            if mechanism.kind != settings.ACTIVATOR_KIND_SPECTRAL:
+                continue
+            if collisions.ghost_overlaps_trigger(ghost, mechanism.plate):
+                return mechanism
+        return None
+
+    def _press_spectral_button(self) -> None:
+        mechanism = self._spectral_button_under_ghost()
+        if mechanism is None:
+            return
+        was_active = mechanism.pressed
+        mechanism.press(self._mechanism_weights())
+        if not was_active:
+            play_menu_click(echo=True)
 
     def _update_playing(self, delta_time: float) -> None:
         self.player.walk(self._horizontal_input())
@@ -1163,11 +1193,14 @@ class PlayView(arcade.View):
                     )
             elif symbol == _PROJECT_KEY:
                 emit_player_death(self, "sacrifice")
-        elif state is GameState.GHOST and symbol == _RETURN_KEY:
-            if self.ghost_emerging:
-                return
-            if self.ghost is not None:
-                self.ghost.start_vanish()
+        elif state is GameState.GHOST:
+            if symbol == _PROJECT_KEY:
+                self._press_spectral_button()
+            elif symbol == _RETURN_KEY:
+                if self.ghost_emerging:
+                    return
+                if self.ghost is not None:
+                    self.ghost.start_vanish()
 
     def on_key_release(self, symbol: int, modifiers: int) -> None:
         self.held_keys.discard(symbol)

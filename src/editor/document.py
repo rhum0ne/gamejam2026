@@ -322,9 +322,9 @@ class EditorDocument:
                 issues.append(f"plaque {index} sans bloc lie (le jeu refusera la carte)")
                 continue
             missing = [
-                f"{column},{row}"
-                for column, row in activator.targets
-                if not can_link_kind(self.cell(column, row))
+                f"{target.column},{target.row}"
+                for target in activator.targets
+                if not can_link_kind(self.cell(target.column, target.row))
             ]
             if missing:
                 issues.append(
@@ -522,12 +522,19 @@ class EditorDocument:
         """Indique si la cellule peut etre une cible `setBlock void`."""
         return self.inside(column, row) and can_link_kind(self.cell(column, row))
 
-    def add_activator(self, column: int, row: int, width: int) -> int:
-        """Ajoute une plaque vide et retourne son index."""
+    def add_activator(
+        self,
+        column: int,
+        row: int,
+        width: int,
+        *,
+        kind: str = settings.ACTIVATOR_KIND_PLATE,
+    ) -> int:
+        """Ajoute un activateur vide et retourne son index."""
         if not self.inside(column, row) or not self.inside(column + width - 1, row):
             raise ValueError("la plaque sort de la carte")
         before = self._activators
-        added = Activator(column, row, width)
+        added = Activator(column, row, width, kind=kind)
         self._activators = (*before, added)
         self._commit_activators("placer une plaque", before)
         return len(self._activators) - 1
@@ -557,17 +564,43 @@ class EditorDocument:
         if not self.can_link(column, row):
             return False
         current = self._activators[index]
-        updated = current.with_toggled(column, row)
+        updated = current.with_toggled(column, row, self.cell(column, row))
         added = updated.has_target(column, row)
         self.replace_activator(index, updated, "lier un bloc" if added else "delier un bloc")
         return added
 
-    def toggle_activator_invert(self, index: int) -> bool:
-        """Inverse cache / montre a l'activation. Retourne le nouvel etat."""
+    def cycle_target_action(self, index: int, column: int, row: int) -> str | None:
+        """Passe a l'action suivante du lien. None si la cellule n'est pas liee."""
         current = self._activators[index]
-        updated = current.with_inverted(not current.inverted)
-        self.replace_activator(index, updated, "inverser une plaque")
-        return updated.inverted
+        if not current.has_target(column, row):
+            return None
+        updated = current.with_cycled_action(column, row, self.cell(column, row))
+        target = updated.target_at(column, row)
+        if target is None:
+            return None
+        self.replace_activator(index, updated, "changer l'action d'un lien")
+        return target.action
+
+    def toggle_activator_kind(self, index: int) -> str:
+        """Alterne plaque au sol / bouton spectral. Retourne le nouveau kind."""
+        current = self._activators[index]
+        nxt = (
+            settings.ACTIVATOR_KIND_SPECTRAL
+            if current.kind == settings.ACTIVATOR_KIND_PLATE
+            else settings.ACTIVATOR_KIND_PLATE
+        )
+        updated = current.with_kind(nxt)
+        self.replace_activator(index, updated, "changer le type d'activateur")
+        return updated.kind
+
+    def adjust_activator_duration(self, index: int, delta: float) -> float:
+        """Change la duree d'un bouton spectral. Retourne la nouvelle valeur."""
+        current = self._activators[index]
+        updated = current.with_duration(current.duration + delta)
+        if updated == current:
+            return current.duration
+        self.replace_activator(index, updated, "regler la duree d'un bouton")
+        return updated.duration
 
     def set_metadata(
         self,

@@ -12,7 +12,7 @@ Decoupage du paquet :
     canvas.py      camera et rendu de la grille
     panel.py       panneau lateral : onglets, grille, plaques
     overlay.py     barre d'etat, aide, saisie de texte
-    activators.py  plaques de pression (cache / montre, lance-flammes)
+    activators.py  plaques, boutons spectraux, actions par lien
     edit_view.py vue d'edition : entrees clavier / souris, outils
     browser.py   liste des cartes : creer, dupliquer, renommer, supprimer
     playtest.py  essai du niveau en cours, avec retour a l'editeur

@@ -29,22 +29,27 @@ Les plaques d'activation sont declarees a part, en coordonnees de grille
         "x": 13,
         "y": 31,
         "width": 4,
+        "kind": "plate",
         "activate": {
           "setBlock": [
-            {"x": 17, "y": 40, "type": "void"}
+            {"x": 17, "y": 40, "type": "void", "action": "hide"},
+            {"x": 18, "y": 40, "type": "void", "action": "show"},
+            {"x": 20, "y": 40, "type": "void", "action": "ignite"}
           ]
         }
       }
     ]
 
-`setBlock type=void` retire le bloc existant tant qu'un poids (joueur, cadavre,
-ennemi au sol ; un ennemi volant comme la chauve-souris ne pese pas, voir
-`EnemyBase.weighs_on_plates`) reste sur la plaque. Cibles possibles : murs,
-murs spectraux, blocs invisibles, piques, lance-flammes. `"invert": true`
-inverse le sens : les cibles sont cachees au chargement et n'apparaissent
-que tant que la plaque est enfoncee. `width` est optionnel (1 tuile par defaut).
-Une pique de plafond (`spike_up`) tombe si le bloc au-dessus d'elle disparait :
-elle tue au contact puis se brise au sol.
+Chaque cible a sa propre `action` : `hide` retire le bloc tant que l'activateur
+est actif, `show` le cache au repos et le restitue a l'activation, `ignite`
+allume un lance-flammes sans le retirer du niveau. L'ancien champ `"invert":
+true` (sans `action` par cible) vaut `show` partout. Cibles possibles : murs,
+murs spectraux, blocs invisibles, piques, lance-flammes. `kind` vaut `plate`
+(poids : joueur, cadavre, ennemi au sol ; un ennemi volant ne pese pas, voir
+`EnemyBase.weighs_on_plates`) ou `spectral` (bouton visible seulement en
+fantome, touche F, champ `duration` en secondes). `width` est optionnel
+(1 tuile par defaut). Une pique de plafond (`spike_up`) tombe si le bloc
+au-dessus d'elle disparait : elle tue au contact puis se brise au sol.
 
 Pour ajouter un sprite de terrain : deposer le PNG dans `assets/sprites/`,
 l'enregistrer dans `TILE_SPECS` (`src/world/obstacles.py`), puis l'utiliser
@@ -89,8 +94,12 @@ from src.world.mechanisms import (
     GatedTile,
     Mechanism,
     PressurePlate,
+    SpectralButton,
+    clamp_spectral_duration,
     group_gated_chunks,
-    plate_geometry,
+    parse_activator_kind,
+    parse_link_action,
+    trigger_geometry,
 )
 from src.world.obstacles import (
     SOLID_GROUND_KINDS,
@@ -181,6 +190,7 @@ class Level:
     corpses: arcade.SpriteList = field(default_factory=_dynamic_sprite_list)
     remains: arcade.SpriteList = field(default_factory=_dynamic_sprite_list)
     plates: arcade.SpriteList = field(default_factory=_dynamic_sprite_list)
+    spectral_buttons: arcade.SpriteList = field(default_factory=_dynamic_sprite_list)
     falling_spikes: arcade.SpriteList = field(default_factory=_dynamic_sprite_list)
     mechanisms: list[Mechanism] = field(default_factory=list)
     torches: arcade.SpriteList = field(default_factory=_dynamic_sprite_list)
@@ -355,7 +365,10 @@ class Level:
                 mechanism = self._parse_activator(raw)
             except LevelFormatError as error:
                 raise LevelFormatError(f"activators[{index}] : {error}") from error
-            self.plates.append(mechanism.plate)
+            if mechanism.kind == settings.ACTIVATOR_KIND_SPECTRAL:
+                self.spectral_buttons.append(mechanism.plate)
+            else:
+                self.plates.append(mechanism.plate)
             self.mechanisms.append(mechanism)
 
     def _parse_activator(self, raw: dict) -> Mechanism:
@@ -366,24 +379,45 @@ class Level:
             raise LevelFormatError("width doit etre un entier >= 1")
         self._ensure_in_bounds(column, row)
         self._ensure_in_bounds(column + width_tiles - 1, row)
-        center_x, center_y, width, height = plate_geometry(
-            column, row, width_tiles, self.tile_size, self.rows
+        try:
+            kind = parse_activator_kind(raw.get("kind"))
+        except ValueError as error:
+            raise LevelFormatError(str(error)) from error
+        duration = settings.SPECTRAL_BUTTON_DURATION
+        if "duration" in raw:
+            value = raw["duration"]
+            if isinstance(value, bool) or not isinstance(value, (int, float)):
+                raise LevelFormatError("duration doit etre un nombre")
+            duration = clamp_spectral_duration(float(value))
+        default_action = (
+            settings.LINK_ACTION_SHOW
+            if _parse_invert(raw)
+            else settings.LINK_ACTION_HIDE
         )
-        plate = PressurePlate(center_x, center_y, width, height)
+        center_x, center_y, width, height = trigger_geometry(
+            column, row, width_tiles, self.tile_size, self.rows, kind
+        )
+        if kind == settings.ACTIVATOR_KIND_SPECTRAL:
+            trigger = SpectralButton(center_x, center_y, width, height)
+        else:
+            trigger = PressurePlate(center_x, center_y, width, height)
         targets = [
-            self._gated_tile_at(tile_column, tile_row)
-            for tile_column, tile_row in _parse_set_blocks(raw.get("activate"))
+            self._gated_tile_at(tile_column, tile_row, action)
+            for tile_column, tile_row, action in _parse_set_blocks(
+                raw.get("activate"), default_action=default_action
+            )
         ]
         if not targets:
             raise LevelFormatError("activate.setBlock ne cible aucun bloc")
         return Mechanism(
-            plate=plate,
+            plate=trigger,
             targets=targets,
             chunks=group_gated_chunks(targets, self.tile_size),
-            inverted=_parse_invert(raw),
+            kind=kind,
+            duration=duration,
         )
 
-    def _gated_tile_at(self, column: int, row: int) -> GatedTile:
+    def _gated_tile_at(self, column: int, row: int, action: str) -> GatedTile:
         self._ensure_in_bounds(column, row)
         sprite = self._terrain_at(column, row)
         if sprite is None:
@@ -403,7 +437,11 @@ class Level:
             raise LevelFormatError(
                 f"setBlock void : le bloc a ({column}, {row}) n'appartient a aucune liste"
             )
-        return GatedTile(sprite=sprite, lists=lists)
+        try:
+            parsed = parse_link_action(action)
+        except ValueError as error:
+            raise LevelFormatError(str(error)) from error
+        return GatedTile(sprite=sprite, lists=lists, action=parsed)
 
     def _terrain_at(self, column: int, row: int) -> arcade.Sprite | None:
         x, y = self.tile_center(column, row, self.rows)
@@ -607,6 +645,7 @@ class Level:
             self.corpses,
             self.remains,
             self.plates,
+            self.spectral_buttons,
             self.falling_spikes,
             self.torches,
             self.torch_stems,
@@ -903,8 +942,10 @@ def _parse_invert(raw: dict) -> bool:
     return value
 
 
-def _parse_set_blocks(activate: object) -> list[tuple[int, int]]:
-    """Extrait les tuiles `setBlock type=void` d'un objet `activate`."""
+def _parse_set_blocks(
+    activate: object, *, default_action: str
+) -> list[tuple[int, int, str]]:
+    """Extrait les tuiles `setBlock` et leur action (hide / show / ignite)."""
     if activate is None:
         raise LevelFormatError("activate est requis")
     if not isinstance(activate, dict):
@@ -918,7 +959,7 @@ def _parse_set_blocks(activate: object) -> list[tuple[int, int]]:
         entries = block
     else:
         raise LevelFormatError("setBlock doit etre un objet ou une liste d'objets")
-    tiles: list[tuple[int, int]] = []
+    tiles: list[tuple[int, int, str]] = []
     for index, entry in enumerate(entries):
         if not isinstance(entry, dict):
             raise LevelFormatError(f"setBlock[{index}] doit etre un objet")
@@ -927,7 +968,11 @@ def _parse_set_blocks(activate: object) -> list[tuple[int, int]]:
             raise LevelFormatError(
                 f"setBlock type '{kind}' non supporte (uniquement 'void')"
             )
-        tiles.append((_coord(entry, "x"), _coord(entry, "y")))
+        try:
+            action = parse_link_action(entry.get("action"), default_action)
+        except ValueError as error:
+            raise LevelFormatError(f"setBlock[{index}] : {error}") from error
+        tiles.append((_coord(entry, "x"), _coord(entry, "y"), action))
     return tiles
 
 
