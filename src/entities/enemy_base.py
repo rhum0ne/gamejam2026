@@ -125,11 +125,11 @@ class EnemyBase(arcade.Sprite):
         if self.hit_points > 0:
             self._on_hurt()
             return None
-        orb = make_soul_orb(self.center_x, self.center_y)
+        drop = self._death_drop()
         self._is_dying = True
         self._on_death()
         self.change_x = knockback
-        return orb
+        return drop
 
     def _apply_hit_feedback(self, knockback: float) -> None:
         self._knockback_x = knockback
@@ -147,6 +147,11 @@ class EnemyBase(arcade.Sprite):
 
         Ne fait rien par defaut : un ennemi a 1 PV n'y passe jamais.
         """
+
+    def _death_drop(self) -> Item:
+        """Objet laisse a la mort. Par defaut une bille bleue ; surchargeable
+        (voir `Boss`, qui laisse une cle)."""
+        return make_soul_orb(self.center_x, self.center_y)
 
     def _on_death(self) -> None:
         """Fige l'ennemi et lance son animation de mort. A implementer."""
