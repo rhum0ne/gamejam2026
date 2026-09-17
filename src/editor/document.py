@@ -63,6 +63,7 @@ class EditorDocument:
         fallings: dict[tuple[int, int], FallingSpec] | None = None,
         springs: dict[tuple[int, int], SpringSpec] | None = None,
         theme: str = settings.GROUND_THEME_DEFAULT,
+        level_type: str = settings.LEVEL_TYPE_BASIC,
     ) -> None:
         if not cells or not cells[0]:
             raise DocumentError("une carte doit avoir au moins une cellule")
@@ -75,6 +76,7 @@ class EditorDocument:
         self.hint = hint
         self.tile_size = tile_size
         self.theme = normalize_theme(theme)
+        self.level_type = settings.parse_level_type(level_type)
         self.path = path
         self.history = History()
         self._cells: list[list[str]] = [list(row) for row in cells]
@@ -196,6 +198,7 @@ class EditorDocument:
             fallings=fallings,
             springs=springs,
             theme=theme,
+            level_type=settings.parse_level_type(data.get("type")),
         )
 
     # ------------------------------------------------------------------ #
@@ -646,8 +649,9 @@ class EditorDocument:
         hint: str | None = None,
         tile_size: int | None = None,
         theme: str | None = None,
+        level_type: str | None = None,
     ) -> None:
-        """Change le nom, l'indice, la taille de tuile ou le theme (hors historique)."""
+        """Change le nom, l'indice, la taille de tuile, le theme ou la categorie."""
         if name is not None:
             self.name = name
         if hint is not None:
@@ -660,6 +664,8 @@ class EditorDocument:
         if theme is not None:
             self.theme = normalize_theme(theme)
             self._layout_version += 1
+        if level_type is not None:
+            self.level_type = settings.parse_level_type(level_type)
         self._version += 1
 
     # ------------------------------------------------------------------ #
@@ -699,6 +705,8 @@ class EditorDocument:
         }
         if self.theme != settings.GROUND_THEME_DEFAULT:
             payload["theme"] = self.theme
+        if self.level_type != settings.LEVEL_TYPE_BASIC:
+            payload["type"] = self.level_type
         activators = dump_activators(self._activators)
         if activators:
             payload["activators"] = activators

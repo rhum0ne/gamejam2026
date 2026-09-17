@@ -45,7 +45,7 @@ from src.systems.upgrades import SoulProgression
 from src.ui.debug import DebugOverlay, DebugSnapshot
 from src.ui.display import handle_display_key
 from src.ui.hud import Hud, HudData
-from src.ui import cursor
+from src.ui import cursor, keys
 from src.ui.music import music
 from src.ui.sfx import (
     play_attack,
@@ -65,7 +65,7 @@ from src.ui.sprites import draw_pixel_sprite
 from src.world.atmosphere import ForegroundAtmosphere
 from src.world.camera import CameraRig
 from src.world.fog import GhostFog
-from src.world.level import Level
+from src.world.level import Level, load_level_catalog
 from src.world.mechanisms import Mechanism
 
 
@@ -201,13 +201,14 @@ class GameSession:
     def level_file(self) -> str:
         if self.map_override:
             return self.map_override
-        return settings.LEVEL_SEQUENCE[self.level_index]
+        files = load_level_catalog().files
+        return files[self.level_index]
 
     @property
     def is_last_level(self) -> bool:
         if self.map_override:
             return True
-        return self.level_index >= len(settings.LEVEL_SEQUENCE) - 1
+        return self.level_index >= len(load_level_catalog().files) - 1
 
     def advance_level(self) -> bool:
         """Passe au niveau suivant. Retourne False si l'aventure est terminee."""
@@ -217,11 +218,11 @@ class GameSession:
         return True
 
     def start_level(self, index: int) -> None:
-        """Place la session sur un niveau de `LEVEL_SEQUENCE`."""
-        if not 0 <= index < len(settings.LEVEL_SEQUENCE):
+        """Place la session sur un niveau du catalogue."""
+        files = load_level_catalog().files
+        if not 0 <= index < len(files):
             raise ValueError(
-                f"index de niveau invalide : {index} "
-                f"(0..{len(settings.LEVEL_SEQUENCE) - 1})"
+                f"index de niveau invalide : {index} (0..{len(files) - 1})"
             )
         self.level_index = index
         self.map_override = None
@@ -659,6 +660,7 @@ class PlayView(arcade.View):
                 revealed_walls.append(wall)
         self.fog.draw_at(ghost.center_x, ghost.center_y, ghost.vision_radius, self.camera.world)
         self.level.spectral_buttons.draw()
+        self._draw_spectral_press_prompt(ghost)
         self._draw_hidden_wall_outlines()
         self._reveal_walls.draw(revealed_walls)
         with glow_pass():
@@ -941,6 +943,42 @@ class PlayView(arcade.View):
             if pressed != mechanism.pressed:
                 play_menu_click(echo=True)
             mechanism.set_pressed(pressed, weights)
+
+    def _spectral_button_near_ghost(self, ghost: Ghost | None = None) -> Mechanism | None:
+        """Bouton spectral assez proche du fantome pour afficher Press F."""
+        target = ghost if ghost is not None else self.ghost
+        if target is None or target.vanishing or self.ghost_emerging:
+            return None
+        radius = settings.SPECTRAL_BUTTON_PROMPT_RANGE
+        closest: Mechanism | None = None
+        closest_distance = radius
+        for mechanism in self.level.mechanisms:
+            if mechanism.kind != settings.ACTIVATOR_KIND_SPECTRAL:
+                continue
+            plate = mechanism.plate
+            distance = math.hypot(
+                target.center_x - plate.center_x,
+                target.center_y - plate.center_y,
+            )
+            if distance <= closest_distance:
+                closest = mechanism
+                closest_distance = distance
+        return closest
+
+    def _draw_spectral_press_prompt(self, ghost: Ghost) -> None:
+        """Invite clavier au-dessus du bouton spectral proche."""
+        mechanism = self._spectral_button_near_ghost(ghost)
+        if mechanism is None:
+            return
+        plate = mechanism.plate
+        keys.draw_prompt(
+            plate.center_x,
+            plate.top + settings.SPECTRAL_BUTTON_PROMPT_OFFSET,
+            ("f",),
+            settings.SPECTRAL_BUTTON_PROMPT,
+            self.held_keys,
+            height=24,
+        )
 
     def _spectral_button_under_ghost(self) -> Mechanism | None:
         """Bouton spectral sous le fantome, ou None."""
@@ -1308,6 +1346,8 @@ class PlayView(arcade.View):
                     self.camera.shake(
                         settings.CAMERA_DASH_SHAKE, settings.CAMERA_DASH_SHAKE_TIME
                     )
+            elif symbol in _ATTACK_KEYS:
+                self.player.attack()
             elif symbol == _PROJECT_KEY:
                 emit_player_death(self, "sacrifice")
         elif state is GameState.GHOST:

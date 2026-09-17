@@ -536,6 +536,9 @@ class Player(arcade.Sprite):
     def _start_jump(self) -> None:
         if self._physics is None:
             return
+        was_dashing = self.is_dashing
+        if was_dashing:
+            self._cut_dash_to_carry(settings.PLAYER_DASH_JUMP_CARRY)
         speed = settings.PLAYER_JUMP_SPEED
         max_speed = max(settings.PLAYER_SPEED, 0.001)
         run = min(1.0, abs(self.change_x) / max_speed)
@@ -544,10 +547,8 @@ class Player(arcade.Sprite):
         self._jump_buffer = 0.0
         self._time_off_ground = settings.PLAYER_COYOTE_TIME + 1.0
         self._was_on_ground = False
-        if self.is_dashing and self._dash_from_ground:
-            self._dash_jump = True
-        # Le dash-saut a deja joue dash.wav : evite de superposer le meme sample.
-        if not self.is_dashing:
+        # Le dash a deja joue dash.wav : evite de superposer le meme sample.
+        if not was_dashing:
             self._jump_sound_pending = True
 
     def launch_vertical(self, speed: float) -> None:
@@ -791,6 +792,12 @@ class Player(arcade.Sprite):
         if intended_x > 0.0:
             return moved < 1.0
         return moved > -1.0
+
+    def _cut_dash_to_carry(self, carry_speed: float) -> None:
+        """Termine le dash : plus de volee, seulement un filet d'elan."""
+        self._dash_timer = 0.0
+        self._dash_jump = False
+        self.change_x = self._dash_dir * carry_speed
 
     def _stop_dash_against_wall(self) -> None:
         """Coupe le dash et l'elan horizontal : plus de glissade le long du mur."""

@@ -106,10 +106,104 @@ class TextButton:
         self.label.draw()
 
 
+class TabStrip:
+    """Onglets horizontaux : un seul actif, souris et clavier."""
+
+    def __init__(self, captions: Sequence[str]) -> None:
+        if not captions:
+            raise ValueError("au moins un onglet")
+        self.captions = list(captions)
+        self.labels = [
+            arcade.Text(
+                caption,
+                0,
+                0,
+                settings.COLOR_HUD_TEXT,
+                font_size=settings.MENU_TAB_SIZE,
+                anchor_x="center",
+                anchor_y="center",
+                font_name=PIXEL_FONT,
+            )
+            for caption in captions
+        ]
+        self.rects: list[tuple[float, float, float, float]] = [
+            (0.0, 0.0, 0.0, 0.0) for _ in captions
+        ]
+        self.selected = 0
+        self.focused = False
+        self.hovered = -1
+
+    def layout(self, left: float, right: float, bottom: float, height: float) -> None:
+        gap = settings.MENU_TAB_GAP
+        count = len(self.captions)
+        width = (right - left - gap * (count - 1)) / count
+        top = bottom + height
+        self.rects = []
+        for index, label in enumerate(self.labels):
+            tab_left = left + index * (width + gap)
+            tab_right = tab_left + width
+            self.rects.append((tab_left, tab_right, bottom, top))
+            label.x = (tab_left + tab_right) / 2
+            label.y = (bottom + top) / 2
+
+    def tab_at(self, x: float, y: float) -> int | None:
+        for index, (left, right, bottom, top) in enumerate(self.rects):
+            if left <= x <= right and bottom <= y <= top:
+                return index
+        return None
+
+    def select(self, index: int) -> bool:
+        """Retourne True si l'onglet actif a change."""
+        next_index = max(0, min(len(self.captions) - 1, index))
+        changed = next_index != self.selected
+        self.selected = next_index
+        return changed
+
+    def move(self, delta: int) -> bool:
+        if not delta:
+            return False
+        count = len(self.captions)
+        return self.select((self.selected + delta) % count)
+
+    def draw(self, *, panel_top: float | None = None) -> None:
+        for index, (left, right, bottom, top) in enumerate(self.rects):
+            selected = index == self.selected
+            hovered = index == self.hovered
+            if selected:
+                fill = settings.COLOR_MENU_PANEL
+                border = (
+                    settings.COLOR_MENU_FOCUS
+                    if self.focused or hovered
+                    else settings.COLOR_MENU_PANEL_BORDER
+                )
+            elif hovered:
+                fill = settings.COLOR_MENU_FOCUS_FILL
+                border = settings.COLOR_MENU_FOCUS
+            else:
+                fill = settings.COLOR_MENU_CELL
+                border = settings.COLOR_MENU_CELL_BORDER
+            arcade.draw_lrbt_rectangle_filled(left, right, bottom, top, fill)
+            arcade.draw_lrbt_rectangle_outline(left, right, bottom, top, border, 2)
+            if selected and panel_top is not None:
+                arcade.draw_lrbt_rectangle_filled(
+                    left + 2,
+                    right - 2,
+                    panel_top - 3,
+                    panel_top + 2,
+                    settings.COLOR_MENU_PANEL,
+                )
+            self.labels[index].color = (
+                settings.COLOR_MENU_FOCUS if selected or hovered else settings.COLOR_MENU_HINT
+            )
+            self.labels[index].draw()
+
+
 class LevelCell:
     """Une case du tableau de niveaux : numero, nom au survol via le parent."""
 
-    def __init__(self, index: int, name: str, *, on_activate: _Activate) -> None:
+    def __init__(
+        self, index: int, name: str, *, number: int | None = None, on_activate: _Activate
+    ) -> None:
         self.index = index
         self.name = name
         self.on_activate = on_activate
@@ -121,7 +215,7 @@ class LevelCell:
         self.bottom = 0.0
         self.top = 0.0
         self.number = arcade.Text(
-            str(index + 1),
+            str(index + 1 if number is None else number),
             0,
             0,
             settings.COLOR_HUD_TEXT,
@@ -201,13 +295,15 @@ class LevelGrid:
     def move(self, dx: int, dy: int) -> bool:
         """Deplace le focus. Retourne False s'il faut sortir de la grille (vers le bas)."""
         if not self.cells:
-            return True
+            return False
         cols = self.columns
         count = len(self.cells)
         col = self.focus_index % cols
         row = self.focus_index // cols
         rows = (count + cols - 1) // cols
         if dy > 0 and row >= rows - 1:
+            return False
+        if dy < 0 and row <= 0:
             return False
         col = max(0, min(cols - 1, col + dx))
         row = max(0, min(rows - 1, row + dy))
@@ -227,6 +323,16 @@ class LevelGrid:
         rows = (len(self.cells) + cols - 1) // cols
         self.focus_index = min(len(self.cells) - 1, (rows - 1) * cols)
         self._sync()
+
+    def focus_first_row(self) -> None:
+        if not self.cells:
+            return
+        self.focus_index = 0
+        self._sync()
+
+    def blur(self) -> None:
+        for cell in self.cells:
+            cell.focused = False
 
     def activate_focused(self) -> None:
         if self.cells:

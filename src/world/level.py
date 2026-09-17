@@ -19,7 +19,9 @@ l'ecran. Chaque caractere est traduit via `legend` :
 `wall` est la seule matiere auto-tilee : il suffit de dessiner sa forme dans
 `rows`, l'apparence est deduite de la grille (`compute_ground_cells`). Le
 champ optionnel `theme` (`ground`, `sand`, `rock`) choisit la planche ; s'il
-est absent, on utilise la terre par defaut.
+est absent, on utilise la terre par defaut. Le champ optionnel `type`
+(`dev`, `basic`, `puzzle`, `others`) range la carte dans le menu titre ;
+absent ou inconnu vaut `basic`. Un seul `dev` est affiche (bouton Dev world).
 
 Les plaques d'activation sont declarees a part, en coordonnees de grille
 (x = colonne, y = ligne depuis le haut, comme `rows`) :
@@ -98,7 +100,8 @@ from __future__ import annotations
 
 import json
 import math
-from collections.abc import Callable
+import warnings
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -178,15 +181,130 @@ def _resolve_map_path(path: str | Path) -> Path:
     return map_path
 
 
-def peek_level_info(path: str | Path) -> tuple[str, str]:
-    """Lit juste le nom et le sous-titre d'une carte (ecran de transition).
+def peek_level_info(path: str | Path) -> LevelInfo:
+    """Lit le nom, le sous-titre et la categorie d'une carte.
 
     Evite de construire tout le niveau (sprites, collisions...) uniquement
     pour afficher son titre avant le chargement reel.
     """
     with _resolve_map_path(path).open(encoding="utf-8") as stream:
         data = json.load(stream)
-    return data.get("name", "Niveau sans nom"), data.get("subtitle", "")
+    return LevelInfo(
+        name=str(data.get("name", "Niveau sans nom")),
+        subtitle=str(data.get("subtitle", "")),
+        level_type=parse_level_type(data.get("type")),
+    )
+
+
+def parse_level_type(value: object) -> str:
+    """`basic` par defaut ; `dev` / `puzzle` / `others` si reconnus."""
+    return settings.parse_level_type(value)
+
+
+def level_type_label(level_type: str) -> str:
+    """Libelle affiche (menu, ecran de lancement)."""
+    return settings.LEVEL_TYPE_LABELS.get(level_type, settings.LEVEL_TYPE_LABELS[settings.LEVEL_TYPE_BASIC])
+
+
+@dataclass(frozen=True, slots=True)
+class LevelInfo:
+    """Metadonnees legeres d'une carte, sans charger les sprites."""
+
+    name: str
+    subtitle: str = ""
+    level_type: str = settings.LEVEL_TYPE_BASIC
+
+
+@dataclass(frozen=True, slots=True)
+class LevelEntry:
+    """Une carte du menu : index dans le catalogue + infos lues."""
+
+    index: int
+    filename: str
+    name: str
+    subtitle: str = ""
+    level_type: str = settings.LEVEL_TYPE_BASIC
+
+
+@dataclass(frozen=True, slots=True)
+class LevelCatalog:
+    """Niveaux du menu : categories jouables + au plus un Dev world."""
+
+    entries: tuple[LevelEntry, ...]
+    dev: LevelEntry | None
+    warnings: tuple[str, ...] = ()
+    files: tuple[str, ...] = ()
+
+    def in_type(self, level_type: str) -> tuple[LevelEntry, ...]:
+        return tuple(entry for entry in self.entries if entry.level_type == level_type)
+
+
+def catalog_from_entries(entries: Sequence[LevelEntry]) -> LevelCatalog:
+    """Garde un seul `dev` (le premier), range le reste par type de menu."""
+    playable: list[LevelEntry] = []
+    dev: LevelEntry | None = None
+    notes: list[str] = []
+    for entry in entries:
+        if entry.level_type != settings.LEVEL_TYPE_DEV:
+            playable.append(entry)
+            continue
+        if dev is None:
+            dev = entry
+            continue
+        message = (
+            f"plusieurs niveaux type=dev : on garde {dev.filename}, "
+            f"on ignore {entry.filename}"
+        )
+        notes.append(message)
+        warnings.warn(message, stacklevel=2)
+    return LevelCatalog(
+        tuple(playable),
+        dev,
+        tuple(notes),
+        tuple(entry.filename for entry in entries),
+    )
+
+
+def discover_level_files() -> tuple[str, ...]:
+    """LEVEL_SEQUENCE, puis les autres JSON de `assets/maps` (hors fond titre)."""
+    skip = {settings.MENU_TITLE_MAP}
+    ordered: list[str] = []
+    seen: set[str] = set()
+    for name in settings.LEVEL_SEQUENCE:
+        if name in skip or name in seen:
+            continue
+        ordered.append(name)
+        seen.add(name)
+    extras = sorted(
+        path.name
+        for path in settings.MAPS_DIR.glob("*.json")
+        if path.name not in seen and path.name not in skip
+    )
+    return tuple(ordered + extras)
+
+
+def load_level_catalog(*, reload: bool = False) -> LevelCatalog:
+    """Lit les cartes du dossier maps (cache, `reload=True` pour forcer)."""
+    global _LEVEL_CATALOG
+    if _LEVEL_CATALOG is not None and not reload:
+        return _LEVEL_CATALOG
+    scanned: list[LevelEntry] = []
+    for index, filename in enumerate(discover_level_files()):
+        info = peek_level_info(filename)
+        scanned.append(
+            LevelEntry(
+                index=index,
+                filename=filename,
+                name=info.name,
+                subtitle=info.subtitle,
+                level_type=info.level_type,
+            )
+        )
+    _LEVEL_CATALOG = catalog_from_entries(scanned)
+    return _LEVEL_CATALOG
+
+
+_LEVEL_CATALOG: LevelCatalog | None = None
 
 
 class LevelFormatError(ValueError):

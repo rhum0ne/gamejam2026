@@ -90,10 +90,13 @@ def create_window(*, fullscreen: bool = settings.START_FULLSCREEN) -> arcade.Win
 
 def main(argv: list[str] | None = None) -> None:
     args = parse_args(argv)
-    if not 0 <= args.level < len(settings.LEVEL_SEQUENCE):
+    from src.world.level import load_level_catalog
+
+    files = load_level_catalog().files
+    if not 0 <= args.level < len(files):
         raise SystemExit(
-            f"--level doit etre entre 0 et {len(settings.LEVEL_SEQUENCE) - 1} "
-            f"(niveaux disponibles : {', '.join(settings.LEVEL_SEQUENCE)})"
+            f"--level doit etre entre 0 et {len(files) - 1} "
+            f"(niveaux disponibles : {', '.join(files)})"
         )
 
     session = GameSession(level_index=args.level)

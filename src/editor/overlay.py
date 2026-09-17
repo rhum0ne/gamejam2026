@@ -16,36 +16,59 @@ import settings
 from src.ui import labels
 
 # (raccourci, ce que ca fait) : sert a l'aide (F1) et documente l'editeur.
-SHORTCUTS: tuple[tuple[str, str], ...] = (
-    ("Clic gauche", "poser l'element selectionne"),
-    ("Clic droit", "effacer la cellule"),
-    ("Molette / + / -", "zoomer (carte) / defiler (panneau)"),
-    ("Clic milieu / Espace", "glisser la vue"),
-    ("Fleches / ZQSD", "deplacer la camera"),
-    ("B / R / G", "pinceau / rectangle / remplir la zone"),
-    ("X / I / M", "gomme / pipette / selection"),
-    ("L / onglet Plaques", "plaques, boutons spectraux et liens"),
-    ("V / pastille sol-esprit", "plaque ou bouton fantome / bloc tombant fantome seulement"),
-    ("Clic sur un bloc lie", "changer l'action (cache / montre / allume)"),
-    (", et .", "portee du lance-flammes / delay tombant / duree du bouton spectral"),
-    ("9 et 0", "intervalle du lance-flammes / respawn du bloc tombant"),
-    ("H", "pivoter le lance-flammes / le ressort (4 directions)"),
-    ("[ et ]", "element precedent / suivant de la palette"),
-    ("Ctrl+A", "tout selectionner"),
-    ("Ctrl+C / Ctrl+X", "copier / couper la selection"),
-    ("Ctrl+V", "coller sous le curseur"),
-    ("Entree", "remplir la selection avec l'element courant"),
-    ("Suppr / Retour", "vider la selection (ou la plaque)"),
-    ("Ctrl+R", "remplacer partout le type sous le curseur"),
-    ("Ctrl+Z", "annuler"),
-    ("Ctrl+Shift+Z / Ctrl+Y", "refaire"),
-    ("Ctrl+S / Ctrl+Shift+S", "enregistrer / enregistrer sous"),
-    ("Ctrl+P", "essayer le niveau (Echap pour revenir)"),
-    ("F2 / F3 / F4", "nom / indice / dimensions"),
-    ("themes du panneau / F5", "theme du terrain (terre / sable / roche)"),
-    ("Ctrl+G / Origine", "grille / voir toute la carte"),
-    ("Ctrl+O", "revenir a la liste des cartes"),
-    ("Aide / F1", "afficher / masquer cette aide"),
+HELP_SECTIONS: tuple[tuple[str, tuple[tuple[str, str], ...]], ...] = (
+    (
+        "Vue",
+        (
+            ("Clic gauche", "poser l'element"),
+            ("Clic droit", "effacer la cellule"),
+            ("Molette / + / -", "zoom carte, ou defilement du panneau"),
+            ("Clic milieu / Espace", "glisser la vue"),
+            ("Fleches / ZQSD", "deplacer la camera"),
+            ("Ctrl+G / Origine", "grille / voir toute la carte"),
+        ),
+    ),
+    (
+        "Outils",
+        (
+            ("B / R / G", "pinceau / rectangle / seau"),
+            ("X / I / M", "gomme / pipette / selection"),
+            ("[ / ]", "element precedent / suivant"),
+            ("L / onglet Plaques", "plaques, boutons spectraux, liens"),
+            ("V", "plaque sol/esprit, ou bloc tombant fantome"),
+            ("Clic sur un lien", "action : cacher / montrer / allumer"),
+            (", / .", "portee, delay, ou duree du bouton"),
+            ("9 / 0", "intervalle lance-flammes, ou respawn"),
+            ("H", "pivoter lance-flammes / ressort"),
+        ),
+    ),
+    (
+        "Edition",
+        (
+            ("Ctrl+A", "tout selectionner"),
+            ("Ctrl+C / X / V", "copier / couper / coller"),
+            ("Entree", "remplir la selection"),
+            ("Suppr / Retour", "vider la selection (ou la plaque)"),
+            ("Ctrl+R", "remplacer partout le type sous le curseur"),
+            ("Ctrl+Z", "annuler"),
+            ("Ctrl+Shift+Z / Y", "refaire"),
+        ),
+    ),
+    (
+        "Fichier",
+        (
+            ("Ctrl+S / Shift+S", "enregistrer / enregistrer sous"),
+            ("Ctrl+P", "essayer le niveau (Echap pour revenir)"),
+            ("F2 / F3 / F4", "nom / indice / dimensions"),
+            ("Themes / F5", "terre, sable ou roche"),
+            ("Ctrl+O", "liste des cartes"),
+            ("Aide / F1", "afficher ou masquer cette aide"),
+        ),
+    ),
+)
+
+SHORTCUTS: tuple[tuple[str, str], ...] = tuple(
+    item for _title, items in HELP_SECTIONS for item in items
 )
 
 
@@ -131,12 +154,29 @@ class HelpOverlay:
 
     def __init__(self) -> None:
         self.visible = False
-        self._key_line = labels.Line(settings.EDITOR_TEXT_SIZE, settings.COLOR_EDITOR_TEXT)
+        font = settings.EDITOR_UI_FONT
+        self._title = labels.Line(
+            settings.EDITOR_TITLE_SIZE + 6,
+            settings.COLOR_EDITOR_ACCENT,
+            anchor_x="center",
+            font_name=font,
+        )
+        self._heading = labels.Line(
+            settings.EDITOR_HELP_HEADING,
+            settings.COLOR_EDITOR_ACCENT,
+            font_name=font,
+        )
+        self._key_line = labels.Line(
+            settings.EDITOR_HELP_SIZE, settings.COLOR_EDITOR_TEXT, font_name=font
+        )
         self._desc_line = labels.Line(
-            settings.EDITOR_TEXT_SIZE, settings.COLOR_EDITOR_TEXT_DIM
+            settings.EDITOR_HELP_SIZE, settings.COLOR_EDITOR_TEXT_DIM, font_name=font
         )
         self._footer = labels.Line(
-            settings.EDITOR_TEXT_SIZE, settings.COLOR_EDITOR_TEXT_DIM, anchor_x="center"
+            settings.EDITOR_HELP_SIZE,
+            settings.COLOR_EDITOR_TEXT_DIM,
+            anchor_x="center",
+            font_name=font,
         )
 
     def toggle(self) -> None:
@@ -148,37 +188,153 @@ class HelpOverlay:
         arcade.draw_lrbt_rectangle_filled(
             0, window_width, 0, window_height, settings.COLOR_EDITOR_OVERLAY
         )
-        labels.draw(
-            "RACCOURCIS DE L'EDITEUR",
-            window_width / 2,
-            window_height - 56,
-            settings.EDITOR_TITLE_SIZE + 4,
-            settings.COLOR_EDITOR_ACCENT,
-            anchor_x="center",
+        rows = _help_rows()
+        line_height = float(settings.EDITOR_HELP_LINE)
+        heading_extra = 10.0
+        pad_x = 28.0
+        pad_y = 22.0
+        title_h = 48.0
+        footer_h = 36.0
+        left_rows, right_rows = _split_help_rows(rows, line_height, heading_extra)
+        col_h = max(
+            _help_block_height(left_rows, line_height, heading_extra),
+            _help_block_height(right_rows, line_height, heading_extra),
         )
-        margin = 48.0
-        gap = 16.0
-        column_width = window_width / 2
-        key_width = min(260.0, max(96.0, column_width * 0.40))
-        desc_width = max(80.0, column_width - key_width - gap - margin)
-        top = window_height - 108
-        line_height = 32
-        per_column = (len(SHORTCUTS) + 1) // 2
-        for index, (keys, description) in enumerate(SHORTCUTS):
-            column = index // per_column
-            row = index % per_column
-            x = margin + column * column_width
-            y = top - row * line_height
-            self._key_line.draw(keys, x, y, max_width=key_width)
-            self._desc_line.draw(
-                description, x + key_width + gap, y, max_width=desc_width
-            )
+        panel_w = min(window_width - 48.0, 1080.0)
+        panel_h = min(window_height - 48.0, title_h + footer_h + pad_y * 2 + col_h)
+        left = (window_width - panel_w) / 2
+        bottom = (window_height - panel_h) / 2
+        right = left + panel_w
+        top = bottom + panel_h
+        arcade.draw_lrbt_rectangle_filled(left, right, bottom, top, settings.COLOR_EDITOR_PANEL)
+        arcade.draw_lrbt_rectangle_outline(
+            left, right, bottom, top, settings.COLOR_EDITOR_ACCENT, 2
+        )
+        arcade.draw_lrbt_rectangle_filled(
+            left, right, top - 4, top, settings.COLOR_EDITOR_ACCENT
+        )
+        self._title.draw("Aide de l'editeur", (left + right) / 2, top - 36)
+        col_width = (panel_w - pad_x * 2) / 2
+        key_width = min(188.0, col_width * 0.36)
+        gap = 12.0
+        desc_width = max(80.0, col_width - key_width - gap)
+        body_top = top - title_h
+        stop_y = bottom + footer_h
+        self._draw_help_column(
+            left_rows,
+            left + pad_x,
+            body_top,
+            col_width,
+            key_width,
+            gap,
+            desc_width,
+            line_height,
+            heading_extra,
+            stop_y,
+        )
+        self._draw_help_column(
+            right_rows,
+            left + pad_x + col_width,
+            body_top,
+            col_width,
+            key_width,
+            gap,
+            desc_width,
+            line_height,
+            heading_extra,
+            stop_y,
+        )
         self._footer.draw(
-            "Aide ou Echap pour fermer",
-            window_width / 2,
-            36,
-            max_width=max(80.0, window_width - margin * 2),
+            "F1 ou Echap pour fermer",
+            (left + right) / 2,
+            bottom + 16,
+            max_width=panel_w - pad_x * 2,
+            overflow="clip",
         )
+
+    def _draw_help_column(
+        self,
+        rows: list[tuple[str, str, str]],
+        x: float,
+        top: float,
+        col_width: float,
+        key_width: float,
+        gap: float,
+        desc_width: float,
+        line_height: float,
+        heading_extra: float,
+        stop_y: float,
+    ) -> None:
+        y = top - 6
+        stripe = False
+        for kind, key, description in rows:
+            if y < stop_y + 8:
+                break
+            if kind == "head":
+                y -= heading_extra
+                self._heading.draw(key.upper(), x, y, max_width=col_width - 8, overflow="clip")
+                y -= line_height
+                stripe = False
+                continue
+            if stripe:
+                arcade.draw_lrbt_rectangle_filled(
+                    x - 6,
+                    x + col_width - 12,
+                    y - 8,
+                    y + 16,
+                    settings.COLOR_EDITOR_HEADING,
+                )
+            stripe = not stripe
+            self._key_line.draw(key, x, y, max_width=key_width, overflow="clip")
+            self._desc_line.draw(
+                description,
+                x + key_width + gap,
+                y,
+                max_width=desc_width,
+                overflow="clip",
+            )
+            y -= line_height
+
+
+def _help_rows() -> list[tuple[str, str, str]]:
+    """Lignes a dessiner : un titre de section, puis ses raccourcis."""
+    rows: list[tuple[str, str, str]] = []
+    for title, items in HELP_SECTIONS:
+        rows.append(("head", title, ""))
+        for key, description in items:
+            rows.append(("item", key, description))
+    return rows
+
+
+def _help_block_height(
+    rows: list[tuple[str, str, str]], line_height: float, heading_extra: float
+) -> float:
+    height = 0.0
+    for kind, _key, _desc in rows:
+        height += line_height
+        if kind == "head":
+            height += heading_extra
+    return height
+
+
+def _split_help_rows(
+    rows: list[tuple[str, str, str]], line_height: float, heading_extra: float
+) -> tuple[list[tuple[str, str, str]], list[tuple[str, str, str]]]:
+    """Coupe entre deux sections pour equivaloir la hauteur des colonnes."""
+    heads = [index for index, (kind, _key, _desc) in enumerate(rows) if kind == "head"]
+    if len(heads) < 2:
+        mid = max(1, len(rows) // 2)
+        return rows[:mid], rows[mid:]
+    best_cut = heads[1]
+    best_diff: float | None = None
+    for cut in heads[1:]:
+        left_h = _help_block_height(rows[:cut], line_height, heading_extra)
+        right_h = _help_block_height(rows[cut:], line_height, heading_extra)
+        diff = abs(left_h - right_h)
+        if best_diff is None or diff < best_diff:
+            best_diff = diff
+            best_cut = cut
+    return rows[:best_cut], rows[best_cut:]
 
 
 class TextPrompt:
