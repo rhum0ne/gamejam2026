@@ -65,7 +65,7 @@ from src.ui.sprites import draw_pixel_sprite
 from src.world.atmosphere import ForegroundAtmosphere
 from src.world.camera import CameraRig
 from src.world.fog import GhostFog
-from src.world.level import Level
+from src.world.level import Level, load_level_catalog
 from src.world.mechanisms import Mechanism
 
 
@@ -201,13 +201,14 @@ class GameSession:
     def level_file(self) -> str:
         if self.map_override:
             return self.map_override
-        return settings.LEVEL_SEQUENCE[self.level_index]
+        files = load_level_catalog().files
+        return files[self.level_index]
 
     @property
     def is_last_level(self) -> bool:
         if self.map_override:
             return True
-        return self.level_index >= len(settings.LEVEL_SEQUENCE) - 1
+        return self.level_index >= len(load_level_catalog().files) - 1
 
     def advance_level(self) -> bool:
         """Passe au niveau suivant. Retourne False si l'aventure est terminee."""
@@ -217,11 +218,11 @@ class GameSession:
         return True
 
     def start_level(self, index: int) -> None:
-        """Place la session sur un niveau de `LEVEL_SEQUENCE`."""
-        if not 0 <= index < len(settings.LEVEL_SEQUENCE):
+        """Place la session sur un niveau du catalogue."""
+        files = load_level_catalog().files
+        if not 0 <= index < len(files):
             raise ValueError(
-                f"index de niveau invalide : {index} "
-                f"(0..{len(settings.LEVEL_SEQUENCE) - 1})"
+                f"index de niveau invalide : {index} (0..{len(files) - 1})"
             )
         self.level_index = index
         self.map_override = None

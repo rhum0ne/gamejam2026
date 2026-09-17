@@ -1,5 +1,6 @@
 {
-  "name": "La qu'elle est la bonne",
+  "name": "La quelle est la bonne",
+  "type": "others",
   "hint": "",
   "tile_size": 32,
   "legend": {

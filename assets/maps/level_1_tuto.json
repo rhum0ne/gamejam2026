@@ -1,5 +1,6 @@
 {
   "name": "Le Puits Mortel",
+  "type": "dev",
   "hint": "ZQSD/fleches : bouger  -  Espace : sauter  -  Clic gauche : attaquer  -  Maj : dash",
   "tile_size": 32,
   "legend": {
