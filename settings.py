@@ -739,6 +739,7 @@ ENEMY_ATTACK_VERTICAL_RANGE = 40.0  # tolerance verticale (doit etre a peu pres 
 # (avant frame 1) est plus courte qu'avec l'ancienne planche a 10 frames ;
 # compense en partie par ANIM_ENEMY_ATTACK_FRAME_TIME plus long (voir plus bas).
 ENEMY_ATTACK_HIT_FRAMES: tuple[int, int] = (1, 1)
+ENEMY_ATTACK_WINDUP = 0.4  # arret telegraphie avant de lancer le coup
 ENEMY_ATTACK_COOLDOWN = 0.4  # secondes de pause entre deux coups
 ENEMY_CORPSE_SMELL_RANGE = 320.0  # distance d'attraction vers un cadavre
 ENEMY_HIT_FLASH_DURATION = 0.18
