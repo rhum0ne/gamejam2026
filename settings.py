@@ -769,6 +769,7 @@ ENEMY_WIDTH = 34
 ENEMY_HEIGHT = 46
 ENEMY_HITBOX_OFFSET_X = -4.84
 ENEMY_HITBOX_OFFSET_Y = -1.21
+ENEMY_HIT_POINTS = 2  # coups d'epee du joueur (PLAYER_ATTACK_DAMAGE) avant de mourir
 ENEMY_SPEED = 1.6
 ENEMY_AGGRO_RANGE = 150.0  # distance de detection du joueur
 # Au-dela, on considere que le joueur n'est pas sur le meme "etage" (une
@@ -798,6 +799,12 @@ ENEMY_CORPSE_SMELL_RANGE = 320.0  # distance d'attraction vers un cadavre
 ENEMY_HIT_FLASH_DURATION = 0.18
 ENEMY_KNOCKBACK_SPEED = 5.0
 ENEMY_KNOCKBACK_FRICTION = 0.72
+# Tous types d'ennemis confondus (squelette/zombie/chauve-souris/boss) : se
+# croiser/se traverser en marchant est tolere, seul un chevauchement massif
+# (quasiment a la meme position) est corrige. Fraction de la plus petite
+# largeur/hauteur des deux hitbox a partir de laquelle on parle de "superpose"
+# (voir `collisions.stacked_enemy_pairs`).
+ENEMY_STACK_OVERLAP_RATIO = 0.7
 # Halo rouge en mode fantome (squelette) : meme vocabulaire que BAT_/ZOMBIE_.
 ENEMY_GHOST_GLOW_SCALE = 5.6
 ENEMY_GHOST_GLOW_ALPHA = 96
@@ -839,7 +846,7 @@ BAT_HITBOX_OFFSET_Y = -4.0
 # La planche dessine la chauve-souris tournee vers la gauche (le squelette est
 # tourne vers la droite) : `Bat.facing` doit donc s'appliquer en miroir.
 BAT_SPRITE_FACES_LEFT = True
-BAT_HIT_POINTS = 1
+BAT_HIT_POINTS = 2
 
 # Deplacement (vol libre, sans gravite : cf. Ghost._apply_steering/_move_axis).
 BAT_SPEED = 3.2  # px/frame
@@ -936,8 +943,8 @@ ZOMBIE_HITBOX_OFFSET_X = 0.0
 ZOMBIE_HITBOX_OFFSET_Y = -1.0 * ZOMBIE_SCALE
 # Les planches dessinent le zombie tourne vers la gauche (cf. BAT_SPRITE_FACES_LEFT).
 ZOMBIE_SPRITE_FACES_LEFT = True
-# 2 PV : le premier stomp le sonne (HURT) et l'enrage, le second le tue.
-ZOMBIE_HIT_POINTS = 2
+# 3 PV : chaque coup non mortel le sonne (HURT) et l'enrage, le dernier le tue.
+ZOMBIE_HIT_POINTS = 3
 
 # Deplacement : traine les pieds en patrouille, sprinte une fois qu'il a vu le
 # joueur. Le joueur (PLAYER_SPEED 5.5) le distance, mais doit s'engager.
@@ -1035,7 +1042,7 @@ BOSS_SCALE = 3.0
 BOSS_WIDTH = 40.0 * BOSS_SCALE
 BOSS_HEIGHT = 44.0 * BOSS_SCALE
 BOSS_HITBOX_OFFSET_Y = -2.0 * BOSS_SCALE
-BOSS_HIT_POINTS = 6
+BOSS_HIT_POINTS = 12
 BOSS_PATROL_SPEED = 0.55
 BOSS_AGGRO_RANGE = 420.0
 BOSS_AGGRO_VERTICAL_RANGE = 96.0

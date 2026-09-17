@@ -1157,7 +1157,33 @@ class PlayView(arcade.View):
     def _update_enemies(self, delta_time: float) -> None:
         for enemy in list(self.level.enemies):
             enemy.update(delta_time, player=self.player, corpses=self.level.corpses)
+        self._separate_enemies()
         self._play_enemy_sound_events()
+
+    def _separate_enemies(self) -> None:
+        """Ecarte les ennemis quasi superposes (se croiser en marchant reste
+        possible, voir `collisions.stacked_enemy_pairs`) : repousse chacun de
+        la moitie du recouvrement, le long de l'axe le moins enfonce (cf.
+        `_block_hazard_sides` pour le meme principe cote joueur)."""
+        for a, b in collisions.stacked_enemy_pairs(self.level.enemies):
+            overlap_x = min(a.right, b.right) - max(a.left, b.left)
+            overlap_y = min(a.top, b.top) - max(a.bottom, b.bottom)
+            if overlap_x < overlap_y:
+                push = overlap_x / 2.0
+                if a.center_x < b.center_x:
+                    a.center_x -= push
+                    b.center_x += push
+                else:
+                    a.center_x += push
+                    b.center_x -= push
+            else:
+                push = overlap_y / 2.0
+                if a.center_y < b.center_y:
+                    a.center_y -= push
+                    b.center_y += push
+                else:
+                    a.center_y += push
+                    b.center_y -= push
 
     # ------------------------------------------------------------------ #
     # Consequences des collisions
