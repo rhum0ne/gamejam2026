@@ -1010,7 +1010,13 @@ def check_combat(window: arcade.Window) -> None:
     advance(view, 2)
 
     player = view.player
-    enemy = next(item for item in view.level.enemies if isinstance(item, Enemy))
+    enemy = next(
+        (item for item in view.level.enemies if isinstance(item, Enemy)),
+        None,
+    )
+    if enemy is None:
+        enemy = Enemy(player.center_x + 80.0, player.center_y)
+        view.level.enemies.append(enemy)
     player_start_x = player.center_x
     player_start_y = player.center_y
     enemy_start_y = enemy.center_y
@@ -1048,7 +1054,17 @@ def check_combat(window: arcade.Window) -> None:
     )
     advance(view, 120)
     assert enemy not in view.level.enemies, "un ennemi vaincu doit finir par disparaitre"
-    print("  combat -> clic gauche, ennemi vaincu, ame generee")
+    player._attack_cooldown_left = 0.0
+    view.on_key_press(arcade.key.A, 0)
+    assert player.is_attacking, "A doit lancer une attaque"
+    view.on_update(settings.FRAME_TIME)
+    view.on_key_release(arcade.key.A, 0)
+    player._attack_cooldown_left = 0.0
+    player._attack_time_left = 0.0
+    player._attack_queued = False
+    view.on_key_press(arcade.key.E, 0)
+    assert player.is_attacking, "E doit lancer une attaque"
+    print("  combat -> clic gauche, A/E, ennemi vaincu, ame generee")
 
 
 def advance(view: arcade.View, frames: int) -> None:
