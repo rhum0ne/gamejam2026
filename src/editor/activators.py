@@ -12,6 +12,7 @@ from __future__ import annotations
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 
+import settings
 from src.editor import palette
 
 
@@ -107,15 +108,17 @@ class Activator:
 
 
 def can_link_kind(kind: str) -> bool:
-    """Indique si ce type peut disparaitre sous une plaque (`setBlock void`).
+    """Indique si ce type peut etre commande par une plaque (`setBlock void`).
 
-    Le jeu ne relie que le terrain, les murs spectraux et les piques
-    (`walls`, `spectral_walls`, `hazards`). Pas les items ni le decor.
+    Le jeu relie le terrain, les murs spectraux, les blocs invisibles, les
+    piques et les lance-flammes. Pas les items, ennemis, ni le decor.
     """
     if not kind:
         return False
+    if kind in ("spectral_wall", "flamethrower", settings.TILE_KIND_HIDDEN):
+        return True
     item = palette.item(kind)
-    return item.is_terrain or kind == "spectral_wall"
+    return item.is_terrain
 
 
 def parse_activators(raw: object) -> tuple[Activator, ...]:

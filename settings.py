@@ -79,6 +79,9 @@ SOUND_ECHO_FOOTSTEP_TAPS = 1
 # `arcade.Text(font_name=...)`.
 FONT_FILE = FONTS_DIR / "PressStart2P-Regular.ttf"
 FONT_PIXEL = "Press Start 2P"
+# Panneau editeur : police proportionnelle, lisible en petit (Press Start 2P
+# a 10 px devenait du bruit). Fallback systeme, pas de fichier extra.
+EDITOR_UI_FONT = ("Segoe UI", "Calibri", "Arial", "Helvetica")
 
 # Ordre de parcours des niveaux : le nom du fichier dans assets/maps/.
 LEVEL_SEQUENCE: tuple[str, ...] = (
@@ -1311,8 +1314,14 @@ EDITOR_MAX_ROWS = 300
 EDITOR_HISTORY_LIMIT = 250  # nombre d'actions annulables
 EDITOR_PANEL_WIDTH = 400  # largeur du panneau de droite (palette + plaques)
 EDITOR_STATUS_HEIGHT = 108  # hauteur de la barre d'etat du bas
-EDITOR_ROW_HEIGHT = 42  # hauteur d'une ligne de palette
-EDITOR_SWATCH_SIZE = 28  # cote d'une vignette de palette
+EDITOR_ROW_HEIGHT = 36  # hauteur d'une ligne (plaques, chrome)
+EDITOR_SWATCH_SIZE = 32  # cote d'une vignette dans la grille
+EDITOR_GRID_COLUMNS = 2  # icone + nom, assez large pour lire
+EDITOR_GRID_CELL_HEIGHT = 40  # une ligne : vignette a gauche, libelle a droite
+EDITOR_TAB_HEIGHT = 32
+EDITOR_CHIP_HEIGHT = 28
+EDITOR_CHIP_SIZE = 13
+EDITOR_GRID_LABEL_SIZE = 14
 # Press Start 2P est une police 8 px : 16 est un multiple net, plus lisible que 12.
 EDITOR_TEXT_SIZE = 16
 EDITOR_TITLE_SIZE = 16

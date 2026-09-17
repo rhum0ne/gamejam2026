@@ -16,7 +16,7 @@ from src.editor.activators import Activator, activator_at, overlaps_any
 from src.editor.canvas import GridCanvas
 from src.editor.document import DocumentError, EditorDocument
 from src.editor.overlay import HelpOverlay, StatusBar, StatusData, TextPrompt
-from src.editor.panel import PalettePanel
+from src.editor.panel import TAB_PLAQUES, PalettePanel
 from src.editor.selection import Block, GridRect
 from src.ui.display import handle_display_key, use_default_camera
 from src.world.flamethrower import DIRECTION_ARROW, DIRECTION_LABEL
@@ -168,6 +168,7 @@ class EditView(arcade.View):
             self.document.activators,
             self._link_index,
             self.tool is Tool.LINK,
+            current_theme=self.document.theme,
         )
         self.status.draw(self._status_data(), float(self.window.width))
         self.help.draw(float(self.window.width), float(self.window.height))
@@ -201,6 +202,9 @@ class EditView(arcade.View):
         if self.clipboard is not None:
             clipboard = f"{self.clipboard.width}x{self.clipboard.height}"
         element = palette.item(self.kind).label if self.kind else "vide"
+        panel_hit = self.panel.hit(*self._mouse, self.document.activators)
+        if panel_hit is not None and panel_hit.item is not None:
+            element = panel_hit.item.label
         if self.hover is not None and self.document.inside(*self.hover):
             flame = self.document.flame_at(*self.hover)
             if flame is not None:
@@ -273,7 +277,10 @@ class EditView(arcade.View):
         self.on_mouse_motion(x, y, dx, dy)
 
     def on_mouse_press(self, x: float, y: float, button: int, modifiers: int) -> None:
-        if self.prompt.active or self.help.visible:
+        if self.prompt.active:
+            return
+        if self.help.visible:
+            self.help.visible = False
             return
         self._mouse = (x, y)
         if button == arcade.MOUSE_BUTTON_MIDDLE or self._space:
@@ -373,6 +380,7 @@ class EditView(arcade.View):
 
     def _select_kind(self, kind: str) -> None:
         self.kind = kind
+        self.panel.show_kind(kind)
         if self.tool in (Tool.ERASE, Tool.LINK):
             self.tool = Tool.BRUSH
 
@@ -501,9 +509,10 @@ class EditView(arcade.View):
         if tool is not None:
             self.tool = tool
             if tool is Tool.LINK:
+                self.panel.select_tab(TAB_PLAQUES)
                 self.notify(
                     "plaques : glisser pour placer, clic sur un bloc pour lier, "
-                    "V pour inverser, Suppr pour retirer"
+                    "bouton cache/montre pour inverser"
                 )
             else:
                 self.notify(f"outil : {tool.value}")
@@ -747,11 +756,13 @@ class EditView(arcade.View):
         else:
             self.notify("taille inchangee", settings.COLOR_EDITOR_TEXT_DIM)
 
-    def _cycle_theme(self) -> None:
-        theme = next_theme(self.document.theme)
-        self.document.set_metadata(theme=theme)
+    def _cycle_theme(self, theme: str | None = None) -> None:
+        chosen = theme if theme is not None else next_theme(self.document.theme)
+        if chosen == self.document.theme:
+            return
+        self.document.set_metadata(theme=chosen)
         self.canvas.sync(None)
-        self.notify(f"theme : {theme_label(theme)}")
+        self.notify(f"theme : {theme_label(chosen)}")
 
     def _playtest(self) -> None:
         from src.editor.playtest import start_playtest
@@ -793,6 +804,34 @@ class EditView(arcade.View):
         hit = self.panel.hit(x, y, self.document.activators)
         if hit is None:
             return
+        if hit.help:
+            self.help.toggle()
+            return
+        if hit.theme is not None:
+            self._cycle_theme(hit.theme)
+            return
+        if hit.tab is not None:
+            self.panel.select_tab(hit.tab)
+            if hit.tab == TAB_PLAQUES:
+                self.tool = Tool.LINK
+                self.notify(
+                    "plaques : glisser pour placer, clic un bloc pour lier, "
+                    "cache/montre pour inverser"
+                )
+            elif self.tool is Tool.LINK:
+                self.tool = Tool.BRUSH
+            return
+        if hit.invert_index is not None:
+            inverted = self.document.toggle_activator_invert(hit.invert_index)
+            self._link_index = hit.invert_index
+            self.tool = Tool.LINK
+            mode = "montre a l'activation" if inverted else "cache a l'activation"
+            self.notify(f"plaque #{hit.invert_index + 1} : {mode}")
+            return
+        if hit.delete_index is not None:
+            if button in (arcade.MOUSE_BUTTON_LEFT, arcade.MOUSE_BUTTON_RIGHT):
+                self._delete_plate(hit.delete_index)
+            return
         if hit.activator_index is not None:
             if button == arcade.MOUSE_BUTTON_RIGHT:
                 self._delete_plate(hit.activator_index)
@@ -827,8 +866,18 @@ class EditView(arcade.View):
             return
         if self._link_index is not None and self.document.can_link(*cell):
             linked = self.document.toggle_target(self._link_index, *cell)
-            self.notify("bloc lie" if linked else "bloc delie")
+            kind = self.document.cell(*cell)
+            label = palette.item(kind).label if kind else "bloc"
+            self.notify(f"{label} lie" if linked else f"{label} delie")
             return
+        if self._link_index is not None:
+            kind = self.document.cell(*cell) if self.document.inside(*cell) else ""
+            if kind:
+                self.notify(
+                    f"{palette.item(kind).label} ne peut pas etre commande par une plaque",
+                    settings.COLOR_EDITOR_WARNING,
+                )
+                return
         self._drag_origin = cell
         self._drag_current = cell
         self._placing_plate = True
@@ -857,7 +906,7 @@ class EditView(arcade.View):
                 return
             index = self.document.add_activator(plate.column, plate.row, plate.width)
             self._link_index = index
-            self.notify(f"plaque #{index + 1} placee  -  clique un bloc pour le lier")
+            self.notify(f"plaque #{index + 1} placee  -  clic un bloc pour le lier")
             return
         if resizing and self._link_index is not None:
             if origin == current:
@@ -900,7 +949,7 @@ class EditView(arcade.View):
         self._link_index = index
         plate = self.document.activators[index]
         self.canvas.center_on(plate.column, plate.row)
-        self.notify(f"plaque #{index + 1}  -  clique un bloc pour le lier")
+        self.notify(f"plaque #{index + 1}  -  clic un bloc pour lier, cache/montre pour inverser")
 
     def _clamp_link_index(self) -> None:
         count = len(self.document.activators)

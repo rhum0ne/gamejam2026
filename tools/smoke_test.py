@@ -61,6 +61,7 @@ def check_levels() -> None:
         assert level.theme in settings.GROUND_THEMES, f"{name} : theme inconnu '{level.theme}'"
     check_invalid_activator()
     check_inverted_activator()
+    check_gated_flamethrower()
     check_ground_theme()
     check_sfx_files()
     check_hidden_wall()
@@ -131,6 +132,57 @@ def check_inverted_activator() -> None:
     mechanism.set_pressed(False, ())
     assert all(tile.hidden for tile in mechanism.targets), "le relachement doit recacher les blocs"
     print("  plaque inversee -> cachee au repos, visible a l'activation")
+
+
+def check_gated_flamethrower() -> None:
+    """Une plaque peut eteindre un lance-flammes, ou le reveler si inversee."""
+    data = {
+        "name": "flame-gate",
+        "tile_size": 32,
+        "legend": {"#": "wall", "P": "player_spawn", "f": "flamethrower"},
+        "rows": [
+            "#####",
+            "#P.f#",
+            "#####",
+        ],
+        "activators": [
+            {
+                "x": 1,
+                "y": 1,
+                "width": 1,
+                "activate": {"setBlock": [{"x": 3, "y": 1, "type": "void"}]},
+            }
+        ],
+    }
+    level = Level.from_dict(data)
+    assert len(level.flamethrowers) == 1
+    assert len(level.mechanisms) == 1
+    thrower = level.flamethrowers[0]
+    mechanism = level.mechanisms[0]
+    assert mechanism.targets[0].sprite is thrower
+    mechanism.set_pressed(True, ())
+    assert thrower not in level.flamethrowers
+    assert not thrower.is_lethal
+    mechanism.set_pressed(False, ())
+    assert thrower in level.flamethrowers
+
+    inverted = {
+        **data,
+        "activators": [
+            {
+                "x": 1,
+                "y": 1,
+                "width": 1,
+                "invert": True,
+                "activate": {"setBlock": [{"x": 3, "y": 1, "type": "void"}]},
+            }
+        ],
+    }
+    shown = Level.from_dict(inverted)
+    assert len(shown.flamethrowers) == 0, "inverse : le lance-flammes est cache au repos"
+    shown.mechanisms[0].set_pressed(True, ())
+    assert len(shown.flamethrowers) == 1, "inverse : le lance-flammes apparait a l'activation"
+    print("  plaque + lance-flammes -> cache a l'activation, montre si inverse")
 
 
 def check_ground_theme() -> None:
@@ -1175,6 +1227,7 @@ def check_editor_document() -> None:
     import json
     import tempfile
 
+    from src.editor.activators import can_link_kind
     from src.editor import palette
     from src.editor.document import DocumentError, EditorDocument
     from src.editor.selection import GridRect
@@ -1184,6 +1237,9 @@ def check_editor_document() -> None:
     for kind in gameplay_kinds():
         assert kind in kinds, f"la palette doit lister le gameplay '{kind}'"
     assert "wall" in kinds and "enemy" in kinds and "bat" in kinds and "zombie" in kinds and "boss" in kinds and "spike" in kinds
+    assert can_link_kind("wall") and can_link_kind("spike") and can_link_kind("spectral_wall")
+    assert can_link_kind("flamethrower") and can_link_kind(settings.TILE_KIND_HIDDEN)
+    assert not can_link_kind("enemy") and not can_link_kind("torch")
 
     document = EditorDocument.from_file("level_1_tuto.json")
     assert document.columns > 0 and document.rows > 0
@@ -1567,6 +1623,7 @@ def check_editor_views(window: arcade.Window) -> None:
     from src.editor.browser import BrowserView
     from src.editor.document import EditorDocument
     from src.editor.edit_view import EditView, Tool
+    from src.editor.panel import TAB_PLAQUES
     from src.world.themes import next_theme
 
     browser = BrowserView()
@@ -1591,15 +1648,21 @@ def check_editor_views(window: arcade.Window) -> None:
     assert view.document.theme == next_theme(before_theme)
     view.on_draw()
     view.on_key_press(arcade.key.Z, arcade.key.MOD_CTRL | arcade.key.MOD_SHIFT)
-    view.tool = Tool.LINK
+    sand_x, sand_y = view.panel.theme_chip_center("sand")
+    view.on_mouse_press(sand_x, sand_y, arcade.MOUSE_BUTTON_LEFT, 0)
+    assert view.document.theme == "sand", "clic theme du panneau"
+    plaques_x, plaques_y = view.panel.tab_center(TAB_PLAQUES)
+    view.on_mouse_press(plaques_x, plaques_y, arcade.MOUSE_BUTTON_LEFT, 0)
+    assert view.tool is Tool.LINK and view.panel.tab == TAB_PLAQUES
     view._link_index = 0
     view.on_draw()
-    view.on_key_press(arcade.key.F1, 0)
-    assert view.help.visible
+    help_x, help_y = view.panel.help_center()
+    view.on_mouse_press(help_x, help_y, arcade.MOUSE_BUTTON_LEFT, 0)
+    assert view.help.visible, "bouton Aide du panneau"
     view.on_draw()
-    view.on_key_press(arcade.key.F1, 0)
+    view.on_mouse_press(help_x, help_y, arcade.MOUSE_BUTTON_LEFT, 0)
     assert not view.help.visible
-    print("  editeur vues -> navigateur et grille OK")
+    print("  editeur vues -> navigateur, onglets, themes et aide OK")
 
 
 def main() -> int:
