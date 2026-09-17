@@ -140,6 +140,8 @@ class Player(arcade.Sprite):
         self._attack_queued = False
         self._attack_sound_events: list[int] = []
         self._attack_sound_played = False
+        self._footstep_events: list[str] = []
+        self._footstep_timer = 0.0
         self._death_elapsed = 0.0
 
     # ------------------------------------------------------------------ #
@@ -307,6 +309,8 @@ class Player(arcade.Sprite):
         self._attack_queued = False
         self._attack_sound_events.clear()
         self._attack_sound_played = False
+        self._footstep_events.clear()
+        self._footstep_timer = 0.0
         self._death_elapsed = 0.0
         self._animator.play(self._death, restart=True)
         self.texture = self._death.textures[0]
@@ -385,6 +389,8 @@ class Player(arcade.Sprite):
         self._attack_queued = False
         self._attack_sound_events.clear()
         self._attack_sound_played = False
+        self._footstep_events.clear()
+        self._footstep_timer = 0.0
         self._death_elapsed = 0.0
         self._animator.play(self._idle_still, restart=True)
         self.texture = self._idle_still.textures[0]
@@ -448,6 +454,12 @@ class Player(arcade.Sprite):
             return False
         self._start_attack(self._next_attack_stage())
         return True
+
+    def consume_footstep_events(self) -> tuple[str, ...]:
+        """Pas et atterrissages depuis la derniere lecture."""
+        events = tuple(self._footstep_events)
+        self._footstep_events.clear()
+        return events
 
     def consume_attack_sound_events(self) -> tuple[int, ...]:
         """Retourne les impacts sonores depuis la derniere lecture."""
@@ -612,14 +624,18 @@ class Player(arcade.Sprite):
                 fall_speed,
                 body_half=self.width / 2,
             )
+            self._footstep_events.append("land")
+            self._footstep_timer = settings.PLAYER_FOOTSTEP_INTERVAL
         self._was_on_ground = grounded
         if grounded:
             self._time_off_ground = 0.0
             self._dash_jump = False
             self._landing_timer = max(0.0, self._landing_timer - delta_time)
             self._tick_run_dust(delta_time)
+            self._tick_footsteps(delta_time)
         else:
             self._time_off_ground += delta_time
+            self._footstep_timer = 0.0
             self._dust.stop_run()
         self._tick_jump_buffer(delta_time)
         self._dash_trail.follow(
@@ -665,6 +681,21 @@ class Player(arcade.Sprite):
             return
         behind_x = self.center_x - self.facing * (self.width * 0.55)
         self._dust.tick_run(behind_x, self.bottom, self.facing, delta_time)
+
+    def _tick_footsteps(self, delta_time: float) -> None:
+        walking = (
+            not self.is_dashing
+            and not self.is_attacking
+            and abs(self.change_x) >= settings.PLAYER_FOOTSTEP_SPEED
+        )
+        if not walking:
+            self._footstep_timer = 0.0
+            return
+        if self._footstep_timer <= 0.0:
+            self._footstep_events.append("step")
+            self._footstep_timer = settings.PLAYER_FOOTSTEP_INTERVAL
+            return
+        self._footstep_timer = max(0.0, self._footstep_timer - delta_time)
 
     def _dash_blocked_by_wall(self, old_x: float, intended_x: float) -> bool:
         """True si le moteur a absorbe le deplacement horizontal contre un mur."""

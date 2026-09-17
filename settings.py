@@ -38,6 +38,7 @@ SOUND_GHOST_START = "ghost_start.wav"
 SOUND_GHOST_END = "ghost_end.wav"
 SOUND_DASH = "dash.wav"
 SOUND_RESPAWN = "respawn.wav"
+SOUND_FOOTSTEP = "Steps_dirt-001.ogg"
 # `boss-fire.wav` est dans le dossier mais pas encore branche.
 SOUND_VOLUME_ATTACK = 0.45
 SOUND_VOLUME_LEVEL_WIN = 0.6
@@ -51,6 +52,10 @@ SOUND_VOLUME_GHOST_START = 0.65
 SOUND_VOLUME_GHOST_END = 0.65
 SOUND_VOLUME_DASH = 0.55
 SOUND_VOLUME_RESPAWN = 0.65
+SOUND_VOLUME_FOOTSTEP = 0.4
+SOUND_VOLUME_FOOTSTEP_LAND = 0.55
+SOUND_FOOTSTEP_PITCH_MIN = 0.92
+SOUND_FOOTSTEP_PITCH_MAX = 1.08
 
 # --------------------------------------------------------------------------- #
 # Police
@@ -430,6 +435,9 @@ PLAYER_AIR_CONTROL = 1.15
 # Ralentissement juste apres l'atterrissage.
 PLAYER_LANDING_SLOW_TIME = 0.12
 PLAYER_LANDING_SPEED_SCALE = 0.86
+# Pas : one-shot a intervalle fixe (la planche walk n'a que 3 frames).
+PLAYER_FOOTSTEP_INTERVAL = 0.22
+PLAYER_FOOTSTEP_SPEED = 1.2
 # Dash horizontal (Shift), vitesse en px/frame, duree et recharge en secondes.
 # ~2x la course : un burst court, pas une teleportation.
 PLAYER_DASH_SPEED = 22.0

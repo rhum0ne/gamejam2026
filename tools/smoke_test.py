@@ -192,6 +192,7 @@ def check_sfx_files() -> None:
         settings.SOUND_GHOST_END,
         settings.SOUND_DASH,
         settings.SOUND_RESPAWN,
+        settings.SOUND_FOOTSTEP,
     )
     for name in names:
         path = settings.SOUNDS_DIR / name

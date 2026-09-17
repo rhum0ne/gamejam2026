@@ -46,6 +46,7 @@ from src.ui.sfx import (
     play_attack,
     play_checkpoint,
     play_dash,
+    play_footstep,
     play_key_found,
     play_menu_click,
     play_mob_hit,
@@ -319,6 +320,10 @@ class PlayView(arcade.View):
         """Joue le whoosh au moment d'impact visuel, combo compris."""
         for stage in self.player.consume_attack_sound_events():
             play_attack(stage)
+
+    def _play_footstep_events(self) -> None:
+        for kind in self.player.consume_footstep_events():
+            play_footstep(land=kind == "land")
 
     @property
     def ghost_emerging(self) -> bool:
@@ -806,6 +811,7 @@ class PlayView(arcade.View):
         self._eject_from_respawned_blocks()
         self.player.update(delta_time)
         self._play_attack_sound_events()
+        self._play_footstep_events()
         self._resolve_falling_blocks()
         self._block_hazard_sides()
         self._update_enemies(delta_time)

@@ -6,6 +6,7 @@ devient un no-op : le jeu continue sans son plutot que de planter.
 
 from __future__ import annotations
 
+import random
 from pathlib import Path
 
 import arcade
@@ -41,12 +42,17 @@ def play(
     volume: float = 1.0,
     *,
     fallback: str | Path | None = None,
+    speed: float = 1.0,
 ) -> None:
     """Joue un bruitage. Ignore si le fichier n'a pas pu etre charge."""
     sound = load(filename, fallback=fallback)
     if sound is None:
         return
-    arcade.play_sound(sound, volume=max(0.0, min(1.0, volume)))
+    arcade.play_sound(
+        sound,
+        volume=max(0.0, min(1.0, volume)),
+        speed=max(0.1, speed),
+    )
 
 
 def play_attack(stage: int = 1) -> None:
@@ -101,3 +107,14 @@ def play_dash() -> None:
 
 def play_respawn() -> None:
     play(settings.SOUND_RESPAWN, settings.SOUND_VOLUME_RESPAWN)
+
+
+def play_footstep(*, land: bool = False) -> None:
+    """Pas au sol, pitch legerement aleatoire pour casser la repetition."""
+    volume = (
+        settings.SOUND_VOLUME_FOOTSTEP_LAND if land else settings.SOUND_VOLUME_FOOTSTEP
+    )
+    speed = random.uniform(
+        settings.SOUND_FOOTSTEP_PITCH_MIN, settings.SOUND_FOOTSTEP_PITCH_MAX
+    )
+    play(settings.SOUND_FOOTSTEP, volume, speed=speed)
