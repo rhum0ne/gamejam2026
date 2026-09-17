@@ -108,7 +108,7 @@ class Enemy(EnemyBase):
             self._idle.textures[0],
             center_x=center_x,
             center_y=center_y,
-            hit_points=1,
+            hit_points=settings.ENEMY_HIT_POINTS,
             body_width=settings.ENEMY_WIDTH,
             body_height=settings.ENEMY_HEIGHT,
         )
