@@ -2038,6 +2038,29 @@ def check_spring(window: arcade.Window) -> None:
     )
     print(f"  dash ressort horizontal -> vx {bumper_dash.change_x:.2f} apres le dash")
 
+    jumper = Player(*dash_level.player_spawn)
+    jumper.bind_world(dash_level.static_walls, platforms=[dash_level.corpses])
+    for _ in range(4):
+        jumper.update(FRAME)
+    jumper.walk(1)
+    assert jumper.dash(), "le dash doit partir"
+    start_x = jumper.center_x
+    jumper.jump()
+    jumper.cut_jump()
+    assert not jumper.is_dashing, "un saut doit couper le dash"
+    assert not jumper._dash_jump, "un saut ne doit pas porter l'elan du dash"
+    assert abs(jumper.change_x) <= settings.PLAYER_DASH_JUMP_CARRY + 0.05, (
+        f"le saut en dash ne doit garder qu'un petit elan, vx={jumper.change_x:.2f}"
+    )
+    for _ in range(int(0.45 / FRAME)):
+        jumper.walk(0)
+        jumper.update(FRAME)
+    flown = jumper.center_x - start_x
+    assert flown < settings.TILE_SIZE * 3.0, (
+        f"un saut en dash ne doit pas traverser le niveau, dx={flown:.1f}"
+    )
+    print(f"  saut en dash -> vx {jumper.change_x:.2f}, dx {flown:.1f}")
+
 
 def check_editor_views(window: arcade.Window) -> None:
     """Le navigateur et la vue d'edition se dessinent, peignent et annulent."""
