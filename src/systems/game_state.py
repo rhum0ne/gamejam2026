@@ -879,7 +879,10 @@ class PlayView(arcade.View):
             GameState.GAME_OVER,
         )
         cursor.tick(self.window, delta_time, hide=hide_cursor)
-        if self.machine.state in (GameState.PAUSED, GameState.LEVEL_UP):
+        if self.machine.state is GameState.PAUSED:
+            return
+        if self.machine.state is GameState.LEVEL_UP:
+            self._level_up_overlay().update(delta_time)
             return
         self._tick_door_win(delta_time)
         if self._hitstop_timer > 0.0:
