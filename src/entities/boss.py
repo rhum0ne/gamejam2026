@@ -1,19 +1,20 @@
-"""Boss golem : ennemi lourd a distance (projectile et laser).
+"""Boss golem : ennemi lourd a distance (projectile, laser, piques).
 
 Priorites :
     1. DYING  : animation de mort, plus d'attaque ;
-    2. SHOOT / LASER : attaque engagee jusqu'a la fin de l'anim ;
+    2. SHOOT / LASER / SPIKES : attaque engagee jusqu'a la fin ;
     3. CHASE  : le joueur est a portee -> se tourne vers lui, recule pour
-                garder la distance, puis arme un tir ou un laser ;
+                garder la distance, puis arme l'attaque suivante du cycle ;
     4. PATROL : va-et-vient lent, demi-tour au mur ou au bord.
 
-Le contact du corps ne tue pas : seuls le projectile (`BossShot`) et le
-laser (`laser_hits`) sont mortels, pendant leurs frames actives.
+Le contact du corps ne tue pas : seuls le projectile (`BossShot`), le
+laser (`laser_hits`) et la vague de piques sont mortels.
 """
 
 from __future__ import annotations
 
 import math
+import random
 from collections.abc import Sequence
 from enum import Enum, auto
 
@@ -22,6 +23,8 @@ from dataclasses import dataclass
 import arcade
 
 import settings
+from src.entities.boss_death_fx import BossDeathFx
+from src.entities.boss_spikes import BossSpikeWave
 from src.entities.enemy_base import EnemyBase
 from src.entities.particles import LaserBurst
 from src.entities.player import Player
@@ -35,6 +38,7 @@ class BossState(Enum):
     CHASE = auto()
     SHOOT = auto()
     LASER = auto()
+    SPIKES = auto()
     DYING = auto()
 
 
@@ -83,12 +87,13 @@ def _laser_body_animation() -> sprites.StripAnimation:
 
 
 def _death_animation() -> sprites.StripAnimation:
-    scale = settings.BOSS_SCALE * (settings.BOSS_FRAME / settings.BOSS_DEATH_FRAME)
-    frames = sprites.load_grid(
-        settings.SPRITE_BOSS_DEATH,
-        settings.BOSS_DEATH_FRAME,
-        settings.BOSS_DEATH_FRAME,
-        scale=scale,
+    frames = _visible_textures(
+        sprites.load_grid(
+            settings.SPRITE_BOSS_DEATH,
+            settings.BOSS_DEATH_FRAME,
+            settings.BOSS_DEATH_FRAME,
+            scale=settings.BOSS_SCALE,
+        )
     )
     return sprites.StripAnimation(frames, settings.ANIM_BOSS_DEATH_FRAME_TIME, loop=False)
 
@@ -123,6 +128,19 @@ def _visible_textures(frames: tuple[arcade.Texture, ...]) -> tuple[arcade.Textur
             continue
         visible.append(texture)
     return tuple(visible) if visible else frames
+
+
+def _content_bottom_from_center(texture: arcade.Texture) -> float:
+    """Distance du centre au pixel opaque le plus bas (vers le sol)."""
+    image = getattr(texture, "image", None)
+    height = float(texture.height)
+    if image is None:
+        return height / 2.0
+    alpha = image.split()[-1] if image.mode == "RGBA" else None
+    bbox = alpha.getbbox() if alpha is not None else image.getbbox()
+    if bbox is None:
+        return height / 2.0
+    return float(bbox[3]) - height / 2.0
 
 
 def _fade_beam_tip(texture: arcade.Texture, index: int) -> arcade.Texture:
@@ -237,6 +255,43 @@ def _capsule_hits_aabb(
     return dx * dx + dy * dy <= radius * radius
 
 
+def _wrap_deg(delta: float) -> float:
+    """Ramene un angle en degres dans ]-180, 180]."""
+    return (delta + 180.0) % 360.0 - 180.0
+
+
+def _smooth_damp_angle(
+    current: float,
+    target: float,
+    velocity: float,
+    smooth_time: float,
+    delta_time: float,
+    max_speed: float = 0.0,
+) -> tuple[float, float]:
+    """Visee inertielle (courbe SmoothDamp), pas un suivi retarde."""
+    dt = max(delta_time, 1e-6)
+    smooth = max(smooth_time, 1e-4)
+    omega = 2.0 / smooth
+    x = omega * dt
+    exp = 1.0 / (1.0 + x + 0.48 * x * x + 0.235 * x * x * x)
+    change = _wrap_deg(current - target)
+    if max_speed > 0.0:
+        max_change = max_speed * smooth
+        if change > max_change:
+            change = max_change
+        elif change < -max_change:
+            change = -max_change
+    original_to = current - change
+    temp = (velocity + omega * change) * dt
+    new_velocity = (velocity - omega * temp) * exp
+    output = original_to + (change + temp) * exp
+    # Evite le depassement, dans l'espace deroule (pas d'angle wrap ici).
+    if (original_to - current > 0.0) == (output > original_to):
+        output = original_to
+        new_velocity = 0.0
+    return output, new_velocity
+
+
 class BossShot(arcade.Sprite):
     """Bras-projectile lance par le boss, mortel au contact."""
 
@@ -250,6 +305,7 @@ class BossShot(arcade.Sprite):
         target_y: float,
         walls: Sequence[arcade.SpriteList],
         burst: LaserBurst | None = None,
+        jitter_deg: float | None = None,
     ) -> None:
         frames = _projectile_frames()
         super().__init__(frames[0], center_x=center_x, center_y=center_y)
@@ -259,22 +315,34 @@ class BossShot(arcade.Sprite):
         )
         dx = target_x - center_x
         dy = target_y - center_y
-        length = math.hypot(dx, dy) or 1.0
+        angle = math.atan2(dy, dx)
+        spread = settings.BOSS_SHOT_SPREAD_DEG if jitter_deg is None else jitter_deg
+        if spread:
+            angle += math.radians(random.uniform(-spread, spread))
+        self._dir_x = math.cos(angle)
+        self._dir_y = math.sin(angle)
         speed = settings.BOSS_SHOT_SPEED
-        self.change_x = dx / length * speed
-        self.change_y = dy / length * speed
+        self.change_x = self._dir_x * speed
+        self.change_y = self._dir_y * speed
         # Art oriente vers la gauche. Arcade.angle est horaire, atan2 anti-horaire.
-        self._flight_angle = settings.BOSS_SHOT_ART_ANGLE - math.degrees(
-            math.atan2(self.change_y, self.change_x)
-        )
+        self._flight_angle = settings.BOSS_SHOT_ART_ANGLE - math.degrees(angle)
         self.angle = self._flight_angle
         self._walls = list(walls)
         self._burst = burst
-        self._life = settings.BOSS_SHOT_LIFE
+        self._max_life = settings.BOSS_SHOT_LIFE
+        self._life = self._max_life
 
     def update(self, delta_time: float = settings.FRAME_TIME, *args, **kwargs) -> None:
         dt = max(0.0, delta_time)
         self._life -= dt
+        age = 1.0 - max(0.0, self._life) / self._max_life
+        ease = 1.0 - (1.0 - min(1.0, age)) ** 3
+        speed = (
+            settings.BOSS_SHOT_SPEED
+            + (settings.BOSS_SHOT_SPEED_END - settings.BOSS_SHOT_SPEED) * ease
+        )
+        self.change_x = self._dir_x * speed
+        self.change_y = self._dir_y * speed
         self.center_x += self.change_x
         self.center_y += self.change_y
         self.texture = self._animator.update(dt)
@@ -325,18 +393,21 @@ class Boss(EnemyBase):
         self.attack_reach = 0.0
         self.attack_vertical_range = settings.BOSS_AGGRO_VERTICAL_RANGE
         self._attack_cooldown = 0.0
-        self._next_laser = True
+        self._attack_index = 0
         self._shot_spawned = False
         self._fire_sound_pending = False
+        self._death_ground_y: float | None = None
         self.shots = arcade.SpriteList()
         self._shot_burst = LaserBurst()
+        self._spike_wave = BossSpikeWave()
+        self._death_fx = BossDeathFx()
         self._beam_strip = _beam_strip()
         self._beam = arcade.Sprite(self._beam_strip.animation.textures[0])
         self._beam_anim = sprites.Animator(self._beam_strip.animation)
         self._laser_dir_x = -1.0
         self._laser_dir_y = 0.0
-        self._aim_x = 0.0
-        self._aim_y = 0.0
+        self._aim_angle = 180.0
+        self._aim_angle_vel = 0.0
         self._physics: arcade.PhysicsEnginePlatformer | None = None
         self._platforms: list[arcade.SpriteList] = []
         self._configure_glow(
@@ -403,31 +474,31 @@ class Boss(EnemyBase):
         )
 
     def _aim_laser(self, player: Player | None, delta_time: float = 0.0, *, snap: bool = False) -> None:
-        """Pointe le rayon vers une visee retardee, pour qu'un joueur en mouvement echappe."""
+        """Pointe le rayon avec une courbe d'inertie, pas un suivi aveugle."""
         origin_x, origin_y = self._laser_origin()
         if player is None or not player.alive:
-            self._laser_dir_x = 1.0 if self.facing >= 0 else -1.0
-            self._laser_dir_y = 0.0
-            return
-        if snap:
-            self._aim_x = player.center_x
-            self._aim_y = player.center_y
+            target = 0.0 if self.facing >= 0 else 180.0
         else:
-            delay = settings.BOSS_LASER_TRACK_DELAY
-            if delay <= 0.0:
-                self._aim_x = player.center_x
-                self._aim_y = player.center_y
-            else:
-                blend = 1.0 - math.exp(-max(0.0, delta_time) / delay)
-                self._aim_x += (player.center_x - self._aim_x) * blend
-                self._aim_y += (player.center_y - self._aim_y) * blend
-        dx = self._aim_x - origin_x
-        dy = self._aim_y - origin_y
-        length = math.hypot(dx, dy) or 1.0
-        self._laser_dir_x = dx / length
-        self._laser_dir_y = dy / length
-        if abs(dx) > 0.5:
-            self.facing = 1 if dx > 0 else -1
+            target = math.degrees(
+                math.atan2(player.center_y - origin_y, player.center_x - origin_x)
+            )
+        if snap or settings.BOSS_LASER_SMOOTH_TIME <= 0.0:
+            self._aim_angle = target
+            self._aim_angle_vel = 0.0
+        else:
+            self._aim_angle, self._aim_angle_vel = _smooth_damp_angle(
+                self._aim_angle,
+                target,
+                self._aim_angle_vel,
+                settings.BOSS_LASER_SMOOTH_TIME,
+                delta_time,
+                settings.BOSS_LASER_MAX_TURN_SPEED,
+            )
+        rad = math.radians(self._aim_angle)
+        self._laser_dir_x = math.cos(rad)
+        self._laser_dir_y = math.sin(rad)
+        if abs(self._laser_dir_x) > 0.05:
+            self.facing = 1 if self._laser_dir_x > 0 else -1
 
     def laser_bounds(self) -> tuple[float, float, float, float]:
         origin_x, origin_y = self._laser_origin()
@@ -459,27 +530,50 @@ class Boss(EnemyBase):
             target.top,
         )
 
+    def spike_hits(self, target: arcade.Sprite) -> bool:
+        return self._spike_wave.hits(target)
+
     # ------------------------------------------------------------------ #
     # Mort
     # ------------------------------------------------------------------ #
 
     def _on_death(self) -> None:
+        self._death_ground_y = (
+            self.center_y
+            - _content_bottom_from_center(self.texture)
+            + settings.BOSS_DEATH_GROUND_OFFSET_Y
+        )
         self.state = BossState.DYING
         self.change_x = 0.0
         self._clear_shots()
+        self._spike_wave.clear()
         self._animator.play(self._die, restart=True)
+        self.texture = self._die.textures[0]
+        sprites.apply_facing(self, self.facing)
+        self._pin_death_to_ground()
+        self._death_fx.start(self.center_x, self.center_y)
 
     def _on_respawn(self) -> None:
         self.state = BossState.PATROL
         self._attack_cooldown = 0.0
-        self._next_laser = True
+        self._attack_index = 0
         self._shot_spawned = False
         self._fire_sound_pending = False
         self._clear_shots()
+        self._spike_wave.clear()
+        self._death_fx.clear()
+        self._death_ground_y = None
+        self.visible = True
         self.facing = -1
         self._animator.play(self._walk, restart=True)
         self.texture = self._walk.textures[0]
         sprites.apply_facing(self, self.facing)
+
+    def _pin_death_to_ground(self) -> None:
+        """Garde les pieds sur la ligne du sol : l'enfouissement se joue dans la frame."""
+        if self._death_ground_y is None:
+            return
+        self.center_y = self._death_ground_y + _content_bottom_from_center(self.texture)
 
     def _clear_shots(self) -> None:
         for shot in list(self.shots):
@@ -503,6 +597,8 @@ class Boss(EnemyBase):
         self._attack_cooldown = max(0.0, self._attack_cooldown - dt)
         self.shots.update(dt)
         self._shot_burst.update(dt)
+        self._spike_wave.update(dt)
+        self._death_fx.update(self.center_x, self.center_y, dt)
         if self.state is BossState.DYING:
             self.change_x = self._knockback_x
             self._knockback_x *= settings.ENEMY_KNOCKBACK_FRICTION
@@ -511,6 +607,11 @@ class Boss(EnemyBase):
             self._tick_shoot(player)
         elif self.state is BossState.LASER:
             self.change_x = 0.0
+        elif self.state is BossState.SPIKES:
+            self.change_x = 0.0
+            if self._spike_wave.finished:
+                self._spike_wave.clear()
+                self._end_attack()
         elif self._player_in_range(player):
             self._chase(player)
         else:
@@ -528,14 +629,22 @@ class Boss(EnemyBase):
             self._end_attack()
         if self._physics is not None:
             self._physics.update()
+        if self.state is BossState.DYING:
+            self._pin_death_to_ground()
         if self.state is BossState.DYING and self._animator.finished:
-            self._clear_shots()
-            self.remove_from_sprite_lists()
+            self.visible = False
+            if not self._death_fx.active:
+                self._clear_shots()
+                self._spike_wave.clear()
+                self._death_fx.clear()
+                self.remove_from_sprite_lists()
 
     def draw_attacks(self) -> None:
-        """Projectiles, eclat et rayon, au-dessus du corps du boss."""
+        """Projectiles, eclat, piques et rayon, au-dessus du corps du boss."""
         self.shots.draw(pixelated=True)
         self._shot_burst.draw()
+        self._spike_wave.draw()
+        self._death_fx.draw()
         if self.state is not BossState.LASER:
             return
         self._layout_beam()
@@ -596,15 +705,26 @@ class Boss(EnemyBase):
             self.change_x = 0.0
 
     def _start_attack(self, player: Player) -> None:
-        use_laser = self._next_laser and self._laser_has_line(player)
-        self._next_laser = not self._next_laser
-        if use_laser:
+        attack = self._attack_index % 3
+        self._attack_index += 1
+        if attack == 1 and not self._laser_has_line(player):
+            attack = 0
+        if attack == 1:
             self.state = BossState.LASER
             self._aim_laser(player, snap=True)
             self._animator.play(self._laser_anim, restart=True)
             self._beam_anim.play(self._beam_strip.animation, restart=True)
             self._beam.alpha = 255
             self._layout_beam()
+        elif attack == 2:
+            self.state = BossState.SPIKES
+            self._spike_wave.start(
+                self.center_x,
+                self.bottom + settings.BOSS_SPIKE_SIZE / 2.0,
+                player.center_x,
+                self._platforms,
+            )
+            self._animator.play(self._walk, restart=True)
         else:
             self.state = BossState.SHOOT
             self._shot_spawned = False
@@ -620,7 +740,7 @@ class Boss(EnemyBase):
         if self._animator.finished:
             self._end_attack()
 
-    def _spawn_shot(self, player: Player | None) -> None:
+    def _spawn_shot(self, player: Player | None, jitter_deg: float | None = None) -> None:
         self._shot_spawned = True
         self._fire_sound_pending = True
         origin_x = self.center_x + self.facing * settings.BOSS_SHOT_ORIGIN_X
@@ -637,6 +757,7 @@ class Boss(EnemyBase):
             target_y,
             self._platforms,
             burst=self._shot_burst,
+            jitter_deg=jitter_deg,
         )
         self.shots.append(shot)
 
@@ -645,6 +766,10 @@ class Boss(EnemyBase):
         pending = self._fire_sound_pending
         self._fire_sound_pending = False
         return pending
+
+    def consume_death_shakes(self) -> list[tuple[float, float]]:
+        """Secousses camera enfilees par les booms de mort."""
+        return self._death_fx.consume_shakes()
 
     def _end_attack(self) -> None:
         self.state = BossState.CHASE
@@ -689,6 +814,8 @@ class Boss(EnemyBase):
             self._animator.play(self._shoot)
         elif self.state is BossState.LASER:
             self._animator.play(self._laser_anim)
+        elif self.state is BossState.SPIKES:
+            self._animator.play(self._walk)
         elif abs(self.change_x) <= 0.05:
             self._animator.play(self._walk)
         else:

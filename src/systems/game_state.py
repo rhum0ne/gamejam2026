@@ -334,6 +334,10 @@ class PlayView(arcade.View):
             consume = getattr(enemy, "consume_fire_sound", None)
             if consume is not None and consume():
                 play_boss_fire()
+            shakes = getattr(enemy, "consume_death_shakes", None)
+            if shakes is not None:
+                for amplitude, duration in shakes():
+                    self.camera.shake(amplitude, duration)
 
     @property
     def ghost_emerging(self) -> bool:
@@ -839,6 +843,7 @@ class PlayView(arcade.View):
         self._block_hazard_sides()
         self._update_enemies(delta_time)
         self._resolve_player_collisions()
+        self._play_enemy_sound_events()
         if self.machine.state is GameState.PLAYING:
             if self.player.is_dashing:
                 self.camera.follow(
@@ -1022,6 +1027,8 @@ class PlayView(arcade.View):
             emit_player_win(self)
             return
 
+        if settings.PLAYER_INVINCIBLE:
+            return
         if collisions.player_hits_hazard(self.player, self.level):
             self._spill_blood(self.player.center_x, self.player.center_y, count=settings.BLOOD_COUNT_PLAYER)
             emit_player_death(self, "spikes")

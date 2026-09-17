@@ -164,7 +164,7 @@ def enemy_striking_player(player: Player, enemies: Iterable[EnemyBase]) -> Enemy
 
 
 def player_hits_boss_attack(player: Player, enemies: Iterable[EnemyBase]) -> bool:
-    """Projectile ou laser d'un boss touche-t-il le corps physique vivant ?"""
+    """Projectile, laser ou vague de piques d'un boss touche-t-il le corps vivant ?"""
     if not player.alive:
         return False
     for enemy in enemies:
@@ -175,6 +175,9 @@ def player_hits_boss_attack(player: Player, enemies: Iterable[EnemyBase]) -> boo
                     return True
         laser_hits = getattr(enemy, "laser_hits", None)
         if laser_hits is not None and laser_hits(player):
+            return True
+        spike_hits = getattr(enemy, "spike_hits", None)
+        if spike_hits is not None and spike_hits(player):
             return True
     return False
 
