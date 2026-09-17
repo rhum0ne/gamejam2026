@@ -120,10 +120,17 @@ class GhostFog:
     def draw(self, ghost: arcade.Sprite, camera: Camera2D) -> None:
         """Dessine le voile centre sur `ghost`, taille = 2 * vision_radius."""
         radius = max(1.0, float(getattr(ghost, "vision_radius", settings.GHOST_VISION_RADIUS)))
-        self._draw_outside(ghost.center_x, ghost.center_y, radius, camera)
+        self.draw_at(ghost.center_x, ghost.center_y, radius, camera)
+
+    def draw_at(
+        self, center_x: float, center_y: float, radius: float, camera: Camera2D
+    ) -> None:
+        """Voile centre sur un point, meme si le fantome n'existe plus."""
+        radius = max(1.0, radius)
+        self._draw_outside(center_x, center_y, radius, camera)
         arcade.draw_texture_rect(
             self._texture,
-            XYWH(ghost.center_x, ghost.center_y, radius * 2, radius * 2),
+            XYWH(center_x, center_y, radius * 2, radius * 2),
         )
 
     def draw_many(self, ghosts: Sequence[arcade.Sprite], camera: Camera2D) -> None:

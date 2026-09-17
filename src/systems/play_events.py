@@ -113,8 +113,6 @@ def on_player_ghost_end(view: PlayView, data: dict) -> None:
             item.drop_at(item.center_x, item.center_y)
         view.ghost.start_vanish()
     play_ghost_end()
-    for wall in view.level.spectral_walls:
-        wall.set_revealed(False)
     view.anchor_corpse = None
     respawn_x, respawn_y = view.player.respawn_point
     view.start_player_rebirth(respawn_x, respawn_y)

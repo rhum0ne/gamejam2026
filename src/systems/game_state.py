@@ -271,6 +271,8 @@ class PlayView(arcade.View):
         self.anchor_corpse: Corpse | None = None
         self._emergence: GhostEmergence | None = None
         self._rebirth: PlayerRebirth | None = None
+        self._linger_fog: tuple[float, float, float] | None = None
+        self._linger_warp: float = 0.0
         self.held_keys: set[int] = set()
         self._hitstop_timer = 0.0
         self._door_win_timer = 0.0
@@ -325,6 +327,8 @@ class PlayView(arcade.View):
         self.anchor_corpse = None
         self._emergence = None
         self._rebirth = None
+        self._linger_fog = None
+        self._linger_warp = 0.0
         self.held_keys.clear()
         self._hitstop_timer = 0.0
         self._door_win_timer = 0.0
@@ -373,7 +377,32 @@ class PlayView(arcade.View):
 
     def start_player_rebirth(self, origin_x: float, origin_y: float) -> None:
         """Lance le voile noir et la reconstruction du corps au checkpoint."""
+        ghost = self.ghost
+        if ghost is not None:
+            self._linger_fog = (
+                ghost.center_x,
+                ghost.center_y,
+                max(1.0, ghost.vision_radius),
+            )
+            self._linger_warp = ghost.warp_strength
+        else:
+            self._linger_fog = None
+            self._linger_warp = 0.0
         self._rebirth = PlayerRebirth(origin_x, origin_y)
+
+    def _ghost_fog_pose(self) -> tuple[float, float, float] | None:
+        """Centre et rayon du voile : fantome vivant, ou dernier trou pendant le fade-out."""
+        rebirth = self._rebirth
+        if rebirth is not None and rebirth.covers_hud and self._linger_fog is not None:
+            return self._linger_fog
+        if (
+            self.machine.state is GameState.GHOST
+            and self.ghost is not None
+            and not self.ghost_emerging
+        ):
+            ghost = self.ghost
+            return ghost.center_x, ghost.center_y, max(1.0, ghost.vision_radius)
+        return None
 
     def _static_platforms(self) -> list[arcade.SpriteList]:
         """Plateformes solides hors cadavres (un cadavre ne doit pas se bloquer lui-meme)."""
@@ -386,15 +415,13 @@ class PlayView(arcade.View):
         coutait ~5 ms et faisait chuter le FPS a 45.
         """
         view = self.camera.cull_rect()
-        ghost = self.ghost
-        if (
-            self.machine.state is not GameState.GHOST
-            or ghost is None
-            or self.ghost_emerging
-        ):
+        pose = self._ghost_fog_pose()
+        if pose is None:
             return view
-        radius = ghost.vision_radius + settings.RENDER_CULL_PAD
-        return self.camera.cull_rect_around(ghost.center_x, ghost.center_y, radius)
+        center_x, center_y, radius = pose
+        return self.camera.cull_rect_around(
+            center_x, center_y, radius + settings.RENDER_CULL_PAD
+        )
 
     # ------------------------------------------------------------------ #
     # Dessin
@@ -406,13 +433,10 @@ class PlayView(arcade.View):
         defer_player = rebirth is not None and rebirth.shows_player
         self.camera.begin_frame()
         self.camera.use_world()
-        tight_cull = (
-            self.machine.state is GameState.GHOST
-            and not self.ghost_emerging
-            and (rebirth is None or rebirth.shows_world)
-        )
+        fog_pose = self._ghost_fog_pose()
+        tight_cull = fog_pose is not None and (rebirth is None or rebirth.shows_world)
         if rebirth is None or rebirth.shows_world:
-            ghost_view = self.machine.state is GameState.GHOST
+            ghost_view = fog_pose is not None or self.machine.state is GameState.GHOST
             for block in self.level.falling_blocks:
                 block.set_ghost_view(ghost_view)
             self.level.draw(self._terrain_cull_rect(), tight_cull=tight_cull)
@@ -424,11 +448,10 @@ class PlayView(arcade.View):
                 self.player.draw_particles()
             # Premier plan : passe devant le monde, reste sous le voile fantome et le HUD.
             self.atmosphere.draw(self.camera.world)
-            if self.ghost is not None:
-                if self.machine.state is GameState.GHOST:
-                    self._draw_ghost_or_emergence(self.ghost)
-                elif self.ghost.vanishing:
-                    draw_pixel_sprite(self.ghost)
+            if self.machine.state is GameState.GHOST and self.ghost is not None:
+                self._draw_ghost_or_emergence(self.ghost)
+            elif fog_pose is not None:
+                self._draw_closing_fog(fog_pose)
             self._blood.draw()
             self._soul_pickup_fx.draw()
             if settings.DEBUG_SHOW_HITBOXES:
@@ -459,6 +482,8 @@ class PlayView(arcade.View):
             emergence = self._emergence
             if emergence is not None and emergence.active:
                 warp *= emergence.fog_strength
+        elif rebirth is not None and rebirth.covers_hud:
+            warp = self._linger_warp
         self.camera.present(warp)
 
     def _draw_player_attack(self) -> None:
@@ -590,6 +615,17 @@ class PlayView(arcade.View):
         if self.ghost is not None:
             self.ghost.draw_hit_box(color)
 
+    def _draw_closing_fog(self, pose: tuple[float, float, float]) -> None:
+        """Garde le voile pendant le fade-out : le fantome peut deja etre parti."""
+        center_x, center_y, radius = pose
+        self.fog.draw_at(center_x, center_y, radius, self.camera.world)
+        ghost = self.ghost
+        if ghost is None:
+            return
+        with glow_pass():
+            ghost.draw_fx()
+        draw_pixel_sprite(ghost)
+
     def _draw_ghost_or_emergence(self, ghost: Ghost) -> None:
         """Voile du fantome, ou cinematique de sortie hors du corps."""
         emergence = self._emergence
@@ -614,7 +650,7 @@ class PlayView(arcade.View):
             wall.set_revealed(ghost.reveals(wall))
             if wall.revealed:
                 revealed_walls.append(wall)
-        self.fog.draw(ghost, self.camera.world)
+        self.fog.draw_at(ghost.center_x, ghost.center_y, ghost.vision_radius, self.camera.world)
         self.level.spectral_buttons.draw()
         self._draw_hidden_wall_outlines()
         self._reveal_walls.draw(revealed_walls)
@@ -1030,14 +1066,20 @@ class PlayView(arcade.View):
             return
         rebirth.update(delta_time, self.camera)
         if rebirth.consume_body_spawn():
+            self._linger_fog = None
+            self._linger_warp = 0.0
             self._materialize_body()
         if rebirth.active:
             return
         self._rebirth = None
+        self._linger_fog = None
+        self._linger_warp = 0.0
         self._finish_rebirth()
 
     def _materialize_body(self) -> None:
         """Place le corps au checkpoint une fois l'ecran noir."""
+        for wall in self.level.spectral_walls:
+            wall.set_revealed(False)
         self.ghost = None
         origin_x, origin_y = self.player.respawn_point
         self.player.respawn_at((origin_x, origin_y))
