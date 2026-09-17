@@ -593,8 +593,8 @@ GHOST_SAFE_SEARCH_STEP = 4  # pas de la spirale, en pixels
 GHOST_SPEED = 6.0
 GHOST_ACCEL_TIME = 0.20  # secondes pour atteindre la vitesse visee (plus grand = plus mou)
 GHOST_COAST_TIME = 0.48  # secondes pour glisser a l'arret une fois les touches lachees
-GHOST_DURATION = 12.0  # duree de base du mode fantome, en secondes
-GHOST_DURATION_INCREASE_VALUE = 0.5
+GHOST_DURATION = 5.0  # duree de base du mode fantome, en secondes
+GHOST_DURATION_INCREASE_VALUE = 2.0
 GHOST_MAX_RANGE = 480.0  # conserve pour les paliers ; plus de limite de distance en jeu
 GHOST_MAX_RANGE_INCREASE_VALUE = 20
 GHOST_VISION_RADIUS = 200.0  # rayon de revelation au debut du mode fantome
