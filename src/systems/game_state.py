@@ -1309,6 +1309,8 @@ class PlayView(arcade.View):
                     self.camera.shake(
                         settings.CAMERA_DASH_SHAKE, settings.CAMERA_DASH_SHAKE_TIME
                     )
+            elif symbol in _ATTACK_KEYS:
+                self.player.attack()
             elif symbol == _PROJECT_KEY:
                 emit_player_death(self, "sacrifice")
         elif state is GameState.GHOST:
