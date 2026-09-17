@@ -94,6 +94,34 @@ LEVEL_SEQUENCE: tuple[str, ...] = (
     "Niveau_1-6.json",
     "Niveau_Bonus_ouvert.json",
 )
+# Champ JSON `type` : menu Basic / Puzzle / Others, plus un seul Dev world.
+LEVEL_TYPE_DEV = "dev"
+LEVEL_TYPE_BASIC = "basic"
+LEVEL_TYPE_PUZZLE = "puzzle"
+LEVEL_TYPE_OTHERS = "others"
+LEVEL_TYPES = (
+    LEVEL_TYPE_DEV,
+    LEVEL_TYPE_BASIC,
+    LEVEL_TYPE_PUZZLE,
+    LEVEL_TYPE_OTHERS,
+)
+LEVEL_TYPE_LABELS = {
+    LEVEL_TYPE_DEV: "Dev",
+    LEVEL_TYPE_BASIC: "Basic",
+    LEVEL_TYPE_PUZZLE: "Puzzle",
+    LEVEL_TYPE_OTHERS: "Others",
+}
+LEVEL_MENU_TYPES = (LEVEL_TYPE_BASIC, LEVEL_TYPE_PUZZLE, LEVEL_TYPE_OTHERS)
+
+
+def parse_level_type(value: object) -> str:
+    """`basic` par defaut ; `dev` / `puzzle` / `others` si reconnus."""
+    if not isinstance(value, str):
+        return LEVEL_TYPE_BASIC
+    key = value.strip().lower()
+    if not key or key not in LEVEL_TYPES:
+        return LEVEL_TYPE_BASIC
+    return key
 
 # --------------------------------------------------------------------------- #
 # Fenetre
@@ -1238,11 +1266,17 @@ MENU_CARD_GAP = 24
 MENU_PAUSE_VEIL_ALPHA = 176
 MENU_GRID_COLUMNS = 2
 MENU_CELL_WIDTH = 220
-MENU_CELL_HEIGHT = 78
-MENU_CELL_GAP = 12
+MENU_CELL_HEIGHT = 56
+MENU_CELL_GAP = 10
 MENU_BUTTON_WIDTH = 300
 MENU_BUTTON_HEIGHT = 40
 MENU_PANEL_PAD = 24
+MENU_SECTION_GAP = 14
+MENU_PANEL_BUTTON_GAP = 36
+MENU_HEADING_SIZE = 11
+MENU_TAB_HEIGHT = 30
+MENU_TAB_GAP = 6
+MENU_TAB_SIZE = 12
 MENU_TITLE_SIZE = 20
 MENU_TITLE_MAP = "title_backdrop.json"
 MENU_TITLE_GHOST_COUNT = 5

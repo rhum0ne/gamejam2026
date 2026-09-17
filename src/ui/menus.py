@@ -15,10 +15,22 @@ from src.systems.game_state import GameSession, PlayView
 from src.ui import keys
 from src.ui.display import handle_display_key, use_default_camera
 from src.ui.fonts import PIXEL_FONT
-from src.ui.menu_kit import ButtonColumn, LevelCell, LevelGrid, TextButton, draw_panel
-from src.ui.sfx import play_menu_hover
+from src.ui.menu_kit import (
+    ButtonColumn,
+    LevelCell,
+    LevelGrid,
+    TabStrip,
+    TextButton,
+    draw_panel,
+)
+from src.ui.sfx import play_menu_click, play_menu_hover
 from src.ui.title_fx import TitleStage
-from src.world.level import peek_level_info, LevelFormatError
+from src.world.level import (
+    LevelFormatError,
+    level_type_label,
+    load_level_catalog,
+    peek_level_info,
+)
 
 _TEXT_CACHE: dict[tuple, arcade.Text] = {}
 _TEXT_CACHE_LIMIT = 256
@@ -86,7 +98,7 @@ def _draw_action(
 
 
 class TitleView(_HeldKeysMixin, arcade.View):
-    """Accueil : tableau de niveaux (lignes x colonnes)."""
+    """Accueil : onglets de niveaux, Dev world et Quitter hors cadre."""
 
     def __init__(self, session: GameSession | None = None) -> None:
         super().__init__()
@@ -120,15 +132,35 @@ class TitleView(_HeldKeysMixin, arcade.View):
             settings.COLOR_MENU_FOCUS,
             font_size=12,
             anchor_x="center",
+            anchor_y="center",
             font_name=PIXEL_FONT,
         )
-        self.grid = LevelGrid([], settings.MENU_GRID_COLUMNS)
+        self.empty_hint = arcade.Text(
+            "Aucun niveau",
+            0,
+            0,
+            settings.COLOR_MENU_HINT,
+            font_size=14,
+            anchor_x="center",
+            anchor_y="center",
+            font_name=PIXEL_FONT,
+        )
+        self._grids: list[LevelGrid] = []
+        self._tabs = TabStrip(
+            tuple(settings.LEVEL_TYPE_LABELS[kind] for kind in settings.LEVEL_MENU_TYPES)
+        )
+        self._active_tab = 0
+        self.dev_button: TextButton | None = None
         self.quit_button = TextButton("Quitter", on_activate=self._quit_game)
+        self._on_tabs = False
+        self._on_dev = False
         self._on_quit = False
         self._panel = (0.0, 0.0, 0.0, 0.0)
+        self._warn_text: arcade.Text | None = None
 
     def on_show_view(self) -> None:
         use_default_camera(self.window)
+        load_level_catalog(reload=True)
         self._rebuild()
 
     def on_resize(self, width: int, height: int) -> None:
@@ -138,55 +170,207 @@ class TitleView(_HeldKeysMixin, arcade.View):
         width, height = self.window.width, self.window.height
         cx = width / 2
         self.stage.resize(width, height)
-        cells = []
-        for index, filename in enumerate(settings.LEVEL_SEQUENCE):
-            name, _subtitle = peek_level_info(filename)
-            cells.append(
-                LevelCell(
-                    index,
-                    name or f"Niveau {index + 1}",
-                    on_activate=lambda chosen=index: self._open_level(chosen),
-                )
-            )
-        self.grid = LevelGrid(cells, settings.MENU_GRID_COLUMNS)
+        catalog = load_level_catalog()
         cols = settings.MENU_GRID_COLUMNS
-        rows = max(1, (len(cells) + cols - 1) // cols)
         gap = settings.MENU_CELL_GAP
+        grids: list[LevelGrid] = []
+        for level_type in settings.LEVEL_MENU_TYPES:
+            group = catalog.in_type(level_type)
+            cells = [
+                LevelCell(
+                    entry.index,
+                    entry.name or f"Niveau {entry.index + 1}",
+                    number=number,
+                    on_activate=lambda chosen=entry.index: self._open_level(chosen),
+                )
+                for number, entry in enumerate(group, start=1)
+            ]
+            grids.append(LevelGrid(cells, cols))
+        self._grids = grids
+        self._tabs = TabStrip(
+            tuple(settings.LEVEL_TYPE_LABELS[kind] for kind in settings.LEVEL_MENU_TYPES)
+        )
+        self._active_tab = max(0, min(len(grids) - 1, self._active_tab))
+        self._tabs.select(self._active_tab)
+        if catalog.dev is not None:
+            self.dev_button = TextButton(
+                "Dev world",
+                on_activate=lambda chosen=catalog.dev.index: self._open_level(chosen),
+            )
+        else:
+            self.dev_button = None
+        self._warn_text = None
+        if catalog.warnings:
+            self._warn_text = arcade.Text(
+                catalog.warnings[0],
+                0,
+                0,
+                settings.COLOR_MENU_HINT,
+                font_size=9,
+                anchor_x="center",
+                font_name=PIXEL_FONT,
+            )
+        max_rows = max(((len(grid.cells) + cols - 1) // cols) for grid in grids)
+        rows = max(2, max_rows)
+        prompt_reserve = 52.0
+        button_h = settings.MENU_BUTTON_HEIGHT
+        warn_h = 16.0 if self._warn_text is not None else 0.0
+        tab_h = settings.MENU_TAB_HEIGHT
+        title_y = height * 0.90
+        self.title.x = cx
+        self.title.y = title_y
+        self.title_echo.x = cx + 3
+        self.title_echo.y = title_y - 3
+        buttons_stack = button_h
+        if self.dev_button is not None:
+            buttons_stack += button_h + 10
         cell_w = min(
             settings.MENU_CELL_WIDTH,
             max(96.0, (width * 0.72 - (cols - 1) * gap) / cols),
         )
-        avail_h = height - 210
-        cell_h = min(
-            settings.MENU_CELL_HEIGHT,
-            max(52.0, (avail_h - (rows - 1) * gap) / rows),
-        )
-        grid_w = cols * cell_w + (cols - 1) * gap
-        grid_h = rows * cell_h + (rows - 1) * gap
-        panel_w = grid_w + settings.MENU_PANEL_PAD * 2
-        panel_h = grid_h + 118
-        top = height * 0.88
-        self.title.x = cx
-        self.title.y = top
-        self.title_echo.x = cx + 3
-        self.title_echo.y = top - 3
-        panel_top = top - 40
+        top_limit = title_y - 36
+        bottom_limit = prompt_reserve
+        gap_below = float(settings.MENU_PANEL_BUTTON_GAP)
+        cell_h = float(settings.MENU_CELL_HEIGHT)
+        grids_h = rows * cell_h + max(0, rows - 1) * gap
+        name_h = 28.0
+        panel_h = grids_h + 24 + name_h
+        block_h = (tab_h - 2) + panel_h + gap_below + buttons_stack + warn_h
+        available = top_limit - bottom_limit
+        slack = available - block_h
+        if slack < 0:
+            shrink = -slack
+            cell_h = min(
+                settings.MENU_CELL_HEIGHT,
+                max(36.0, (cell_h * rows - shrink) / rows),
+            )
+            grids_h = rows * cell_h + max(0, rows - 1) * gap
+            panel_h = max(80.0, grids_h + 24 + name_h)
+            block_h = (tab_h - 2) + panel_h + gap_below + buttons_stack + warn_h
+            slack = max(0.0, available - block_h)
+        block_top = top_limit - slack / 2
+        panel_top = block_top - (tab_h - 2)
         panel_bottom = panel_top - panel_h
+        grid_w = cols * cell_w + (cols - 1) * gap
+        panel_w = grid_w + settings.MENU_PANEL_PAD * 2
         self._panel = (cx - panel_w / 2, cx + panel_w / 2, panel_bottom, panel_top)
-        grid_top = panel_top - 28
-        grid_bottom = self.grid.layout(cx, grid_top, cell_w, cell_h)
+        self._tabs.layout(
+            cx - panel_w / 2 + 8,
+            cx + panel_w / 2 - 8,
+            panel_top - 2,
+            tab_h,
+        )
+        grid_top = panel_top - 16
+        for grid in grids:
+            grid.layout(cx, grid_top, cell_w, cell_h)
         self.level_name.x = cx
-        self.level_name.y = grid_bottom - 24
-        self.quit_button.place(cx, panel_bottom + 36, min(settings.MENU_BUTTON_WIDTH, panel_w - 40), settings.MENU_BUTTON_HEIGHT)
-        self._on_quit = False
+        self.level_name.y = panel_bottom + name_h / 2
+        self.empty_hint.x = cx
+        self.empty_hint.y = (panel_top + panel_bottom + name_h) / 2
+        button_w = min(settings.MENU_BUTTON_WIDTH, panel_w - 40)
+        first_cy = panel_bottom - gap_below - button_h / 2
+        if self.dev_button is not None:
+            self.dev_button.place(cx, first_cy, button_w, button_h)
+            self.quit_button.place(cx, first_cy - button_h - 10, button_w, button_h)
+        else:
+            self.quit_button.place(cx, first_cy, button_w, button_h)
+        if self._warn_text is not None:
+            self._warn_text.x = cx
+            self._warn_text.y = self.quit_button.bottom - 14
+        if self._on_quit:
+            self._focus_quit()
+        elif self._on_dev:
+            self._focus_dev()
+        elif self._on_tabs:
+            self._focus_tabs()
+        elif self._current_grid() is not None and self._current_grid().cells:
+            self._focus_grid(self._active_tab)
+        else:
+            self._focus_tabs()
         self._sync_chrome()
 
-    def _sync_chrome(self) -> None:
-        self.quit_button.set_focused(self._on_quit)
-        if self._on_quit:
-            self.level_name.text = ""
+    def _current_grid(self) -> LevelGrid | None:
+        if 0 <= self._active_tab < len(self._grids):
+            return self._grids[self._active_tab]
+        return None
+
+    def _select_tab(self, index: int, *, sound: bool = True) -> None:
+        if not self._grids:
+            return
+        next_index = index % len(self._grids)
+        if self._tabs.select(next_index) and sound:
+            play_menu_hover()
+        self._active_tab = next_index
+        for other, grid in enumerate(self._grids):
+            if other != next_index:
+                grid.blur()
+
+    def _focus_tabs(self) -> None:
+        self._on_tabs = True
+        self._on_dev = False
+        self._on_quit = False
+        self._tabs.focused = True
+        for grid in self._grids:
+            grid.blur()
+
+    def _focus_grid(self, index: int, *, last_row: bool = False) -> None:
+        self._select_tab(index)
+        grid = self._current_grid()
+        if grid is None or not grid.cells:
+            self._focus_tabs()
+            return
+        self._on_tabs = False
+        self._on_dev = False
+        self._on_quit = False
+        self._tabs.focused = False
+        if last_row:
+            grid.focus_last_row()
         else:
-            self.level_name.text = self.grid.focused_name
+            grid.focus_first_row()
+
+    def _focus_dev(self) -> None:
+        self._on_tabs = False
+        self._on_dev = True
+        self._on_quit = False
+        self._tabs.focused = False
+        for grid in self._grids:
+            grid.blur()
+
+    def _focus_quit(self) -> None:
+        self._on_tabs = False
+        self._on_dev = False
+        self._on_quit = True
+        self._tabs.focused = False
+        for grid in self._grids:
+            grid.blur()
+
+    def _leave_grid_down(self) -> None:
+        if self.dev_button is not None:
+            self._focus_dev()
+        else:
+            self._focus_quit()
+        play_menu_hover()
+
+    def _enter_grid_from_below(self) -> None:
+        grid = self._current_grid()
+        if grid is not None and grid.cells:
+            self._focus_grid(self._active_tab, last_row=True)
+        else:
+            self._focus_tabs()
+        play_menu_hover()
+
+    def _sync_chrome(self) -> None:
+        self._tabs.focused = self._on_tabs
+        if self.dev_button is not None:
+            self.dev_button.set_focused(self._on_dev)
+        self.quit_button.set_focused(self._on_quit)
+        grid = self._current_grid()
+        if self._on_quit or self._on_tabs or self._on_dev:
+            self.level_name.text = ""
+        elif grid is not None:
+            self.level_name.text = grid.focused_name
+        else:
+            self.level_name.text = ""
 
     def _open_level(self, index: int) -> None:
         self.session.restart()
@@ -205,9 +389,18 @@ class TitleView(_HeldKeysMixin, arcade.View):
         self.title.draw()
         left, right, bottom, top = self._panel
         draw_panel(left, right, bottom, top, accent=settings.COLOR_MENU_FOCUS)
-        self.grid.draw()
+        self._tabs.draw(panel_top=top)
+        grid = self._current_grid()
+        if grid is not None and grid.cells:
+            grid.draw()
+        else:
+            self.empty_hint.draw()
         self.level_name.draw()
+        if self.dev_button is not None:
+            self.dev_button.draw()
         self.quit_button.draw()
+        if self._warn_text is not None:
+            self._warn_text.draw()
         keys.draw_prompt_row(
             self.window.width / 2,
             28,
@@ -231,51 +424,138 @@ class TitleView(_HeldKeysMixin, arcade.View):
         right = symbol in (arcade.key.RIGHT, arcade.key.D)
         up = symbol in (arcade.key.UP, arcade.key.W, arcade.key.Z)
         down = symbol in (arcade.key.DOWN, arcade.key.S)
+        confirm = symbol in (
+            arcade.key.ENTER,
+            arcade.key.RETURN,
+            arcade.key.NUM_ENTER,
+            arcade.key.SPACE,
+        )
+        if symbol == arcade.key.TAB:
+            delta = -1 if modifiers & arcade.key.MOD_SHIFT else 1
+            self._select_tab(self._active_tab + delta)
+            grid = self._current_grid()
+            if self._on_tabs or grid is None or not grid.cells:
+                self._focus_tabs()
+            else:
+                self._focus_grid(self._active_tab)
+            self._sync_chrome()
+            return
         if self._on_quit:
-            if up or left or right:
-                self._on_quit = False
-                self.grid.focus_last_row()
-                self._sync_chrome()
+            if up:
+                if self.dev_button is not None:
+                    self._focus_dev()
+                else:
+                    self._enter_grid_from_below()
+                    self._sync_chrome()
+                    return
                 play_menu_hover()
-            elif symbol in (arcade.key.ENTER, arcade.key.RETURN, arcade.key.NUM_ENTER, arcade.key.SPACE):
+            elif confirm:
                 self._quit_game()
+            self._sync_chrome()
+            return
+        if self._on_dev:
+            if down:
+                self._focus_quit()
+                play_menu_hover()
+            elif up:
+                self._enter_grid_from_below()
+                self._sync_chrome()
+                return
+            elif confirm and self.dev_button is not None:
+                self.dev_button.activate()
+                return
+            self._sync_chrome()
+            return
+        if self._on_tabs:
+            if left:
+                self._select_tab(self._active_tab - 1)
+                self._focus_tabs()
+            elif right:
+                self._select_tab(self._active_tab + 1)
+                self._focus_tabs()
+            elif down:
+                grid = self._current_grid()
+                if grid is not None and grid.cells:
+                    self._focus_grid(self._active_tab)
+                    play_menu_hover()
+                else:
+                    self._leave_grid_down()
+            elif confirm:
+                grid = self._current_grid()
+                if grid is not None and grid.cells:
+                    self._focus_grid(self._active_tab)
+            self._sync_chrome()
+            return
+        grid = self._current_grid()
+        if grid is None or not grid.cells:
+            self._focus_tabs()
+            self._sync_chrome()
             return
         if left:
-            self.grid.move(-1, 0)
+            grid.move(-1, 0)
         elif right:
-            self.grid.move(1, 0)
+            grid.move(1, 0)
         elif up:
-            self.grid.move(0, -1)
-        elif down:
-            if not self.grid.move(0, 1):
-                self._on_quit = True
+            if not grid.move(0, -1):
+                self._focus_tabs()
                 play_menu_hover()
-        elif symbol in (arcade.key.ENTER, arcade.key.RETURN, arcade.key.NUM_ENTER, arcade.key.SPACE):
-            self.grid.activate_focused()
+        elif down:
+            if not grid.move(0, 1):
+                self._leave_grid_down()
+        elif confirm:
+            grid.activate_focused()
+            return
         self._sync_chrome()
 
     def on_mouse_motion(self, x: float, y: float, dx: float, dy: float) -> None:
-        was_quit = self._on_quit
-        previous_focus = self.grid.focus_index
-        if self.grid.on_hover(x, y):
+        tab_hit = self._tabs.tab_at(x, y)
+        self._tabs.hovered = tab_hit if tab_hit is not None else -1
+        grid = self._current_grid()
+        if tab_hit is None and grid is not None and grid.on_hover(x, y):
+            self._on_tabs = False
+            self._on_dev = False
             self._on_quit = False
+            self._tabs.focused = False
+        if self.dev_button is not None:
+            self.dev_button.on_hover(x, y)
+            if self.dev_button.hovered:
+                self._focus_dev()
         self.quit_button.on_hover(x, y)
         if self.quit_button.hovered:
-            self._on_quit = True
-        if self._on_quit != was_quit and self.grid.focus_index == previous_focus:
-            play_menu_hover()
+            self._focus_quit()
         self._sync_chrome()
 
     def on_mouse_press(self, x: float, y: float, button: int, modifiers: int) -> None:
         if button != arcade.MOUSE_BUTTON_LEFT:
             return
-        self.grid.on_press(x, y)
+        tab_hit = self._tabs.tab_at(x, y)
+        if tab_hit is not None:
+            self._select_tab(tab_hit, sound=False)
+            play_menu_click()
+            grid = self._current_grid()
+            if grid is not None and grid.cells:
+                self._focus_grid(self._active_tab)
+            else:
+                self._focus_tabs()
+            self._sync_chrome()
+            return
+        grid = self._current_grid()
+        if grid is not None:
+            grid.on_press(x, y)
+        if self.dev_button is not None:
+            self.dev_button.on_press(x, y)
         self.quit_button.on_press(x, y)
 
     def on_mouse_release(self, x: float, y: float, button: int, modifiers: int) -> None:
         if button != arcade.MOUSE_BUTTON_LEFT:
             return
-        self.grid.on_release(x, y)
+        if self._tabs.tab_at(x, y) is not None:
+            return
+        grid = self._current_grid()
+        if grid is not None:
+            grid.on_release(x, y)
+        if self.dev_button is not None:
+            self.dev_button.on_release(x, y)
         self.quit_button.on_release(x, y)
 
 
@@ -293,7 +573,9 @@ class LevelIntroView(_HeldKeysMixin, arcade.View):
         super().__init__()
         self.background_color = (0, 0, 0)
         self.session = session
-        self.title, self.subtitle = peek_level_info(session.level_file)
+        info = peek_level_info(session.level_file)
+        self.title = info.name
+        self.subtitle = level_type_label(info.level_type)
         self._elapsed = 0.0
         self._title_text = arcade.Text(
             self.title,
@@ -447,8 +729,8 @@ class VictoryView(_HeldKeysMixin, arcade.View):
 
     def on_show_view(self) -> None:
         use_default_camera(self.window)
-        name, _subtitle = peek_level_info(self.session.level_file)
-        self.level_label.text = name
+        info = peek_level_info(self.session.level_file)
+        self.level_label.text = info.name
         progression = self.session.progression
         self.stats.text = (
             f"{progression.collected_total} ames   nv.{progression.level}   "

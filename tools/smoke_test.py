@@ -34,7 +34,7 @@ from src.systems.events import PLAYER_DEATH, PLAYER_GHOST_END, PLAYER_WIN  # noq
 from src.systems.game_state import GameSession, GameState, PlayView  # noqa: E402
 from src.systems.upgrades import SoulProgression  # noqa: E402
 from src.ui import keys  # noqa: E402
-from src.ui.menus import LevelErrorView, TitleView, VictoryView  # noqa: E402
+from src.ui.menus import LevelErrorView, LevelIntroView, TitleView, VictoryView  # noqa: E402
 from src.world.level import Level, LevelFormatError  # noqa: E402
 
 FRAME = settings.FRAME_TIME
@@ -59,6 +59,7 @@ def check_levels() -> None:
         print(f"  carte '{name}' -> {level.name}: {level.columns}x{level.rows} tuiles, "
               f"{len(level.walls)} murs, {len(level.items)} objets, {len(level.enemies)} ennemis{extra}")
         assert level.theme in settings.GROUND_THEMES, f"{name} : theme inconnu '{level.theme}'"
+    check_level_catalog()
     check_invalid_activator()
     check_inverted_activator()
     check_gated_flamethrower()
@@ -67,6 +68,50 @@ def check_levels() -> None:
     check_ground_theme()
     check_sfx_files()
     check_hidden_wall()
+
+
+def check_level_catalog() -> None:
+    """Categories du menu : un seul dev, defaut basic, extras ignores."""
+    import warnings
+
+    from src.world.level import (
+        LevelEntry,
+        catalog_from_entries,
+        level_type_label,
+        load_level_catalog,
+        peek_level_info,
+    )
+
+    assert settings.parse_level_type(None) == settings.LEVEL_TYPE_BASIC
+    assert settings.parse_level_type("") == settings.LEVEL_TYPE_BASIC
+    assert settings.parse_level_type("nope") == settings.LEVEL_TYPE_BASIC
+    assert settings.parse_level_type("PUZZLE") == settings.LEVEL_TYPE_PUZZLE
+    tuto = peek_level_info("level_1_tuto.json")
+    assert tuto.level_type == settings.LEVEL_TYPE_DEV
+    assert level_type_label(tuto.level_type) == "Dev"
+    bonus = peek_level_info("Niveau_Bonus_ouvert.json")
+    assert bonus.level_type == settings.LEVEL_TYPE_OTHERS
+    plain = peek_level_info("Niveau_1-1.json")
+    assert plain.level_type == settings.LEVEL_TYPE_BASIC
+    catalog = load_level_catalog(reload=True)
+    assert catalog.dev is not None
+    assert catalog.dev.filename == "level_1_tuto.json"
+    assert all(entry.level_type != settings.LEVEL_TYPE_DEV for entry in catalog.entries)
+    assert catalog.in_type(settings.LEVEL_TYPE_OTHERS)
+    puzzles = {entry.filename for entry in catalog.in_type(settings.LEVEL_TYPE_PUZZLE)}
+    assert "Jumping_jack.json" in puzzles
+    assert "FindTheDoor.json" in puzzles
+    first = LevelEntry(0, "a.json", "A", "", settings.LEVEL_TYPE_DEV)
+    second = LevelEntry(1, "b.json", "B", "", settings.LEVEL_TYPE_DEV)
+    basic = LevelEntry(2, "c.json", "C", "", settings.LEVEL_TYPE_BASIC)
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        built = catalog_from_entries((first, second, basic))
+    assert built.dev == first
+    assert built.entries == (basic,)
+    assert built.warnings
+    assert caught
+    print("  catalogue niveaux -> 1 dev, basic par defaut, extras ignores")
 
 
 def check_invalid_activator() -> None:
@@ -1332,6 +1377,26 @@ def check_menus(window: arcade.Window) -> None:
         window.show_view(view)
         if isinstance(view, TitleView):
             view.held_keys.update({arcade.key.T, arcade.key.SPACE, arcade.key.LSHIFT})
+            assert view._tabs.captions == [
+                settings.LEVEL_TYPE_LABELS[settings.LEVEL_TYPE_BASIC],
+                settings.LEVEL_TYPE_LABELS[settings.LEVEL_TYPE_PUZZLE],
+                settings.LEVEL_TYPE_LABELS[settings.LEVEL_TYPE_OTHERS],
+            ]
+            assert view.dev_button is not None
+            assert view.dev_button.caption == "Dev world"
+            _left, _right, panel_bottom, panel_top = view._panel
+            assert view.dev_button.top <= panel_bottom + 1
+            assert view.quit_button.top <= panel_bottom + 1
+            mid = (panel_bottom + panel_top) / 2
+            assert abs(mid - view.window.height / 2) < view.window.height * 0.22
+            assert view._tabs.selected == 0
+            tab_left, tab_right, tab_bottom, tab_top = view._tabs.rects[1]
+            mx = (tab_left + tab_right) / 2
+            my = (tab_bottom + tab_top) / 2
+            view.on_mouse_motion(mx, my, 0, 0)
+            assert view._tabs.selected == 0, "un survol ne doit pas changer d'onglet"
+            view.on_mouse_press(mx, my, arcade.MOUSE_BUTTON_LEFT, 0)
+            assert view._tabs.selected == 1
         advance(view, 2)
         view.on_resize(1920, 1080)
         advance(view, 1)
@@ -1345,6 +1410,10 @@ def check_menus(window: arcade.Window) -> None:
     )
     window.show_view(error_view)
     advance(error_view, 2)
+    intro = LevelIntroView(session)
+    window.show_view(intro)
+    assert intro.subtitle == settings.LEVEL_TYPE_LABELS[settings.LEVEL_TYPE_DEV]
+    advance(intro, 1)
     play = PlayView(session)
     window.show_view(play)
     assert play.atmosphere.puff_count > 0, "l'atmosphere de premier plan doit etre peuplee"
@@ -1394,6 +1463,7 @@ def check_editor_document() -> None:
     document = EditorDocument.from_file("level_1_tuto.json")
     assert document.columns > 0 and document.rows > 0
     assert document.theme == settings.GROUND_THEME_DEFAULT
+    assert document.level_type == settings.LEVEL_TYPE_DEV
     assert document.counts().get("player_spawn", 0) >= 1
     assert len(document.activators) == 2
     assert document.activators[0].width == 4

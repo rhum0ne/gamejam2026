@@ -1,0 +1,218 @@
+{
+  "name": "FindTheDoor",
+  "type": "puzzle",
+  "hint": "",
+  "tile_size": 32,
+  "legend": {
+    ".": "vide",
+    "D": "door",
+    "б": "flamethrower",
+    "h": "hidden_wall",
+    "K": "key",
+    "P": "player_spawn",
+    "=": "spectral_wall",
+    "v": "spike_up",
+    "#": "wall"
+  },
+  "rows": [
+    ".........############...........",
+    "...#....##############.......##.",
+    ".#....#########...#######....##.",
+    "...#######K###....##########....",
+    "...##.########....############..",
+    "...##.#######.....v.###....#####",
+    "...##=###...б..............vv.##",
+    "...#..........................##",
+    "...#.....D....................##",
+    "...#....###hhhhhhh..##........##",
+    "...#hhh###..........vv........#.",
+    "...#....vv....................#.",
+    "...#..........................#.",
+    ".#.###.................б#######.",
+    ".....#б.....P.....#######.#..#..",
+    ".....###################..####.."
+  ],
+  "activators": [
+    {
+      "x": 8,
+      "y": 14,
+      "width": 2,
+      "activate": {
+        "setBlock": [
+          {
+            "x": 6,
+            "y": 14,
+            "type": "void",
+            "action": "ignite"
+          }
+        ]
+      }
+    },
+    {
+      "x": 14,
+      "y": 14,
+      "width": 2,
+      "activate": {
+        "setBlock": [
+          {
+            "x": 23,
+            "y": 13,
+            "type": "void",
+            "action": "ignite"
+          }
+        ]
+      }
+    },
+    {
+      "x": 5,
+      "y": 4,
+      "width": 1,
+      "activate": {
+        "setBlock": [
+          {
+            "x": 14,
+            "y": 9,
+            "type": "void",
+            "action": "show"
+          },
+          {
+            "x": 15,
+            "y": 9,
+            "type": "void",
+            "action": "show"
+          },
+          {
+            "x": 16,
+            "y": 9,
+            "type": "void",
+            "action": "show"
+          },
+          {
+            "x": 17,
+            "y": 9,
+            "type": "void",
+            "action": "show"
+          },
+          {
+            "x": 27,
+            "y": 13,
+            "type": "void",
+            "action": "hide"
+          },
+          {
+            "x": 28,
+            "y": 13,
+            "type": "void",
+            "action": "hide"
+          }
+        ]
+      },
+      "kind": "spectral",
+      "duration": 15.0
+    },
+    {
+      "x": 27,
+      "y": 14,
+      "width": 2,
+      "activate": {
+        "setBlock": [
+          {
+            "x": 28,
+            "y": 5,
+            "type": "void",
+            "action": "hide"
+          },
+          {
+            "x": 27,
+            "y": 5,
+            "type": "void",
+            "action": "hide"
+          },
+          {
+            "x": 11,
+            "y": 3,
+            "type": "void",
+            "action": "hide"
+          },
+          {
+            "x": 12,
+            "y": 3,
+            "type": "void",
+            "action": "hide"
+          },
+          {
+            "x": 13,
+            "y": 3,
+            "type": "void",
+            "action": "hide"
+          },
+          {
+            "x": 13,
+            "y": 4,
+            "type": "void",
+            "action": "hide"
+          },
+          {
+            "x": 12,
+            "y": 4,
+            "type": "void",
+            "action": "hide"
+          },
+          {
+            "x": 11,
+            "y": 4,
+            "type": "void",
+            "action": "hide"
+          },
+          {
+            "x": 10,
+            "y": 4,
+            "type": "void",
+            "action": "hide"
+          },
+          {
+            "x": 10,
+            "y": 5,
+            "type": "void",
+            "action": "hide"
+          },
+          {
+            "x": 11,
+            "y": 5,
+            "type": "void",
+            "action": "hide"
+          },
+          {
+            "x": 12,
+            "y": 5,
+            "type": "void",
+            "action": "hide"
+          }
+        ]
+      }
+    }
+  ],
+  "flamethrowers": [
+    {
+      "x": 6,
+      "y": 14,
+      "range": 4,
+      "interval": 2.0,
+      "dir": "right"
+    },
+    {
+      "x": 12,
+      "y": 6,
+      "range": 4,
+      "interval": 2.0,
+      "dir": "down"
+    },
+    {
+      "x": 23,
+      "y": 13,
+      "range": 4,
+      "interval": 2.0,
+      "dir": "left"
+    }
+  ]
+}
