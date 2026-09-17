@@ -85,13 +85,13 @@ EDITOR_UI_FONT = ("Segoe UI", "Calibri", "Arial", "Helvetica")
 
 # Ordre de parcours des niveaux : le nom du fichier dans assets/maps/.
 LEVEL_SEQUENCE: tuple[str, ...] = (
-    "level_1_tuto.json",
     "Niveau_1-1.json",
     "Niveau_1-2.json",
     "Niveau_1-3.json",
     "Niveau_1-4.json",
     "Niveau_1-5.json",
     "Niveau_1-6.json",
+    "BOSS.json",
     "Niveau_Bonus_ouvert.json",
 )
 
