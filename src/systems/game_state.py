@@ -633,6 +633,7 @@ class PlayView(arcade.View):
         with glow_pass():
             ghost.draw_fx()
         draw_pixel_sprite(ghost)
+        ghost.draw_timer()
 
     def _draw_ghost_or_emergence(self, ghost: Ghost) -> None:
         """Voile du fantome, ou cinematique de sortie hors du corps."""
@@ -649,6 +650,7 @@ class PlayView(arcade.View):
             with glow_pass():
                 ghost.draw_fx()
             draw_pixel_sprite(ghost)
+            ghost.draw_timer()
         emergence.draw_fx()
 
     def _draw_ghost_layer(self, ghost: Ghost) -> None:
@@ -682,6 +684,7 @@ class PlayView(arcade.View):
                 revealed_actors.append(enemy)
         self._reveal_actors.draw(revealed_actors)
         draw_pixel_sprite(ghost)
+        ghost.draw_timer()
         self._draw_body_arrow(ghost)
 
     def _draw_hidden_wall_outlines(self) -> None:
@@ -770,6 +773,7 @@ class PlayView(arcade.View):
             state_label=STATE_LABELS[state],
             essence=self.session.progression.essence,
             ghost_level=self.session.progression.level,
+            xp_ratio=self.session.progression.xp_ratio,
             hint=self._hint_for(state),
             has_key=self.player.has_item(ItemKind.KEY),
             corpse_count=len(self.level.corpses),

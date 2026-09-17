@@ -105,6 +105,16 @@ class SoulProgression:
         """XP restante avant le prochain niveau (jamais de palier max : illimite)."""
         return max(0, _xp_for_level(self.level + 1) - self.collected_total)
 
+    @property
+    def xp_ratio(self) -> float:
+        """Avancement dans le niveau courant, de 0.0 a 1.0."""
+        current = _xp_for_level(self.level)
+        nxt = _xp_for_level(self.level + 1)
+        span = nxt - current
+        if span <= 0:
+            return 1.0
+        return max(0.0, min(1.0, (self.collected_total - current) / span))
+
     def upgrade_cost(self, kind: str) -> int:
         """Prix en ames du prochain rang de l'amelioration `kind`."""
         return _upgrade_cost(self.upgrade_ranks.get(kind, 0))

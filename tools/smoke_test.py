@@ -442,13 +442,16 @@ def check_progression() -> None:
     progression = SoulProgression()
     assert progression.level == 1
     assert progression.essence == 0
+    assert progression.xp_ratio == 0.0
     assert progression.ghost_stats.duration == settings.GHOST_DURATION
     assert progression.ghost_stats.speed == settings.GHOST_SPEED
-    leveled_up = False
-    for _ in range(3):
+    leveled_up = progression.absorb_orb()
+    assert abs(progression.xp_ratio - 1.0 / 3.0) < 1e-9
+    for _ in range(2):
         leveled_up = progression.absorb_orb() or leveled_up
     assert progression.level == 2, "3 ames doivent suffire pour le niveau 2 (courbe exponentielle)"
     assert leveled_up, "absorb_orb doit signaler la montee de niveau"
+    assert progression.xp_ratio == 0.0, "la jauge d'XP se vide au passage de niveau"
     assert progression.essence == 3, "l'essence (monnaie) n'est jamais depensee toute seule"
     # Les stats du fantome ne bougent pas tant qu'aucune carte n'a ete choisie.
     assert progression.ghost_stats.duration == settings.GHOST_DURATION
