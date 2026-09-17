@@ -1,5 +1,6 @@
 {
   "name": "Laquelle est la bonne",
+  "type": "others",
   "hint": "",
   "tile_size": 32,
   "legend": {
