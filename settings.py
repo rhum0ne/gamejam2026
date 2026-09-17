@@ -180,6 +180,8 @@ TILE_KIND_ICE = "ice_block"
 TILE_KIND_FALLING = "falling_block"
 TILE_KIND_HIDDEN = "hidden_wall"
 TILE_KIND_SPRING = "spring"
+TILE_KIND_LAVA = "lava"
+TILE_KIND_WATER = "water"
 
 # Noms de fichiers dans SPRITES_DIR, sans extension. Le chargeur ajoute `.png`.
 # Le terrain (dirt/grass/...) vient desormais de `SHEET_GROUND` plus bas
@@ -255,6 +257,18 @@ SHEET_GROUND_SAND = NEW_TEXTURES_DIR / "TX Tileset Sand.png"
 SHEET_GROUND_ROCK = NEW_TEXTURES_DIR / "TX Tileset Rock.png"
 SHEET_PROPS = NEW_TEXTURES_DIR / "TX Village Props.png"
 SHEET_CHEST = NEW_TEXTURES_DIR / "TX Chest Animation.png"
+
+# Lave / eau : planches animees 32x32/frame (4 et 6 frames). Se touchent (4
+# voisins) -> se figent en bloc de fusion (traversable), voir
+# `obstacles.compute_fusion_cells`.
+SPRITE_LAVA_BLOCK = NEW_TEXTURES_DIR / "lave_block.png"
+SPRITE_WATER_BLOCK = NEW_TEXTURES_DIR / "water_block.png"
+SPRITE_FUSION_BLOCK = NEW_TEXTURES_DIR / "fusion.png"
+LAVA_WATER_FRAME_SIZE = 32
+ANIM_LAVA_FRAME_TIME = 0.12
+ANIM_WATER_FRAME_TIME = 0.15
+COLOR_LAVA = (232, 96, 40)
+COLOR_WATER = (64, 140, 220)
 
 # Theme de terrain d'une carte (`"theme"` dans le JSON). Meme grille 16x16,
 # seule la planche change. Absent ou vide -> ground.
@@ -398,6 +412,10 @@ FLAMETHROWER_ALWAYS_ON = 0.0  # intervalle 0 = jet permanent
 GRAVITY = 1.0
 SPIKE_FALL_GRAVITY = GRAVITY
 SPIKE_FALL_MAX_SPEED = 14.0
+# Lave/eau sans appui (`Level._update_environment_blocks`) : meme convention
+# que la chute des piques (px/frame, pas px/s).
+ENV_BLOCK_FALL_GRAVITY = GRAVITY
+ENV_BLOCK_FALL_MAX_SPEED = 10.0
 SPIKE_HITBOX_WIDTH_RATIO = 0.6
 # Halo des piques en mode fantome (visible a travers le voile).
 SPIKE_GHOST_GLOW_SCALE = 3.4

@@ -49,10 +49,20 @@ def cell_texture(item: PaletteItem, size: int) -> arcade.Texture:
             texture = _placeholder(item, size)
     elif spec.role == "spike":
         texture = sprites.load_texture(spec.sprite, size=size)
+    elif spec.role == "lava":
+        texture = _first_frame(settings.SPRITE_LAVA_BLOCK, size)
+    elif spec.role == "water":
+        texture = _first_frame(settings.SPRITE_WATER_BLOCK, size)
     else:
         texture = terrain_texture(spec, size)
     _CACHE[key] = texture
     return texture
+
+
+def _first_frame(sheet, size: int) -> arcade.Texture:
+    """1ere frame d'une planche animee (lave/eau) : apercu fixe dans l'editeur."""
+    frame = settings.LAVA_WATER_FRAME_SIZE
+    return sprites.load_sheet_region(sheet, (0, 0, frame, frame), size=size)
 
 
 def _decoration_swatch(kind: str, size: int) -> arcade.Texture:

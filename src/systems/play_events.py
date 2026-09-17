@@ -16,7 +16,7 @@ from src.entities.ghost import Ghost
 from src.systems.event_manager import event_manager
 from src.systems.events import PLAYER_DEATH, PLAYER_GHOST_END, PLAYER_WIN
 from src.ui.music import music
-from src.ui.sfx import play_ghost_end, play_ghost_start, play_level_win
+from src.ui.sfx import play_ghost_end, play_ghost_start
 
 if TYPE_CHECKING:
     from src.systems.game_state import PlayView
@@ -80,7 +80,14 @@ def on_player_death_immobilize(view: PlayView, data: dict) -> None:
 
 
 def on_player_death_spawn_corpse(view: PlayView, data: dict) -> None:
-    """Laisse un cadavre solide a l'endroit de la mort."""
+    """Laisse un cadavre solide a l'endroit de la mort.
+
+    Exception : la lave dissout le corps tout de suite (pas de cadavre a
+    recuperer ou a pousser sur une plaque) ; l'eau le laisse couler
+    normalement jusqu'au fond (physique du cadavre existante, rien a changer).
+    """
+    if data.get("cause") == "lava":
+        return
     center_x, center_y = data["position"]
     corpse = Corpse(center_x, center_y, facing=view.player.facing)
     corpse.bind_world(view._static_platforms())
@@ -129,6 +136,6 @@ def on_player_win(view: PlayView, data: dict) -> None:
     from src.systems.game_state import GameState
     from src.ui.menus import VictoryView
 
-    play_level_win()
+    music.play_victory_jingle()
     view.machine.try_to(GameState.VICTORY)
     view.window.show_view(VictoryView(view.session))

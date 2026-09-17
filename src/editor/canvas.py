@@ -29,8 +29,15 @@ from src.editor import icons, palette
 from src.editor.activators import Activator, cluster_targets
 from src.editor.document import CellState, EditorDocument
 from src.editor.selection import Block, GridRect
+from src.ui import sprites
 from src.world.decorations import DECORATION_SPECS, Decoration
-from src.world.obstacles import SOLID_GROUND_KINDS, GroundCell, compute_ground_cells, terrain_texture
+from src.world.obstacles import (
+    SOLID_GROUND_KINDS,
+    GroundCell,
+    compute_fusion_cells,
+    compute_ground_cells,
+    terrain_texture,
+)
 from src.world.flamethrower import aim_sprite, flame_aabb, flame_start
 from src.world.mechanisms import trigger_geometry
 
@@ -47,6 +54,7 @@ class GridCanvas:
         self._sprites = arcade.SpriteList()
         self._by_cell: dict[tuple[int, int], arcade.Sprite] = {}
         self._ground_cells: dict[tuple[int, int], GroundCell] = {}
+        self._fusion_cells: set[tuple[int, int]] = set()
         self._layout_version = document.layout_version
         self.rebuild()
         self._camera.zoom = settings.EDITOR_ZOOM_DEFAULT
@@ -188,6 +196,8 @@ class GridCanvas:
         changed = {(column, row) for column, row, _ in states}
         previous_ground_cells = self._ground_cells
         self._ground_cells = self._compute_ground_cells()
+        previous_fusion_cells = self._fusion_cells
+        self._fusion_cells = self._compute_fusion_cells()
         for column, row, kind in states:
             self._set_cell(column, row, kind)
         moved = previous_ground_cells.keys() ^ self._ground_cells.keys()
@@ -196,6 +206,7 @@ class GridCanvas:
             for key in previous_ground_cells.keys() & self._ground_cells.keys()
             if previous_ground_cells[key] != self._ground_cells[key]
         )
+        moved |= previous_fusion_cells ^ self._fusion_cells
         for column, row in moved - changed:
             self._set_cell(column, row, self.document.cell(column, row))
 
@@ -204,6 +215,7 @@ class GridCanvas:
         self._sprites.clear()
         self._by_cell.clear()
         self._ground_cells = self._compute_ground_cells()
+        self._fusion_cells = self._compute_fusion_cells()
         document = self.document
         for row in range(document.rows):
             for column in range(document.columns):
@@ -222,6 +234,14 @@ class GridCanvas:
         center_x, center_y = self.cell_center(column, row)
         if kind in DECORATION_SPECS:
             sprite = Decoration(kind, center_x, center_y)
+        elif (
+            kind in (settings.TILE_KIND_LAVA, settings.TILE_KIND_WATER)
+            and (column, row) in self._fusion_cells
+        ):
+            # Lave/eau adjacentes : apercu fige sur le bloc de fusion, comme
+            # le jeu le fera au chargement (`_add_fusion_block`).
+            texture = sprites.load_texture(settings.SPRITE_FUSION_BLOCK, size=self.document.tile_size)
+            sprite = arcade.Sprite(texture, center_x=center_x, center_y=center_y)
         elif item.spec is not None and (
             item.spec.sheet is not None or item.spec.role == "ice"
         ):
@@ -282,6 +302,18 @@ class GridCanvas:
         return compute_ground_cells(
             document.columns, document.rows, is_solid=is_solid, is_autotile=is_autotile
         )
+
+    def _compute_fusion_cells(self) -> set[tuple[int, int]]:
+        """Cases lave/eau adjacentes (cf. `obstacles.compute_fusion_cells`) :
+        meme fonction que le jeu, pour que l'apercu de fusion corresponde."""
+        document = self.document
+
+        def kind_at(column: int, row: int) -> str | None:
+            if not document.inside(column, row):
+                return None
+            return document.cell(column, row) or None
+
+        return compute_fusion_cells(document.columns, document.rows, kind_at=kind_at)
 
     # ------------------------------------------------------------------ #
     # Dessin

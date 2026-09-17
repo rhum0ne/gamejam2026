@@ -128,10 +128,6 @@ def play_checkpoint() -> None:
     play(settings.SOUND_CHECKPOINT, settings.SOUND_VOLUME_CHECKPOINT)
 
 
-def play_level_win() -> None:
-    play(settings.SOUND_LEVEL_WIN, settings.SOUND_VOLUME_LEVEL_WIN)
-
-
 def play_menu_click(*, echo: bool = False) -> None:
     play(settings.SOUND_MENU_CLICK, settings.SOUND_VOLUME_MENU_CLICK, echo=echo)
 

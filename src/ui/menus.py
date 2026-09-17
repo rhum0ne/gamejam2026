@@ -152,12 +152,16 @@ class TitleView(_HeldKeysMixin, arcade.View):
         )
         self._active_tab = 0
         self.dev_button: TextButton | None = None
+        self.mute_button = TextButton("Son", on_activate=self._open_mute_panel)
         self.quit_button = TextButton("Quitter", on_activate=self._quit_game)
         self._on_tabs = False
         self._on_dev = False
+        self._on_mute = False
         self._on_quit = False
         self._panel = (0.0, 0.0, 0.0, 0.0)
         self._warn_text: arcade.Text | None = None
+        self._mute_panel = None
+        self._mute_panel_open = False
 
     def on_show_view(self) -> None:
         use_default_camera(self.window)
@@ -223,7 +227,9 @@ class TitleView(_HeldKeysMixin, arcade.View):
         self.title.y = title_y
         self.title_echo.x = cx + 3
         self.title_echo.y = title_y - 3
-        buttons_stack = button_h
+        # Empilement du bas : Quitter, Son juste au-dessus, puis Dev world (si
+        # present) encore au-dessus.
+        buttons_stack = button_h * 2 + 10  # Son + Quitter
         if self.dev_button is not None:
             buttons_stack += button_h + 10
         cell_w = min(
@@ -273,14 +279,18 @@ class TitleView(_HeldKeysMixin, arcade.View):
         first_cy = panel_bottom - gap_below - button_h / 2
         if self.dev_button is not None:
             self.dev_button.place(cx, first_cy, button_w, button_h)
-            self.quit_button.place(cx, first_cy - button_h - 10, button_w, button_h)
+            self.mute_button.place(cx, first_cy - button_h - 10, button_w, button_h)
+            self.quit_button.place(cx, first_cy - 2 * (button_h + 10), button_w, button_h)
         else:
-            self.quit_button.place(cx, first_cy, button_w, button_h)
+            self.mute_button.place(cx, first_cy, button_w, button_h)
+            self.quit_button.place(cx, first_cy - button_h - 10, button_w, button_h)
         if self._warn_text is not None:
             self._warn_text.x = cx
             self._warn_text.y = self.quit_button.bottom - 14
         if self._on_quit:
             self._focus_quit()
+        elif self._on_mute:
+            self._focus_mute()
         elif self._on_dev:
             self._focus_dev()
         elif self._on_tabs:
@@ -310,6 +320,7 @@ class TitleView(_HeldKeysMixin, arcade.View):
     def _focus_tabs(self) -> None:
         self._on_tabs = True
         self._on_dev = False
+        self._on_mute = False
         self._on_quit = False
         self._tabs.focused = True
         for grid in self._grids:
@@ -323,6 +334,7 @@ class TitleView(_HeldKeysMixin, arcade.View):
             return
         self._on_tabs = False
         self._on_dev = False
+        self._on_mute = False
         self._on_quit = False
         self._tabs.focused = False
         if last_row:
@@ -333,6 +345,16 @@ class TitleView(_HeldKeysMixin, arcade.View):
     def _focus_dev(self) -> None:
         self._on_tabs = False
         self._on_dev = True
+        self._on_mute = False
+        self._on_quit = False
+        self._tabs.focused = False
+        for grid in self._grids:
+            grid.blur()
+
+    def _focus_mute(self) -> None:
+        self._on_tabs = False
+        self._on_dev = False
+        self._on_mute = True
         self._on_quit = False
         self._tabs.focused = False
         for grid in self._grids:
@@ -341,6 +363,7 @@ class TitleView(_HeldKeysMixin, arcade.View):
     def _focus_quit(self) -> None:
         self._on_tabs = False
         self._on_dev = False
+        self._on_mute = False
         self._on_quit = True
         self._tabs.focused = False
         for grid in self._grids:
@@ -350,7 +373,7 @@ class TitleView(_HeldKeysMixin, arcade.View):
         if self.dev_button is not None:
             self._focus_dev()
         else:
-            self._focus_quit()
+            self._focus_mute()
         play_menu_hover()
 
     def _enter_grid_from_below(self) -> None:
@@ -365,9 +388,10 @@ class TitleView(_HeldKeysMixin, arcade.View):
         self._tabs.focused = self._on_tabs
         if self.dev_button is not None:
             self.dev_button.set_focused(self._on_dev)
+        self.mute_button.set_focused(self._on_mute)
         self.quit_button.set_focused(self._on_quit)
         grid = self._current_grid()
-        if self._on_quit or self._on_tabs or self._on_dev:
+        if self._on_quit or self._on_mute or self._on_tabs or self._on_dev:
             self.level_name.text = ""
         elif grid is not None:
             self.level_name.text = grid.focused_name
@@ -381,6 +405,19 @@ class TitleView(_HeldKeysMixin, arcade.View):
 
     def _quit_game(self) -> None:
         self.window.close()
+
+    def _mute_overlay(self):
+        if self._mute_panel is None:
+            from src.ui.mute_panel import MutePanel
+
+            self._mute_panel = MutePanel(on_close=self._close_mute_panel)
+        return self._mute_panel
+
+    def _open_mute_panel(self) -> None:
+        self._mute_panel_open = True
+
+    def _close_mute_panel(self) -> None:
+        self._mute_panel_open = False
 
     def on_update(self, delta_time: float) -> None:
         self.stage.update(delta_time)
@@ -400,6 +437,7 @@ class TitleView(_HeldKeysMixin, arcade.View):
         self.level_name.draw()
         if self.dev_button is not None:
             self.dev_button.draw()
+        self.mute_button.draw()
         self.quit_button.draw()
         if self._warn_text is not None:
             self._warn_text.draw()
@@ -414,10 +452,15 @@ class TitleView(_HeldKeysMixin, arcade.View):
             self.held_keys,
             height=20,
         )
+        if self._mute_panel_open:
+            self._mute_overlay().draw(self.window.width, self.window.height)
 
     def on_key_press(self, symbol: int, modifiers: int) -> None:
         self.held_keys.add(symbol)
         if handle_display_key(self.window, symbol, modifiers):
+            return
+        if self._mute_panel_open:
+            self._mute_overlay().on_key_press(self.window, symbol, modifiers)
             return
         if symbol == arcade.key.ESCAPE:
             self._quit_game()
@@ -444,6 +487,17 @@ class TitleView(_HeldKeysMixin, arcade.View):
             return
         if self._on_quit:
             if up:
+                self._focus_mute()
+                play_menu_hover()
+            elif confirm:
+                self._quit_game()
+            self._sync_chrome()
+            return
+        if self._on_mute:
+            if down:
+                self._focus_quit()
+                play_menu_hover()
+            elif up:
                 if self.dev_button is not None:
                     self._focus_dev()
                 else:
@@ -452,12 +506,13 @@ class TitleView(_HeldKeysMixin, arcade.View):
                     return
                 play_menu_hover()
             elif confirm:
-                self._quit_game()
+                self.mute_button.activate()
+                return
             self._sync_chrome()
             return
         if self._on_dev:
             if down:
-                self._focus_quit()
+                self._focus_mute()
                 play_menu_hover()
             elif up:
                 self._enter_grid_from_below()
@@ -510,18 +565,25 @@ class TitleView(_HeldKeysMixin, arcade.View):
         self._sync_chrome()
 
     def on_mouse_motion(self, x: float, y: float, dx: float, dy: float) -> None:
+        if self._mute_panel_open:
+            self._mute_overlay().on_mouse_motion(x, y)
+            return
         tab_hit = self._tabs.tab_at(x, y)
         self._tabs.hovered = tab_hit if tab_hit is not None else -1
         grid = self._current_grid()
         if tab_hit is None and grid is not None and grid.on_hover(x, y):
             self._on_tabs = False
             self._on_dev = False
+            self._on_mute = False
             self._on_quit = False
             self._tabs.focused = False
         if self.dev_button is not None:
             self.dev_button.on_hover(x, y)
             if self.dev_button.hovered:
                 self._focus_dev()
+        self.mute_button.on_hover(x, y)
+        if self.mute_button.hovered:
+            self._focus_mute()
         self.quit_button.on_hover(x, y)
         if self.quit_button.hovered:
             self._focus_quit()
@@ -529,6 +591,9 @@ class TitleView(_HeldKeysMixin, arcade.View):
 
     def on_mouse_press(self, x: float, y: float, button: int, modifiers: int) -> None:
         if button != arcade.MOUSE_BUTTON_LEFT:
+            return
+        if self._mute_panel_open:
+            self._mute_overlay().on_mouse_press(x, y)
             return
         tab_hit = self._tabs.tab_at(x, y)
         if tab_hit is not None:
@@ -546,10 +611,14 @@ class TitleView(_HeldKeysMixin, arcade.View):
             grid.on_press(x, y)
         if self.dev_button is not None:
             self.dev_button.on_press(x, y)
+        self.mute_button.on_press(x, y)
         self.quit_button.on_press(x, y)
 
     def on_mouse_release(self, x: float, y: float, button: int, modifiers: int) -> None:
         if button != arcade.MOUSE_BUTTON_LEFT:
+            return
+        if self._mute_panel_open:
+            self._mute_overlay().on_mouse_release(x, y)
             return
         if self._tabs.tab_at(x, y) is not None:
             return
@@ -558,6 +627,7 @@ class TitleView(_HeldKeysMixin, arcade.View):
             grid.on_release(x, y)
         if self.dev_button is not None:
             self.dev_button.on_release(x, y)
+        self.mute_button.on_release(x, y)
         self.quit_button.on_release(x, y)
 
 
@@ -765,15 +835,18 @@ class VictoryView(_HeldKeysMixin, arcade.View):
         self.column.layout(cx, self.stats.y - 48)
 
     def _next_level(self) -> None:
+        music.stop_victory_jingle()
         if not self.session.advance_level():
             self._go_select()
             return
         self.window.show_view(LevelIntroView(self.session))
 
     def _retry_level(self) -> None:
+        music.stop_victory_jingle()
         self.window.show_view(LevelIntroView(self.session))
 
     def _go_select(self) -> None:
+        music.stop_victory_jingle()
         if self.session.on_leave is not None:
             self.session.on_leave()
             return
