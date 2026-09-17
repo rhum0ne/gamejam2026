@@ -27,7 +27,7 @@ FONTS_DIR = ASSETS_DIR / "fonts"
 # Version nettoyee du coup d'epee : l'original a ~570 ms de silence en tete.
 SOUND_ATTACK = "attack_sword_sync.wav"
 SOUND_ATTACK_FALLBACK = ":resources:sounds/hit1.wav"
-SOUND_LEVEL_WIN = "level-win.wav"
+SOUND_LEVEL_WIN = "victoire-level.wav"
 SOUND_SOUL_GET = "soul_get.wav"
 SOUND_CHECKPOINT = "checkpoint_set.wav"
 SOUND_KEY_FOUND = "key_found.wav"
@@ -68,6 +68,16 @@ SOUND_ECHO_SPEED = 0.97
 SOUND_ECHO_FOOTSTEP_DELAY = 0.12
 SOUND_ECHO_FOOTSTEP_DECAY = 0.22
 SOUND_ECHO_FOOTSTEP_TAPS = 1
+
+# Musique de fond (bouclee, distincte des bruitages tir-et-oublie ci-dessus) :
+# theme principal (menu + niveaux), theme du combat de boss, et boucle du mode
+# fantome qui remplace temporairement le theme en cours (voir `src.ui.music`).
+SOUND_MAIN_THEME = "main-theme.wav"
+SOUND_BOSS_FIGHT = "boss-fight.wav"
+SOUND_MODE_SPECTRAL = "mode-spectral.wav"
+SOUND_VOLUME_MAIN_THEME = 0.35
+SOUND_VOLUME_BOSS_FIGHT = 0.4
+SOUND_VOLUME_MODE_SPECTRAL = 0.4
 
 # --------------------------------------------------------------------------- #
 # Police
@@ -995,6 +1005,17 @@ BOSS_SHOT_ORIGIN_Y = 0.0
 BOSS_SHOT_SPEED = 8.0  # px/frame, vitesse initiale
 BOSS_SHOT_SPEED_END = 4.0  # px/frame, palier en fin de course
 BOSS_SHOT_LIFE = 2.4
+# arm_projectile_glowing.png : planche rognee au plus proche du contenu visible
+# (35x15/frame, pas 100x100 comme les autres planches du boss) pour que le
+# centre de la texture coincide avec le halo au lieu d'un cadre 100x100 avec
+# une grosse marge transparente asymetrique. BOSS_SHOT_WIDTH/HEIGHT restent
+# des valeurs mesurees sur le halo reel (35x14 apres rognage) : avec l'ancienne
+# planche, la hitbox (centree sur la texture, sans offset) tombait a cote du
+# halo visible (~82x39 px de decalage a BOSS_SCALE) au lieu d'a l'interieur -
+# le joueur pouvait etre touche par un rectangle invisible loin du projectile
+# affiche. Le rognage aligne enfin les deux.
+BOSS_PROJECTILE_FRAME_WIDTH = 35
+BOSS_PROJECTILE_FRAME_HEIGHT = 15
 BOSS_SHOT_WIDTH = 16.0 * BOSS_SCALE
 BOSS_SHOT_HEIGHT = 7.0 * BOSS_SCALE
 BOSS_SHOT_SPREAD_DEG = 11.0  # ecart aleatoire autour du joueur

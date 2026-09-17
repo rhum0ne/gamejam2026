@@ -102,8 +102,8 @@ def _death_animation() -> sprites.StripAnimation:
 def _projectile_frames() -> tuple[arcade.Texture, ...]:
     return sprites.load_strip(
         settings.SPRITE_BOSS_PROJECTILE,
-        settings.BOSS_FRAME,
-        settings.BOSS_FRAME,
+        settings.BOSS_PROJECTILE_FRAME_WIDTH,
+        settings.BOSS_PROJECTILE_FRAME_HEIGHT,
         scale=settings.BOSS_SCALE,
     )
 
