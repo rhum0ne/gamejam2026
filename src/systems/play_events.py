@@ -15,6 +15,7 @@ from src.entities.corpse import Corpse
 from src.entities.ghost import Ghost
 from src.systems.event_manager import event_manager
 from src.systems.events import PLAYER_DEATH, PLAYER_GHOST_END, PLAYER_WIN
+from src.ui.music import music
 from src.ui.sfx import play_ghost_end, play_ghost_start, play_level_win
 
 if TYPE_CHECKING:
@@ -100,6 +101,7 @@ def on_player_death_enter_ghost(view: PlayView, data: dict) -> None:
     view.ghost.bind_world(view.level.ghost_walls)
     view.session.knows_esprit = True
     play_ghost_start()
+    music.enter_ghost_mode()
     view.start_ghost_emergence(spawn_x, spawn_y)
     view.machine.to(GameState.GHOST)
 
@@ -113,6 +115,9 @@ def on_player_ghost_end(view: PlayView, data: dict) -> None:
             item.drop_at(item.center_x, item.center_y)
         view.ghost.start_vanish()
     play_ghost_end()
+    music.exit_ghost_mode()
+    for wall in view.level.spectral_walls:
+        wall.set_revealed(False)
     view.anchor_corpse = None
     respawn_x, respawn_y = view.player.respawn_point
     view.start_player_rebirth(respawn_x, respawn_y)

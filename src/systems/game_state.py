@@ -28,6 +28,7 @@ import arcade
 
 import settings
 from src.entities.batch_draw import SpriteOverlay
+from src.entities.boss import Boss
 from src.entities.corpse import Corpse
 from src.entities.enemy import Enemy
 from src.entities.ghost import Ghost
@@ -45,6 +46,7 @@ from src.ui.debug import DebugOverlay, DebugSnapshot
 from src.ui.display import handle_display_key
 from src.ui.hud import Hud, HudData
 from src.ui import cursor
+from src.ui.music import music
 from src.ui.sfx import (
     play_attack,
     play_boss_fire,
@@ -300,6 +302,10 @@ class PlayView(arcade.View):
     def setup(self) -> None:
         """(Re)charge le niveau courant de la session et remet les entites a zero."""
         self.level = Level.from_file(self.session.level_file)
+        if any(isinstance(enemy, Boss) for enemy in self.level.enemies):
+            music.play_boss_theme()
+        else:
+            music.play_main_theme()
         self.player = Player(*self.level.player_spawn)
         for spawn_x, spawn_y in self.level.enemy_spawn_points:
             self.level.enemies.append(Enemy(spawn_x, spawn_y))

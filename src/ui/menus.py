@@ -16,6 +16,7 @@ from src.ui import keys
 from src.ui.display import handle_display_key, use_default_camera
 from src.ui.fonts import PIXEL_FONT
 from src.ui.menu_kit import ButtonColumn, LevelCell, LevelGrid, TextButton, draw_panel
+from src.ui.music import music
 from src.ui.sfx import play_menu_hover
 from src.ui.title_fx import TitleStage
 from src.world.level import peek_level_info, LevelFormatError
@@ -129,6 +130,7 @@ class TitleView(_HeldKeysMixin, arcade.View):
 
     def on_show_view(self) -> None:
         use_default_camera(self.window)
+        music.play_main_theme()
         self._rebuild()
 
     def on_resize(self, width: int, height: int) -> None:
