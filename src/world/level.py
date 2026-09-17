@@ -51,6 +51,26 @@ fantome, touche F, champ `duration` en secondes). `width` est optionnel
 (1 tuile par defaut). Une pique de plafond (`spike_up`) tombe si le bloc
 au-dessus d'elle disparait : elle tue au contact puis se brise au sol.
 
+Les points de spawn optionnels des ennemis vivent dans `enemy_spawns`, en
+coordonnees de grille (`x` = colonne, `y` = ligne depuis le haut). Le bloc
+optionnel `enemy_spawn_director` regle la population et les vagues :
+
+    "enemy_spawns": [
+      {"x": 65, "y": 39},
+      {"x": 95, "y": 39}
+    ],
+    "enemy_spawn_director": {
+      "max_active": 6,
+      "wave_size": 2,
+      "wave_interval": 6.0,
+      "respawn_delay": 4.0,
+      "warning_duration": 0.7
+    }
+
+Chaque point est une position candidate : les points sont utilises au
+chargement, puis le directeur choisit une position libre et hors camera pour
+les renforts. Il doit etre place sur une case vide, juste au-dessus d'un sol.
+
 Pour ajouter un sprite de terrain : deposer le PNG dans `assets/sprites/`,
 l'enregistrer dans `TILE_SPECS` (`src/world/obstacles.py`), puis l'utiliser
 dans la legende de la carte.
@@ -90,6 +110,7 @@ from src.entities.zombie import Zombie
 from src.world.decorations import Decoration, decoration_kinds
 from src.world.falling_block import FallingBlock, FallingSpec, parse_falling_specs
 from src.world.flamethrower import FlameSpec, Flamethrower, parse_flame_specs
+from src.systems.enemy_spawner import EnemySpawnConfig, parse_enemy_spawn_config
 from src.world.mechanisms import (
     GatedTile,
     Mechanism,
@@ -187,6 +208,8 @@ class Level:
     checkpoints: arcade.SpriteList = field(default_factory=_dynamic_sprite_list)
     items: arcade.SpriteList = field(default_factory=_dynamic_sprite_list)
     enemies: arcade.SpriteList = field(default_factory=_dynamic_sprite_list)
+    enemy_spawn_points: list[tuple[float, float]] = field(default_factory=list)
+    enemy_spawn_config: EnemySpawnConfig = field(default_factory=EnemySpawnConfig.defaults)
     corpses: arcade.SpriteList = field(default_factory=_dynamic_sprite_list)
     remains: arcade.SpriteList = field(default_factory=_dynamic_sprite_list)
     plates: arcade.SpriteList = field(default_factory=_dynamic_sprite_list)
@@ -272,7 +295,22 @@ class Level:
             level._falling_specs = parse_falling_specs(data.get("falling_blocks"))
         except ValueError as error:
             raise LevelFormatError(str(error)) from error
+        try:
+            level.enemy_spawn_config = parse_enemy_spawn_config(
+                data.get("enemy_spawn_director")
+            )
+        except ValueError as error:
+            raise LevelFormatError(str(error)) from error
         level._build(grid, legend)
+        try:
+            level.enemy_spawn_points = _parse_enemy_spawn_points(
+                data.get("enemy_spawns", []),
+                level,
+                grid,
+                legend,
+            )
+        except LevelFormatError as error:
+            raise LevelFormatError(f"enemy_spawns : {error}") from error
         level._bind_activators(data.get("activators", []))
         return level
 
@@ -920,6 +958,38 @@ def _add_zombie(level: Level, x: float, y: float) -> None:
 
 def _add_boss(level: Level, x: float, y: float) -> None:
     level.enemies.append(Boss(x, y))
+
+
+def _parse_enemy_spawn_points(
+    entries: object,
+    level: Level,
+    grid: list[str],
+    legend: dict[str, str],
+) -> list[tuple[float, float]]:
+    """Valide et convertit les points de spawn additionnels d'une carte."""
+    if entries is None:
+        return []
+    if not isinstance(entries, list):
+        raise LevelFormatError("doit etre une liste")
+
+    points: list[tuple[float, float]] = []
+    for index, raw in enumerate(entries):
+        if not isinstance(raw, dict):
+            raise LevelFormatError(f"[{index}] doit etre un objet")
+        column = _coord(raw, "x")
+        row = _coord(raw, "y")
+        level._ensure_in_bounds(column, row)
+        symbol = grid[row][column]
+        kind = legend.get(symbol, "vide" if symbol == "." else None)
+        if kind != "vide":
+            raise LevelFormatError(
+                f"[{index}] doit etre sur une case vide, pas '{symbol}'"
+            )
+        point = level.tile_center(column, row, level.rows)
+        if point in points:
+            raise LevelFormatError(f"[{index}] duplique un autre point")
+        points.append(point)
+    return points
 
 
 def _coord(raw: dict, *keys: str) -> int:
