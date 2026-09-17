@@ -739,6 +739,7 @@ ENEMY_ATTACK_VERTICAL_RANGE = 40.0  # tolerance verticale (doit etre a peu pres 
 # (avant frame 1) est plus courte qu'avec l'ancienne planche a 10 frames ;
 # compense en partie par ANIM_ENEMY_ATTACK_FRAME_TIME plus long (voir plus bas).
 ENEMY_ATTACK_HIT_FRAMES: tuple[int, int] = (1, 1)
+ENEMY_ATTACK_WINDUP = 0.4  # arret telegraphie avant de lancer le coup
 ENEMY_ATTACK_COOLDOWN = 0.4  # secondes de pause entre deux coups
 ENEMY_CORPSE_SMELL_RANGE = 320.0  # distance d'attraction vers un cadavre
 ENEMY_HIT_FLASH_DURATION = 0.18
@@ -1429,6 +1430,7 @@ UI_KEY_CAPTION_SIZE = 16  # libelles a cote des icones
 
 # Stats haut-droit : jauge fantome en haut, puis une ligne par item.
 HUD_STAT_ICON = 40
+HUD_KEY_ICON = 80  # largeur de la cle HUD (sprite 20x10 recadre, ratio 2:1)
 HUD_STAT_GAP = 8  # espace vertical entre deux lignes
 HUD_STAT_VALUE_GAP = 10  # espace icone -> valeur
 HUD_GAUGE_WIDTH = 168

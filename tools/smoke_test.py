@@ -476,44 +476,45 @@ def check_enemy_ai() -> None:
     assert enemy.state is EnemyState.CHASE, "a portee et au meme niveau : doit poursuivre"
     assert enemy.change_x != 0.0
 
-    # Approche a portee de melee : l'ennemi s'arrete et arme son coup.
+    # Approche a portee de melee : l'ennemi s'arrete et attend avant de frapper.
     player.center_x = enemy.center_x + settings.ENEMY_ATTACK_RANGE - 5.0
     enemy.update(FRAME, player=player, corpses=None)
-    assert enemy.state is EnemyState.ATTACK, "assez proche : doit s'arreter pour frapper"
-    assert enemy.change_x == 0.0, "l'ennemi ne doit pas glisser pendant l'attaque"
+    assert enemy.state is EnemyState.WINDUP, "assez proche : doit s'arreter avant de frapper"
+    assert enemy.change_x == 0.0, "l'ennemi ne doit pas glisser pendant l'armement"
 
-    # Toucher le corps ne tue pas : joueur colle contre l'ennemi pendant l'armement.
+    # Toucher le corps ne tue pas : joueur colle contre l'ennemi pendant l'attente.
     player.center_x = enemy.center_x + 10.0
     assert arcade.check_for_collision(enemy, player), "le joueur doit chevaucher le corps"
     assert collisions.enemy_striking_player(player, [enemy]) is None, (
         "le simple contact avec le corps ne doit pas tuer"
     )
 
-    # Joueur immobile a portee : la lame finit par le toucher, apres l'armement.
+    # Joueur immobile a portee : la lame finit par le toucher, apres l'attente.
     frames_to_hit = None
-    for frame in range(120):
+    for frame in range(180):
         enemy.update(FRAME, player=player, corpses=None)
         if collisions.enemy_striking_player(player, [enemy]) is enemy:
             frames_to_hit = frame + 1
             break
     assert frames_to_hit is not None, "un joueur immobile a portee doit etre touche par le coup"
-    assert frames_to_hit > 5, "le coup doit etre annonce (armement) avant de toucher"
+    windup_frames = int(settings.ENEMY_ATTACK_WINDUP / FRAME)
+    assert frames_to_hit > windup_frames, "le coup doit attendre le delai avant de toucher"
 
-    # Esquive : le joueur recule hors de portee de la lame pendant l'armement.
+    # Esquive : le joueur recule pendant l'attente, le squelette annule le coup.
     dodger = Enemy(200.0, 200.0)
     player.center_x = dodger.center_x + settings.ENEMY_ATTACK_RANGE - 5.0
     player.center_y = dodger.center_y
     dodger.update(FRAME, player=player, corpses=None)
-    assert dodger.state is EnemyState.ATTACK
+    assert dodger.state is EnemyState.WINDUP
     player.center_x = dodger.center_x + settings.ENEMY_ATTACK_REACH + 10.0
     for _ in range(120):
         dodger.update(FRAME, player=player, corpses=None)
         assert collisions.enemy_striking_player(player, [dodger]) is None, (
-            "hors de portee de la lame : le coup doit rater"
+            "hors de portee : le coup ne doit pas partir"
         )
-        if dodger.state is not EnemyState.ATTACK:
+        if dodger.state is EnemyState.CHASE:
             break
-    assert dodger.state is EnemyState.CHASE, "coup fini, joueur recule : doit reprendre la poursuite"
+    assert dodger.state is EnemyState.CHASE, "cible partie pendant l'attente : doit reprendre la poursuite"
 
     # Mort : bille bleue, etat DYING, un 2e coup pendant DYING est ignore.
     orb = enemy.take_damage()
