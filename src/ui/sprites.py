@@ -60,6 +60,30 @@ def load_texture(name: str, *, size: int | None = None) -> arcade.Texture:
     return texture
 
 
+def load_trimmed_texture(name: str, *, width: int) -> arcade.Texture:
+    """Charge un PNG, recadre le transparent, agrandit a `width` px de large.
+
+    Garde le ratio (nearest-neighbor). Sert aux icones HUD dont l'art ne
+    remplit pas tout le carre source, comme la cle 20x10 dans un 32x32.
+    """
+    if width <= 0:
+        raise ValueError("width doit etre strictement positif")
+    key = f"trim:{name}|{width}"
+    cached = _TEXTURE_CACHE.get(key)
+    if cached is not None:
+        return cached
+    image = _open_image(name)
+    bbox = image.getbbox()
+    cropped = image.crop(bbox) if bbox is not None else image
+    scale = width / cropped.width
+    height = max(1, round(cropped.height * scale))
+    if cropped.size != (width, height):
+        cropped = cropped.resize((width, height), Image.Resampling.NEAREST)
+    texture = arcade.Texture(cropped, hash=key)
+    _TEXTURE_CACHE[key] = texture
+    return texture
+
+
 def placeholder_tile(
     color: tuple[int, int, int],
     size: int,

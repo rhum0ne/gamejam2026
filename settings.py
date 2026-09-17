@@ -1429,6 +1429,7 @@ UI_KEY_CAPTION_SIZE = 16  # libelles a cote des icones
 
 # Stats haut-droit : jauge fantome en haut, puis une ligne par item.
 HUD_STAT_ICON = 40
+HUD_KEY_ICON = 80  # largeur de la cle HUD (sprite 20x10 recadre, ratio 2:1)
 HUD_STAT_GAP = 8  # espace vertical entre deux lignes
 HUD_STAT_VALUE_GAP = 10  # espace icone -> valeur
 HUD_GAUGE_WIDTH = 168
