@@ -259,6 +259,10 @@ class EditorDocument:
         """Reglages du bloc tombant pose en (colonne, ligne), s'il y en a un."""
         return self._fallings.get((column, row))
 
+    def falling_specs(self) -> tuple[FallingSpec, ...]:
+        """Tous les blocs tombants poses, pour le rendu de l'editeur."""
+        return tuple(self._fallings.values())
+
     def adjust_falling(
         self,
         column: int,
@@ -266,6 +270,7 @@ class EditorDocument:
         *,
         delay_delta: float = 0.0,
         respawn_delta: float = 0.0,
+        invert_ghost: bool = False,
     ) -> FallingSpec | None:
         """Modifie le bloc tombant sous le curseur. None si la cellule n'en est pas un."""
         if self.cell(column, row) != settings.TILE_KIND_FALLING:
@@ -276,10 +281,14 @@ class EditorDocument:
             updated = updated.with_delay(updated.delay + delay_delta)
         if respawn_delta:
             updated = updated.with_respawn(updated.respawn + respawn_delta)
+        if invert_ghost:
+            updated = updated.with_ghost_only(not updated.ghost_only)
         if updated == current:
             return current
         self._fallings[(column, row)] = updated
-        self._falling_brush = FallingSpec(0, 0, updated.delay, updated.respawn)
+        self._falling_brush = FallingSpec(
+            0, 0, updated.delay, updated.respawn, updated.ghost_only
+        )
         self._version += 1
         return updated
 
@@ -731,6 +740,7 @@ class EditorDocument:
                     row,
                     brush.delay,
                     brush.respawn,
+                    brush.ghost_only,
                 )
         self._fallings = kept
 

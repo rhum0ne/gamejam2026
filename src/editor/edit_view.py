@@ -215,9 +215,12 @@ class EditView(arcade.View):
                 )
             falling = self.document.falling_at(*self.hover)
             if falling is not None:
+                visibility = (
+                    "fantome seulement" if falling.ghost_only else "corps et fantome"
+                )
                 element = (
                     f"Bloc tombant delay {falling.delay:.2f}s "
-                    f"respawn {falling.respawn:.1f}s"
+                    f"respawn {falling.respawn:.1f}s  {visibility}"
                 )
         plates = f"{len(self.document.activators)}"
         if self._link_index is not None and 0 <= self._link_index < len(self.document.activators):
@@ -563,13 +566,14 @@ class EditView(arcade.View):
         return True
 
     def _tune_falling_block(self, symbol: int) -> bool:
-        """Regle delay / respawn du bloc tombant sous le curseur."""
+        """Regle delay / respawn / visibilite du bloc tombant sous le curseur."""
         if self.hover is None or not self.document.inside(*self.hover):
             return False
         if self.document.cell(*self.hover) != settings.TILE_KIND_FALLING:
             return False
         delay_delta = 0.0
         respawn_delta = 0.0
+        invert_ghost = False
         if symbol == arcade.key.PERIOD:
             delay_delta = settings.FALLING_BLOCK_DELAY_STEP
         elif symbol == arcade.key.COMMA:
@@ -578,18 +582,23 @@ class EditView(arcade.View):
             respawn_delta = settings.FALLING_BLOCK_RESPAWN_STEP
         elif symbol in _FLAME_INTERVAL_SHORTER:
             respawn_delta = -settings.FALLING_BLOCK_RESPAWN_STEP
+        elif symbol == arcade.key.V:
+            invert_ghost = True
         else:
             return False
         spec = self.document.adjust_falling(
             *self.hover,
             delay_delta=delay_delta,
             respawn_delta=respawn_delta,
+            invert_ghost=invert_ghost,
         )
         if spec is None:
             return True
         self.canvas.sync(((*self.hover, settings.TILE_KIND_FALLING),))
+        visibility = "fantome seulement" if spec.ghost_only else "corps et fantome"
         self.notify(
-            f"bloc tombant : delay {spec.delay:.2f}s  respawn {spec.respawn:.1f}s"
+            f"bloc tombant : delay {spec.delay:.2f}s  respawn {spec.respawn:.1f}s  "
+            f"{visibility}"
         )
         return True
 

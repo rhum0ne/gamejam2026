@@ -25,7 +25,7 @@ SHORTCUTS: tuple[tuple[str, str], ...] = (
     ("B / R / G", "pinceau / rectangle / remplir la zone"),
     ("X / I / M", "gomme / pipette / selection"),
     ("L / onglet Plaques", "plaques et blocs lies"),
-    ("V / bouton cache-montre", "inverser la plaque (disparait / apparait)"),
+    ("V / bouton cache-montre", "inverser la plaque, ou bloc tombant fantome seulement"),
     (", et .", "portee du lance-flammes / delay du bloc tombant"),
     ("9 et 0", "intervalle du lance-flammes / respawn du bloc tombant"),
     ("H", "pivoter le lance-flammes (4 directions)"),

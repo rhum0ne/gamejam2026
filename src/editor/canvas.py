@@ -222,7 +222,9 @@ class GridCanvas:
         center_x, center_y = self.cell_center(column, row)
         if kind in DECORATION_SPECS:
             sprite = Decoration(kind, center_x, center_y)
-        elif item.spec is not None and item.spec.sheet is not None:
+        elif item.spec is not None and (
+            item.spec.sheet is not None or item.spec.role == "ice"
+        ):
             texture = terrain_texture(
                 item.spec,
                 self.document.tile_size,
@@ -241,6 +243,11 @@ class GridCanvas:
             spec = self.document.flame_at(column, row)
             if spec is not None:
                 aim_sprite(sprite, spec.direction)
+        if kind == settings.TILE_KIND_FALLING:
+            falling = self.document.falling_at(column, row)
+            if falling is not None and falling.ghost_only:
+                sprite.color = settings.COLOR_FALLING_BLOCK_GHOST
+                sprite.alpha = settings.FALLING_BLOCK_GHOST_ALPHA
         self._sprites.append(sprite)
         self._by_cell[(column, row)] = sprite
 
@@ -293,6 +300,7 @@ class GridCanvas:
             0, self.world_width, 0, self.world_height, settings.COLOR_BACKGROUND
         )
         self._sprites.draw(pixelated=True)
+        self._draw_ghost_falling_outlines()
         if self.show_grid and self._camera.zoom >= settings.EDITOR_GRID_MIN_ZOOM:
             self._draw_grid()
         arcade.draw_lrbt_rectangle_outline(
@@ -391,6 +399,17 @@ class GridCanvas:
             target_x = center_column * tile + tile / 2
             target_y = (self.document.rows - 1 - center_row) * tile + tile / 2
             arcade.draw_line(start_x, start_y, target_x, target_y, color, 2)
+
+    def _draw_ghost_falling_outlines(self) -> None:
+        """Repere cyan sur les blocs tombants visibles seulement au fantome."""
+        color = settings.COLOR_FALLING_BLOCK_GHOST
+        for spec in self.document.falling_specs():
+            if not spec.ghost_only:
+                continue
+            left, right, bottom, top = self.rect_bounds(
+                GridRect(spec.column, spec.row, spec.column, spec.row)
+            )
+            arcade.draw_lrbt_rectangle_outline(left, right, bottom, top, color, 2)
 
     def _draw_flame_preview(self, column: int, row: int) -> None:
         """Montre la portee du lance-flammes sous le curseur."""

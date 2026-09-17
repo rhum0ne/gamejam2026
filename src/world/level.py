@@ -61,7 +61,7 @@ vivent dans le champ JSON `flamethrowers`, comme les plaques. L'ancien champ
 
 `falling_block` est une plateforme qui s'effondre : delay puis chute sans
 collision avec le terrain, puis respawn. Les delais vivent dans le champ
-JSON `falling_blocks` (`delay` et `respawn`, en secondes).
+JSON `falling_blocks` (`delay`, `respawn`, et `ghost_only` optionnel).
 """
 
 from __future__ import annotations
@@ -317,7 +317,6 @@ class Level:
         if nearest is not None and nearest_distance <= 3 * self.tile_size:
             self.checkpoint_spawn = nearest.spawn_point
             return
-        self.checkpoint_spawn = self.player_spawn
 
     def activate_checkpoint(self, checkpoint: Checkpoint, *, ignite: bool = True) -> None:
         """Allume `checkpoint` et eteint les autres statues.
@@ -966,6 +965,7 @@ def _add_falling_block(level: Level, x: float, y: float) -> None:
         size=level.tile_size,
         delay=spec.delay if spec is not None else settings.FALLING_BLOCK_DELAY,
         respawn=spec.respawn if spec is not None else settings.FALLING_BLOCK_RESPAWN,
+        ghost_only=spec.ghost_only if spec is not None else False,
     )
     level.falling_blocks.append(block)
 
