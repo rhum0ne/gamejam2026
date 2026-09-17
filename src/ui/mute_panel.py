@@ -1,4 +1,12 @@
-"""Overlay pause : le niveau reste charge, le jeu est gele."""
+"""Overlay "Son" : coupe/reactive les 4 pistes de `src.ui.music`.
+
+Meme forme que `PauseMenu` (`src/ui/pause.py`) - voile + panneau + colonne de
+boutons - pour pouvoir s'ouvrir aussi bien depuis le menu principal
+(`TitleView`) que depuis le menu pause en jeu (`PlayView`), sans dupliquer le
+code. Contrairement a un `TextButton` normal, chaque bouton ici porte l'etat
+ON/OFF de sa piste dans son propre libelle : `menu_kit.TextButton` n'a pas de
+`set_caption()`, donc on modifie directement `button.label.text`.
+"""
 
 from __future__ import annotations
 
@@ -7,28 +15,23 @@ from collections.abc import Callable
 import arcade
 
 import settings
-from src.ui.display import handle_display_key, toggle_fullscreen
+from src.ui.display import handle_display_key
 from src.ui.fonts import PIXEL_FONT
 from src.ui.menu_kit import ButtonColumn, TextButton, draw_panel
+from src.ui.music import MUTABLE_TRACKS, music
 
 
-class PauseMenu:
-    """Voile + panneau. Les callbacks viennent de `PlayView`."""
+def _caption(label: str, kind: str) -> str:
+    return f"{label} : {'OFF' if music.is_muted(kind) else 'ON'}"
 
-    def __init__(
-        self,
-        *,
-        on_resume: Callable[[], None],
-        on_retry: Callable[[], None],
-        on_quit: Callable[[], None],
-        on_open_mute: Callable[[], None],
-    ) -> None:
-        self.on_resume = on_resume
-        self.on_retry = on_retry
-        self.on_quit = on_quit
-        self.on_open_mute = on_open_mute
+
+class MutePanel:
+    """Voile + panneau : un bouton par piste, plus un retour."""
+
+    def __init__(self, *, on_close: Callable[[], None]) -> None:
+        self.on_close = on_close
         self.title = arcade.Text(
-            "PAUSE",
+            "SON",
             0,
             0,
             settings.COLOR_MENU_TITLE,
@@ -38,7 +41,7 @@ class PauseMenu:
             font_name=PIXEL_FONT,
         )
         self.hint = arcade.Text(
-            "Echap pour reprendre",
+            "Echap pour revenir",
             0,
             0,
             settings.COLOR_MENU_HINT,
@@ -47,17 +50,35 @@ class PauseMenu:
             font_name=PIXEL_FONT,
         )
         self.column = ButtonColumn()
+        self._track_buttons: dict[str, TextButton] = {}
         self._layout_w = 0.0
         self._layout_h = 0.0
         self._panel = (0.0, 0.0, 0.0, 0.0)
+        self._build_buttons()
+
+    def _build_buttons(self) -> None:
+        """Une seule fois : les boutons gardent leur etat (caption) entre deux
+        `layout()`, contrairement a `PauseMenu` qui peut se permettre de tout
+        reconstruire (ses libelles sont fixes)."""
+        buttons: list[TextButton] = []
+        for kind, label in MUTABLE_TRACKS:
+            button = TextButton(_caption(label, kind), on_activate=lambda kind=kind: self._toggle(kind))
+            self._track_buttons[kind] = button
+            buttons.append(button)
+        buttons.append(TextButton("Retour", on_activate=self.on_close))
+        self.column.set_buttons(buttons)
+
+    def _toggle(self, kind: str) -> None:
+        music.set_muted(kind, not music.is_muted(kind))
+        label = dict(MUTABLE_TRACKS)[kind]
+        self._track_buttons[kind].label.text = _caption(label, kind)
 
     def layout(self, width: float, height: float) -> None:
-        if width == self._layout_w and height == self._layout_h and self.column.buttons:
+        if width == self._layout_w and height == self._layout_h:
             return
         self._layout_w = width
         self._layout_h = height
-        panel_w = 380.0
-        panel_h = 380.0  # 5 boutons (dont "Son") : plus haut que les 320 d'origine (4)
+        panel_w, panel_h = 380.0, 380.0
         cx, cy = width / 2, height / 2
         left, right = cx - panel_w / 2, cx + panel_w / 2
         bottom, top = cy - panel_h / 2, cy + panel_h / 2
@@ -65,20 +86,8 @@ class PauseMenu:
         self.title.x = cx
         self.title.y = top - 40
         self.hint.x = cx
-        self.hint.y = bottom + 28
-        self.column.set_buttons(
-            (
-                TextButton("Reprendre", on_activate=self.on_resume),
-                TextButton("Recommencer", on_activate=self.on_retry),
-                TextButton("Plein ecran", on_activate=self._toggle_fullscreen),
-                TextButton("Son", on_activate=self.on_open_mute),
-                TextButton("Menu principal", on_activate=self.on_quit),
-            )
-        )
+        self.hint.y = bottom + 24
         self.column.layout(cx, self.title.y - 56)
-
-    def _toggle_fullscreen(self) -> None:
-        toggle_fullscreen(arcade.get_window())
 
     def draw(self, width: float, height: float) -> None:
         self.layout(width, height)
@@ -99,7 +108,7 @@ class PauseMenu:
         if handle_display_key(window, symbol, modifiers):
             return
         if symbol == arcade.key.ESCAPE:
-            self.on_resume()
+            self.on_close()
             return
         self.column.on_key_press(symbol)
 

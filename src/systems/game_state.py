@@ -285,6 +285,8 @@ class PlayView(arcade.View):
         self._delivered_items: list[ItemKind] = []
         self._pause_menu = None
         self._paused_from = GameState.PLAYING
+        self._mute_panel = None
+        self._mute_panel_open = False
         self._level_up_menu = None
         self._level_up_from = GameState.PLAYING
         self._enemy_spawner: EnemySpawnDirector | None = None
@@ -480,7 +482,7 @@ class PlayView(arcade.View):
             self._draw_hud_layer(rebirth.hud_alpha)
         if self.machine.state is GameState.PAUSED:
             self.camera.use_ui()
-            self._pause_overlay().draw(settings.WORLD_VIEW_WIDTH, settings.WORLD_VIEW_HEIGHT)
+            self._paused_overlay().draw(settings.WORLD_VIEW_WIDTH, settings.WORLD_VIEW_HEIGHT)
         elif self.machine.state is GameState.LEVEL_UP:
             self.camera.use_ui()
             self._level_up_overlay().draw(settings.WORLD_VIEW_WIDTH, settings.WORLD_VIEW_HEIGHT)
@@ -897,6 +899,7 @@ class PlayView(arcade.View):
         self.level.update(delta_time, attractor)
         self._update_mechanisms(delta_time)
         self.level.update_spikes()
+        self.level.update_environment_blocks()
         if state is GameState.PLAYING:
             self._update_playing(delta_time)
         elif state is GameState.GHOST:
@@ -1237,9 +1240,10 @@ class PlayView(arcade.View):
 
         if settings.PLAYER_INVINCIBLE:
             return
-        if collisions.player_hits_hazard(self.player, self.level):
+        hazard = collisions.player_hits_hazard(self.player, self.level)
+        if hazard is not None:
             self._spill_blood(self.player.center_x, self.player.center_y, count=settings.BLOOD_COUNT_PLAYER)
-            emit_player_death(self, "spikes")
+            emit_player_death(self, getattr(hazard, "death_cause", "spikes"))
         elif collisions.player_hits_flame(self.player, self.level.flamethrowers):
             self._spill_blood(self.player.center_x, self.player.center_y, count=settings.BLOOD_COUNT_PLAYER)
             emit_player_death(self, "flame")
@@ -1354,7 +1358,7 @@ class PlayView(arcade.View):
                 self._debug_enabled = not self._debug_enabled
             return
         if self.machine.state is GameState.PAUSED:
-            self._pause_overlay().on_key_press(self.window, symbol, modifiers)
+            self._paused_overlay().on_key_press(self.window, symbol, modifiers)
             return
         if self.machine.state is GameState.LEVEL_UP:
             self._level_up_overlay().on_key_press(self.window, symbol, modifiers)
@@ -1400,7 +1404,7 @@ class PlayView(arcade.View):
         cursor.note(self.window)
         if self.machine.state is GameState.PAUSED:
             ui_x, ui_y = self.camera.window_to_ui(x, y)
-            self._pause_overlay().on_mouse_motion(ui_x, ui_y)
+            self._paused_overlay().on_mouse_motion(ui_x, ui_y)
         elif self.machine.state is GameState.LEVEL_UP:
             ui_x, ui_y = self.camera.window_to_ui(x, y)
             self._level_up_overlay().on_mouse_motion(ui_x, ui_y)
@@ -1412,7 +1416,7 @@ class PlayView(arcade.View):
             if button != arcade.MOUSE_BUTTON_LEFT:
                 return
             ui_x, ui_y = self.camera.window_to_ui(x, y)
-            self._pause_overlay().on_mouse_press(ui_x, ui_y)
+            self._paused_overlay().on_mouse_press(ui_x, ui_y)
             return
         if self.machine.state is GameState.LEVEL_UP:
             if button != arcade.MOUSE_BUTTON_LEFT:
@@ -1430,7 +1434,7 @@ class PlayView(arcade.View):
             return
         if self.machine.state is GameState.PAUSED:
             ui_x, ui_y = self.camera.window_to_ui(x, y)
-            self._pause_overlay().on_mouse_release(ui_x, ui_y)
+            self._paused_overlay().on_mouse_release(ui_x, ui_y)
         elif self.machine.state is GameState.LEVEL_UP:
             ui_x, ui_y = self.camera.window_to_ui(x, y)
             self._level_up_overlay().on_mouse_release(ui_x, ui_y)
@@ -1443,8 +1447,27 @@ class PlayView(arcade.View):
                 on_resume=self.leave_pause,
                 on_retry=self._retry_from_pause,
                 on_quit=self._quit_from_pause,
+                on_open_mute=self._open_mute_panel,
             )
         return self._pause_menu
+
+    def _mute_overlay(self):
+        if self._mute_panel is None:
+            from src.ui.mute_panel import MutePanel
+
+            self._mute_panel = MutePanel(on_close=self._close_mute_panel)
+        return self._mute_panel
+
+    def _paused_overlay(self):
+        """Overlay actif tant que l'etat est PAUSED : le panneau Son s'il est
+        ouvert, sinon le menu pause lui-meme."""
+        return self._mute_overlay() if self._mute_panel_open else self._pause_overlay()
+
+    def _open_mute_panel(self) -> None:
+        self._mute_panel_open = True
+
+    def _close_mute_panel(self) -> None:
+        self._mute_panel_open = False
 
     def enter_pause(self) -> None:
         if self.machine.state is GameState.PAUSED:
@@ -1452,6 +1475,7 @@ class PlayView(arcade.View):
         if not self.machine.can(GameState.PAUSED):
             return
         self._paused_from = self.machine.state
+        self._mute_panel_open = False
         self.held_keys.clear()
         self.machine.try_to(GameState.PAUSED)
         cursor.show(self.window)

@@ -86,32 +86,43 @@ def _vertical_contact(player: Player, hazard: arcade.Sprite) -> bool:
     return overlap_y <= overlap_x
 
 
-def player_hits_hazard(player: Player, level: Level) -> bool:
-    """Le corps physique touche-t-il un piege mortel (piques) ?
+def player_hits_hazard(player: Player, level: Level) -> arcade.Sprite | None:
+    """Le corps physique touche-t-il un piege mortel (piques, lave, eau) ?
 
-    Seul un contact vertical est mortel : sauter sur une pique au sol, se
-    cogner la tete contre une pique de plafond, ou se faire tomber dessus une
-    pique en chute. Froler une pique par le cote en marchant ne tue pas.
+    Retourne le piege touche (dont `getattr(hazard, "death_cause", "spikes")`
+    pour distinguer la cause de mort), ou None.
+
+    Les piques ne tuent que sur un contact vertical : sauter sur une pique au
+    sol, se cogner la tete contre une pique de plafond, ou se faire tomber
+    dessus une pique en chute. Froler une pique par le cote en marchant ne
+    tue pas. La lave et l'eau (`omni_lethal`) tuent au moindre contact,
+    cote compris - ce sont des mares, pas des murs qu'on peut raser.
     """
     if not player.alive:
-        return False
+        return None
     for hazard in arcade.check_for_collision_with_list(player, level.hazards):
-        if getattr(hazard, "lethal_for_body", True) and _vertical_contact(player, hazard):
-            return True
+        if not getattr(hazard, "lethal_for_body", True):
+            continue
+        if getattr(hazard, "omni_lethal", False) or _vertical_contact(player, hazard):
+            return hazard
     for hazard in arcade.check_for_collision_with_list(player, level.falling_spikes):
         if getattr(hazard, "lethal_for_body", True):
-            return True
-    return False
+            return hazard
+    return None
 
 
 def hazard_side_contacts(player: Player, level: Level) -> list[arcade.Sprite]:
-    """Piques (fixes) touchees par le cote : bloquent comme un mur, ne tuent pas."""
+    """Piques (fixes) touchees par le cote : bloquent comme un mur, ne tuent pas.
+
+    La lave et l'eau (`omni_lethal`) ne bloquent jamais : un frolement lateral
+    tue au lieu de pousser le joueur comme le ferait un mur.
+    """
     if not player.alive:
         return []
     return [
         hazard
         for hazard in arcade.check_for_collision_with_list(player, level.hazards)
-        if not _vertical_contact(player, hazard)
+        if not getattr(hazard, "omni_lethal", False) and not _vertical_contact(player, hazard)
     ]
 
 

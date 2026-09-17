@@ -73,6 +73,8 @@ _TERRAIN_META: dict[str, tuple[str, str]] = {
     settings.TILE_KIND_ICE: ("Glace", "~"),
     "spike": ("Piques (sol)", "^"),
     "spike_up": ("Piques (plafond)", "v"),
+    settings.TILE_KIND_LAVA: ("Lave", "L"),
+    settings.TILE_KIND_WATER: ("Eau", "U"),
 }
 
 # kind -> (libelle, categorie, symbole habituel, couleur)
@@ -126,11 +128,15 @@ def _terrain_items(taken: set[str]) -> list[PaletteItem]:
         label, wanted = _TERRAIN_META.get(kind, (kind.replace("_", " "), ""))
         symbol = free_symbol(taken, wanted or kind.upper())
         taken.add(symbol)
-        hazard = spec.role == "spike"
+        hazard = spec.role in ("spike", "lava", "water")
         if spec.role == "spike":
             color = settings.COLOR_SPIKE
         elif spec.role == "ice":
             color = settings.COLOR_ICE
+        elif spec.role == "lava":
+            color = settings.COLOR_LAVA
+        elif spec.role == "water":
+            color = settings.COLOR_WATER
         else:
             color = settings.COLOR_WALL
         items.append(

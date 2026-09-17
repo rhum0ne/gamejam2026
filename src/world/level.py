@@ -136,14 +136,18 @@ from src.world.obstacles import (
     TILE_SPECS,
     Checkpoint,
     Door,
+    FusionBlock,
     GroundCell,
     HiddenWall,
     IceBlock,
+    LavaBlock,
     SpectralWall,
     Spike,
     TileSpec,
     Torch,
     Wall,
+    WaterBlock,
+    compute_fusion_cells,
     compute_ground_cells,
     tile_spec,
 )
@@ -443,6 +447,7 @@ class Level:
 
     def _build(self, grid: list[str], legend: dict[str, str]) -> None:
         ground_cells = _compute_ground_cells(grid, legend)
+        fusion_cells = _compute_fusion_cells(grid, legend)
         for row_index, row in enumerate(grid):
             for column_index, symbol in enumerate(row):
                 kind = legend.get(symbol, "vide" if symbol == "." else None)
@@ -467,8 +472,12 @@ class Level:
                     continue
                 if kind in TILE_SPECS:
                     center = self.tile_center(column_index, row_index, len(grid))
-                    cell = ground_cells.get((column_index, row_index))
-                    _add_terrain(self, *center, kind, cell)
+                    is_lava_or_water = kind in (settings.TILE_KIND_LAVA, settings.TILE_KIND_WATER)
+                    if is_lava_or_water and (column_index, row_index) in fusion_cells:
+                        _add_fusion_block(self, *center)
+                    else:
+                        cell = ground_cells.get((column_index, row_index))
+                        _add_terrain(self, *center, kind, cell)
                     continue
                 raise LevelFormatError(f"type de tuile inconnu : '{kind}'")
         self._bind_initial_checkpoint()
@@ -930,6 +939,7 @@ class Level:
         self.remains.update(delta_time)
         self.checkpoints.update(delta_time)
         self.doors.update(delta_time)
+        self.hazards.update(delta_time)  # anime lave/eau ; no-op sur les piques
         self.flamethrowers.update(delta_time)
         self.springs.update(delta_time)
         self._update_falling_blocks(delta_time)
@@ -964,6 +974,79 @@ class Level:
             if spike.fall(ground):
                 spike.remove_from_sprite_lists()
 
+    def update_environment_blocks(self) -> None:
+        """Fait tomber lave/eau sans appui ; les fusionne au contact.
+
+        Meme mecanique que `update_spikes` (chute continue jusqu'a un support),
+        mais vers le bas et sans liste separee : lave/eau restent dans
+        `hazards` pendant la chute (toujours mortelles au contact). C'est ce
+        qui permet de faire tomber de l'eau sur de la lave en jeu pour creer
+        un passage (voir `compute_fusion_cells` pour la regle statique).
+        """
+        self._release_unsupported_environment_blocks()
+        self._move_falling_environment_blocks()
+
+    def _environment_grounds(self) -> tuple[arcade.SpriteList, arcade.SpriteList]:
+        return (self.walls, self.spectral_walls)
+
+    def _environment_supported(self, block: arcade.Sprite) -> bool:
+        probe = (block.center_x, block.center_y - self.tile_size)
+        for ground in self._environment_grounds():
+            if arcade.get_sprites_at_point(probe, ground):
+                return True
+        for hit in arcade.get_sprites_at_point(probe, self.hazards):
+            if hit is not block and isinstance(hit, (LavaBlock, WaterBlock)) and not hit.falling:
+                return True
+        return False
+
+    def _release_unsupported_environment_blocks(self) -> None:
+        for block in list(self.hazards):
+            if not isinstance(block, (LavaBlock, WaterBlock)) or block.falling:
+                continue
+            if self._environment_supported(block):
+                continue
+            block.start_fall()
+
+    def _move_falling_environment_blocks(self) -> None:
+        opposite: dict[type, type] = {LavaBlock: WaterBlock, WaterBlock: LavaBlock}
+        grounds = self._environment_grounds()
+        falling = [
+            block
+            for block in self.hazards
+            if isinstance(block, (LavaBlock, WaterBlock)) and block.falling
+        ]
+        for block in falling:
+            block.fall(grounds)
+            # Seuls des blocs deja POSES comptent comme contact valable : 2
+            # blocs qui tombent l'un pres de l'autre ne doivent pas fusionner
+            # en plein vol (chacun continue jusqu'a toucher un appui).
+            contacts = [
+                other
+                for other in arcade.check_for_collision_with_list(block, self.hazards)
+                if other is not block
+                and isinstance(other, (LavaBlock, WaterBlock))
+                and not other.falling
+            ]
+            partner = next((c for c in contacts if isinstance(c, opposite[type(block)])), None)
+            if partner is not None:
+                self._fuse_environment_blocks(block, partner)
+                continue
+            support = next((c for c in contacts if type(c) is type(block)), None)
+            if support is not None:
+                block.center_y = support.top + self.tile_size / 2
+                block.change_y = 0.0
+                block.falling = False
+
+    def _fuse_environment_blocks(self, falling: arcade.Sprite, settled: arcade.Sprite) -> None:
+        """Un bloc tombant touche son oppose deja pose : les 2 se figent en
+        UN SEUL bloc de fusion, a la position du bloc pose. Celui qui tombait
+        est entierement absorbe - pas de second bloc empile au-dessus (l'eau
+        se deverse dans la lave, elle ne laisse pas un bloc solide flottant)."""
+        x, y = settled.center_x, settled.center_y
+        falling.remove_from_sprite_lists()
+        settled.remove_from_sprite_lists()
+        self.walls.append(FusionBlock(x, y, size=self.tile_size))
+
     def _update_falling_blocks(self, delta_time: float) -> None:
         """Delay, chute libre (sans collision terrain), puis respawn a l'origine."""
         for block in list(self.falling_blocks):
@@ -997,9 +1080,20 @@ def _add_terrain(
     if spec.role == "ice":
         level.walls.append(IceBlock(x, y, size=level.tile_size, tile=kind))
         return
+    if spec.role == "lava":
+        level.hazards.append(LavaBlock(x, y, size=level.tile_size))
+        return
+    if spec.role == "water":
+        level.hazards.append(WaterBlock(x, y, size=level.tile_size))
+        return
     level.walls.append(
         Wall(x, y, size=level.tile_size, tile=kind, cell=cell, theme=level.theme)
     )
+
+
+def _add_fusion_block(level: Level, x: float, y: float) -> None:
+    """Lave/eau qui se touchent (`compute_fusion_cells`) : roche solide, pas de danger."""
+    level.walls.append(FusionBlock(x, y, size=level.tile_size))
 
 
 def _compute_ground_cells(
@@ -1041,6 +1135,21 @@ def _compute_ground_cells(
         is_solid=is_solid,
         is_autotile=is_autotile,
     )
+
+
+def _compute_fusion_cells(grid: list[str], legend: dict[str, str]) -> set[tuple[int, int]]:
+    """Cf. `obstacles.compute_fusion_cells` : cases lave/eau qui se touchent."""
+
+    def out_of_bounds(column: int, row: int) -> bool:
+        return row < 0 or row >= len(grid) or column < 0 or column >= len(grid[row])
+
+    def kind_at(column: int, row: int) -> str | None:
+        if out_of_bounds(column, row):
+            return None
+        symbol = grid[row][column]
+        return legend.get(symbol, "vide" if symbol == "." else None)
+
+    return compute_fusion_cells(len(grid[0]) if grid else 0, len(grid), kind_at=kind_at)
 
 
 def _add_spectral_wall(level: Level, x: float, y: float, cell: GroundCell | None = None) -> None:

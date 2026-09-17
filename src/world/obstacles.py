@@ -87,6 +87,13 @@ TILE_SPECS: dict[str, TileSpec] = {
     "spike": _spike(settings.SPRITE_SPIKE),
     "spike_up": _spike(settings.SPRITE_SPIKE_HANGING, hanging=True),
     settings.TILE_KIND_ICE: TileSpec(sprite="", role="ice"),
+    # Lave/eau : pas de sprite ici (planches animees chargees a part par
+    # LavaBlock/WaterBlock), le "role" suffit a router `_add_terrain` et
+    # `editor.icons.cell_texture`. "fusion" n'a volontairement PAS d'entree :
+    # ce n'est jamais un choix de palette, seulement le resultat automatique
+    # de `compute_fusion_cells` quand lave et eau se touchent.
+    settings.TILE_KIND_LAVA: TileSpec(sprite="", role="lava"),
+    settings.TILE_KIND_WATER: TileSpec(sprite="", role="water"),
 }
 
 # Kinds qui occupent une case pleine et solide (bloquent la vue d'un cote pour
@@ -364,6 +371,41 @@ def compute_ground_cells(
     return final
 
 
+def compute_fusion_cells(
+    columns: int,
+    rows: int,
+    *,
+    kind_at: Callable[[int, int], str | None],
+) -> set[tuple[int, int]]:
+    """Cases lave/eau en contact direct (4 voisins) : elles se figent en bloc
+    de fusion plutot que de rester des tuiles mortelles.
+
+    `kind_at(column, row)` retourne le kind pose sur cette case (`None` hors
+    carte ou case vide). Meme fonction pour le jeu (`world/level.py`) et
+    l'editeur (`editor/canvas.py`), comme `compute_ground_cells`.
+    """
+    fused: set[tuple[int, int]] = set()
+    for row in range(rows):
+        for column in range(columns):
+            kind = kind_at(column, row)
+            if kind not in (settings.TILE_KIND_LAVA, settings.TILE_KIND_WATER):
+                continue
+            other = (
+                settings.TILE_KIND_WATER
+                if kind == settings.TILE_KIND_LAVA
+                else settings.TILE_KIND_LAVA
+            )
+            neighbors = (
+                (column - 1, row),
+                (column + 1, row),
+                (column, row - 1),
+                (column, row + 1),
+            )
+            if any(kind_at(nc, nr) == other for nc, nr in neighbors):
+                fused.add((column, row))
+    return fused
+
+
 def terrain_texture(
     spec: TileSpec,
     size: int,
@@ -565,6 +607,126 @@ class Spike(arcade.Sprite):
         if self.top < -settings.TILE_SIZE:
             return True
         return False
+
+
+def _lava_frames(size: int) -> tuple[arcade.Texture, ...]:
+    scale = size / settings.LAVA_WATER_FRAME_SIZE
+    return sprites.load_strip(settings.SPRITE_LAVA_BLOCK, settings.LAVA_WATER_FRAME_SIZE, scale=scale)
+
+
+def _water_frames(size: int) -> tuple[arcade.Texture, ...]:
+    scale = size / settings.LAVA_WATER_FRAME_SIZE
+    return sprites.load_strip(settings.SPRITE_WATER_BLOCK, settings.LAVA_WATER_FRAME_SIZE, scale=scale)
+
+
+def _clock_frame(frame_count: int, frame_time: float) -> int:
+    """Index de frame partage (horloge du process, pas d'etat par-instance) :
+    toutes les tuiles du meme type restent en phase sans rien avoir a maintenir."""
+    return int(time.perf_counter() / frame_time) % frame_count
+
+
+class _EnvironmentHazardBlock(arcade.Sprite):
+    """Base commune a `LavaBlock`/`WaterBlock` : anime, mortelle au contact,
+    et tombe (comme une pique de plafond, mais vers le bas et en continu -
+    voir `Level._update_environment_blocks`) quand rien ne la soutient.
+
+    Contrairement aux piques (`Spike`), toute la tuile tue - pas seulement un
+    contact vertical - et elle ne bloque jamais comme un mur sur un frolement
+    lateral (voir `omni_lethal` dans `src.systems.collisions`).
+    """
+
+    lethal_for_body = True
+    lethal_for_ghost = False
+    omni_lethal = True
+    _frame_time = 0.12
+
+    def __init__(
+        self,
+        frames: tuple[arcade.Texture, ...],
+        center_x: float,
+        center_y: float,
+        size: int = settings.TILE_SIZE,
+    ) -> None:
+        super().__init__(frames[0], center_x=center_x, center_y=center_y)
+        self._frames = frames
+        self.falling = False
+        sprites.apply_rect_hit_box(self, size, size)
+
+    def update(self, delta_time: float = settings.FRAME_TIME, *args, **kwargs) -> None:
+        self.texture = self._frames[_clock_frame(len(self._frames), self._frame_time)]
+
+    def draw_ghost_glow(self, *, bind_blend: bool = True) -> None:
+        """Halo rouge identique aux piques/ennemis, visible a travers le voile."""
+        draw_threat_glow(self.center_x, self.center_y, bind_blend=bind_blend)
+
+    def start_fall(self) -> None:
+        if self.falling:
+            return
+        self.falling = True
+        self.change_y = 0.0
+
+    def fall(self, grounds: Sequence[arcade.SpriteList]) -> bool:
+        """Descend d'un cran. Retourne True si un mur/mur spectral l'arrete."""
+        if not self.falling:
+            return False
+        self.change_y -= settings.ENV_BLOCK_FALL_GRAVITY
+        if self.change_y < -settings.ENV_BLOCK_FALL_MAX_SPEED:
+            self.change_y = -settings.ENV_BLOCK_FALL_MAX_SPEED
+        previous_y = self.center_y
+        self.center_y += self.change_y
+        for ground in grounds:
+            if arcade.check_for_collision_with_list(self, ground):
+                self.center_y = previous_y
+                self.falling = False
+                self.change_y = 0.0
+                return True
+        return False
+
+
+class LavaBlock(_EnvironmentHazardBlock):
+    """Bloc de lave anime : voir `_EnvironmentHazardBlock`.
+
+    `death_cause` distingue lave et eau pour `on_player_death_spawn_corpse`
+    (`src/systems/play_events.py`) : le corps fond dans la lave (pas de
+    cadavre), il coule normalement dans l'eau (comportement par defaut).
+    """
+
+    _frame_time = settings.ANIM_LAVA_FRAME_TIME
+    death_cause = "lava"
+
+    def __init__(self, center_x: float, center_y: float, size: int = settings.TILE_SIZE) -> None:
+        super().__init__(_lava_frames(size), center_x, center_y, size)
+
+
+class WaterBlock(_EnvironmentHazardBlock):
+    """Bloc d'eau anime : voir `_EnvironmentHazardBlock`."""
+
+    _frame_time = settings.ANIM_WATER_FRAME_TIME
+    death_cause = "water"
+
+    def __init__(self, center_x: float, center_y: float, size: int = settings.TILE_SIZE) -> None:
+        super().__init__(_water_frames(size), center_x, center_y, size)
+
+
+class FusionBlock(arcade.Sprite):
+    """Lave et eau qui se sont touchees : roche figee, solide et sans danger.
+
+    Remplace automatiquement les tuiles `lava`/`water` adjacentes (voir
+    `compute_fusion_cells`) - jamais choisie directement dans la palette.
+    """
+
+    ghost_passable = False
+    slippery = False
+
+    def __init__(self, center_x: float, center_y: float, size: int = settings.TILE_SIZE) -> None:
+        texture = sprites.load_texture(settings.SPRITE_FUSION_BLOCK, size=size)
+        super().__init__(
+            texture,
+            scale=sprites.scale_for_size(texture, size),
+            center_x=center_x,
+            center_y=center_y,
+        )
+        sprites.apply_rect_hit_box(self, size, size)
 
 
 class Torch(arcade.SpriteSolidColor):
