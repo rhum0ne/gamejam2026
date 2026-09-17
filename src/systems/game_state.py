@@ -44,9 +44,11 @@ from src.ui.display import handle_display_key
 from src.ui.hud import Hud, HudData
 from src.ui.sfx import (
     play_attack,
+    play_boss_fire,
     play_checkpoint,
     play_dash,
     play_footstep,
+    play_jump,
     play_key_found,
     play_menu_click,
     play_mob_hit,
@@ -324,6 +326,14 @@ class PlayView(arcade.View):
     def _play_footstep_events(self) -> None:
         for kind in self.player.consume_footstep_events():
             play_footstep(land=kind == "land")
+        if self.player.consume_jump_sound():
+            play_jump()
+
+    def _play_enemy_sound_events(self) -> None:
+        for enemy in self.level.enemies:
+            consume = getattr(enemy, "consume_fire_sound", None)
+            if consume is not None and consume():
+                play_boss_fire()
 
     @property
     def ghost_emerging(self) -> bool:
@@ -347,7 +357,7 @@ class PlayView(arcade.View):
 
     def _static_platforms(self) -> list[arcade.SpriteList]:
         """Plateformes solides hors cadavres (un cadavre ne doit pas se bloquer lui-meme)."""
-        return [self.level.walls, self.level.spectral_walls]
+        return [self.level.walls, self.level.spectral_walls, self.level.hidden_walls]
 
     def _terrain_cull_rect(self):
         """Chunks a dessiner : ecran + marge, et le trou de vision en fantome.
@@ -578,6 +588,7 @@ class PlayView(arcade.View):
             if wall.revealed:
                 revealed_walls.append(wall)
         self.fog.draw(ghost, self.camera.world)
+        self._draw_hidden_wall_outlines()
         self._reveal_walls.draw(revealed_walls)
         with glow_pass():
             for item in self.level.items:
@@ -596,6 +607,18 @@ class PlayView(arcade.View):
         self._reveal_actors.draw(revealed_actors)
         draw_pixel_sprite(ghost)
         self._draw_body_arrow(ghost)
+
+    def _draw_hidden_wall_outlines(self) -> None:
+        """Blocs invisibles : contour bleu clair, visible seulement en fantome."""
+        view = self.camera.cull_rect()
+        color = (*settings.COLOR_HIDDEN_WALL_OUTLINE, 220)
+        width = settings.HIDDEN_WALL_OUTLINE_WIDTH
+        for wall in self.level.hidden_walls:
+            if not _in_view(wall, view, 0):
+                continue
+            arcade.draw_lrbt_rectangle_outline(
+                wall.left, wall.right, wall.bottom, wall.top, color, width
+            )
 
     def _draw_threat_glows(self) -> None:
         """Piques et ennemis : meme halo rouge, au-dessus du voile, tout l'ecran."""
@@ -941,6 +964,7 @@ class PlayView(arcade.View):
     def _update_enemies(self, delta_time: float) -> None:
         for enemy in list(self.level.enemies):
             enemy.update(delta_time, player=self.player, corpses=self.level.corpses)
+        self._play_enemy_sound_events()
 
     def _update_respawn_enemies(self) -> None:
         for enemy, spawn_x, spawn_y in self._enemy_spawns:

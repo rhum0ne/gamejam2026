@@ -2,7 +2,8 @@
 
 Specificites par rapport au corps physique :
     - aucune gravite, deplacement libre dans les 8 directions ;
-    - traverse les murs spectraux (`SpectralWall`) mais pas les murs normaux ;
+    - traverse les murs spectraux (`SpectralWall`) mais pas les murs normaux
+      ni les blocs invisibles (`HiddenWall`) ;
     - possede un timer : a zero, le corps reapparait au checkpoint ;
     - peut transporter des objets jusqu'au cadavre pour les livrer au corps.
 """
@@ -10,6 +11,7 @@ Specificites par rapport au corps physique :
 from __future__ import annotations
 
 import math
+from collections.abc import Sequence
 
 import arcade
 
@@ -78,7 +80,7 @@ class Ghost(arcade.Sprite):
         self.facing = 1
         self._vanishing = False
         self._input = (0.0, 0.0)
-        self._solid_walls: arcade.SpriteList | None = None
+        self._solid_walls: tuple[arcade.SpriteList, ...] = ()
         self._glow_time = 0.0
         self._emerging = False
         self._emerge_x = center_x
@@ -93,15 +95,21 @@ class Ghost(arcade.Sprite):
     # Initialisation
     # ------------------------------------------------------------------ #
 
-    def bind_world(self, solid_walls: arcade.SpriteList) -> None:
+    def bind_world(
+        self, solid_walls: arcade.SpriteList | Sequence[arcade.SpriteList]
+    ) -> None:
         """Definit les murs opaques au fantome (murs spectraux exclus)."""
-        self._solid_walls = solid_walls
+        if isinstance(solid_walls, arcade.SpriteList):
+            self._solid_walls = (solid_walls,)
+        else:
+            self._solid_walls = tuple(solid_walls)
         self.place_safely()
 
     def _overlaps_walls(self) -> bool:
-        if self._solid_walls is None or not self._solid_walls:
-            return False
-        return bool(arcade.check_for_collision_with_list(self, self._solid_walls))
+        return any(
+            bool(walls) and arcade.check_for_collision_with_list(self, walls)
+            for walls in self._solid_walls
+        )
 
     def place_safely(self) -> None:
         """Decale le fantome vers le plus proche espace libre, en privilegiant le haut."""
@@ -339,9 +347,9 @@ class Ghost(arcade.Sprite):
             previous, self.center_x = self.center_x, self.center_x + self.change_x
         else:
             previous, self.center_y = self.center_y, self.center_y + self.change_y
-        if self._solid_walls is None:
+        if not self._solid_walls:
             return
-        if arcade.check_for_collision_with_list(self, self._solid_walls):
+        if self._overlaps_walls():
             if axis == "x":
                 self.center_x = previous
                 self.change_x = 0.0

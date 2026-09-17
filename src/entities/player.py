@@ -142,6 +142,7 @@ class Player(arcade.Sprite):
         self._attack_sound_played = False
         self._footstep_events: list[str] = []
         self._footstep_timer = 0.0
+        self._jump_sound_pending = False
         self._death_elapsed = 0.0
 
     # ------------------------------------------------------------------ #
@@ -311,6 +312,7 @@ class Player(arcade.Sprite):
         self._attack_sound_played = False
         self._footstep_events.clear()
         self._footstep_timer = 0.0
+        self._jump_sound_pending = False
         self._death_elapsed = 0.0
         self._animator.play(self._death, restart=True)
         self.texture = self._death.textures[0]
@@ -391,6 +393,7 @@ class Player(arcade.Sprite):
         self._attack_sound_played = False
         self._footstep_events.clear()
         self._footstep_timer = 0.0
+        self._jump_sound_pending = False
         self._death_elapsed = 0.0
         self._animator.play(self._idle_still, restart=True)
         self.texture = self._idle_still.textures[0]
@@ -461,6 +464,12 @@ class Player(arcade.Sprite):
         self._footstep_events.clear()
         return events
 
+    def consume_jump_sound(self) -> bool:
+        """True si un saut a vraiment demarre depuis la derniere lecture."""
+        pending = self._jump_sound_pending
+        self._jump_sound_pending = False
+        return pending
+
     def consume_attack_sound_events(self) -> tuple[int, ...]:
         """Retourne les impacts sonores depuis la derniere lecture."""
         events = tuple(self._attack_sound_events)
@@ -528,6 +537,9 @@ class Player(arcade.Sprite):
         self._was_on_ground = False
         if self.is_dashing and self._dash_from_ground:
             self._dash_jump = True
+        # Le dash-saut a deja joue dash.wav : evite de superposer le meme sample.
+        if not self.is_dashing:
+            self._jump_sound_pending = True
 
     def draw_fx(self) -> None:
         """Trainee de points du dash, halo, et anneau 'dash pret'."""

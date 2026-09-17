@@ -87,6 +87,12 @@ _GAMEPLAY_META: dict[str, tuple[str, str, str, tuple[int, int, int]]] = {
     "zombie": ("Zombie", CATEGORY_GAMEPLAY, "z", settings.COLOR_ZOMBIE),
     "boss": ("Boss", CATEGORY_GAMEPLAY, "W", settings.COLOR_BOSS),
     "spectral_wall": ("Mur spectral", CATEGORY_GAMEPLAY, "=", settings.COLOR_SPECTRAL_WALL),
+    settings.TILE_KIND_HIDDEN: (
+        "Bloc invisible",
+        CATEGORY_GAMEPLAY,
+        "h",
+        settings.COLOR_HIDDEN_WALL,
+    ),
     "torch": ("Torche", CATEGORY_DECOR, "i", settings.COLOR_TORCH_FLAME),
     "flamethrower": ("Lance-flammes", CATEGORY_HAZARD, "f", settings.COLOR_FLAMETHROWER),
     settings.TILE_KIND_FALLING: ("Bloc tombant", CATEGORY_HAZARD, "F", settings.COLOR_FALLING_BLOCK),

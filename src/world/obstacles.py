@@ -2,8 +2,10 @@
 
 Regle de collision fondamentale du jeu :
     - le corps physique est bloque par tous les murs ;
-    - le fantome est bloque par les murs normaux mais traverse les murs
-      spectraux (`SpectralWall`, symbole `=` dans les cartes).
+    - le fantome est bloque par les murs normaux et les blocs invisibles,
+      mais traverse les murs spectraux (`SpectralWall`, symbole `=`).
+    - `HiddenWall` est l'inverse du spectral : solide pour le vivant, invisible
+      hors mode fantome, contour bleu clair une fois projete.
 
 Les murs et les piques prennent le sprite nomme dans la legende de la carte
 (`"#" : "wall"`, `"^" : "spike"`). La hitbox reste un rectangle plein :
@@ -467,6 +469,34 @@ class SpectralWall(Wall):
             return
         self.revealed = revealed
         self.color = settings.COLOR_SPECTRAL_WALL if revealed else arcade.color.WHITE
+
+
+class HiddenWall(arcade.Sprite):
+    """Bloc solide invisible hors mode fantome.
+
+    Le corps et le fantome sont bloques. En vivant : rien a l'ecran.
+    En fantome : contour bleu clair dessine par `PlayView`.
+    """
+
+    ghost_passable = False
+    slippery = False
+
+    def __init__(
+        self,
+        center_x: float,
+        center_y: float,
+        size: int = settings.TILE_SIZE,
+    ) -> None:
+        texture = sprites.placeholder_tile((0, 0, 0), size)
+        super().__init__(
+            texture,
+            scale=sprites.scale_for_size(texture, size),
+            center_x=center_x,
+            center_y=center_y,
+        )
+        self.visible = False
+        self.alpha = 0
+        sprites.apply_rect_hit_box(self, size, size)
 
 
 class Spike(arcade.Sprite):

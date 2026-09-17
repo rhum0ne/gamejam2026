@@ -152,6 +152,15 @@ def play_dash() -> None:
     play(settings.SOUND_DASH, settings.SOUND_VOLUME_DASH)
 
 
+def play_jump() -> None:
+    """Saut : meme sample que le dash en attendant un bruitage dedie."""
+    play(settings.SOUND_JUMP, settings.SOUND_VOLUME_JUMP)
+
+
+def play_boss_fire() -> None:
+    play(settings.SOUND_BOSS_FIRE, settings.SOUND_VOLUME_BOSS_FIRE)
+
+
 def play_respawn() -> None:
     play(settings.SOUND_RESPAWN, settings.SOUND_VOLUME_RESPAWN)
 

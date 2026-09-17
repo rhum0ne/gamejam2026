@@ -327,6 +327,7 @@ class Boss(EnemyBase):
         self._attack_cooldown = 0.0
         self._next_laser = True
         self._shot_spawned = False
+        self._fire_sound_pending = False
         self.shots = arcade.SpriteList()
         self._shot_burst = LaserBurst()
         self._beam_strip = _beam_strip()
@@ -473,6 +474,7 @@ class Boss(EnemyBase):
         self._attack_cooldown = 0.0
         self._next_laser = True
         self._shot_spawned = False
+        self._fire_sound_pending = False
         self._clear_shots()
         self.facing = -1
         self._animator.play(self._walk, restart=True)
@@ -620,6 +622,7 @@ class Boss(EnemyBase):
 
     def _spawn_shot(self, player: Player | None) -> None:
         self._shot_spawned = True
+        self._fire_sound_pending = True
         origin_x = self.center_x + self.facing * settings.BOSS_SHOT_ORIGIN_X
         origin_y = self.center_y + settings.BOSS_SHOT_ORIGIN_Y
         if player is not None:
@@ -636,6 +639,12 @@ class Boss(EnemyBase):
             burst=self._shot_burst,
         )
         self.shots.append(shot)
+
+    def consume_fire_sound(self) -> bool:
+        """True si un projectile vient d'etre lance depuis la derniere lecture."""
+        pending = self._fire_sound_pending
+        self._fire_sound_pending = False
+        return pending
 
     def _end_attack(self) -> None:
         self.state = BossState.CHASE

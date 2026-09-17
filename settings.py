@@ -37,9 +37,11 @@ SOUND_MOB_HIT = "mob_hit.wav"
 SOUND_GHOST_START = "ghost_start.wav"
 SOUND_GHOST_END = "ghost_end.wav"
 SOUND_DASH = "dash.wav"
+# Temporaire : pas de sample de saut dedie, on reutilise le dash.
+SOUND_JUMP = "dash.wav"
+SOUND_BOSS_FIRE = "boss-fire.wav"
 SOUND_RESPAWN = "respawn.wav"
 SOUND_FOOTSTEP = "Steps_dirt-001.ogg"
-# `boss-fire.wav` est dans le dossier mais pas encore branche.
 SOUND_VOLUME_ATTACK = 0.45
 SOUND_VOLUME_LEVEL_WIN = 0.6
 SOUND_VOLUME_SOUL_GET = 0.7
@@ -51,6 +53,8 @@ SOUND_VOLUME_MOB_HIT = 0.55
 SOUND_VOLUME_GHOST_START = 0.65
 SOUND_VOLUME_GHOST_END = 0.65
 SOUND_VOLUME_DASH = 0.55
+SOUND_VOLUME_JUMP = 0.48
+SOUND_VOLUME_BOSS_FIRE = 0.7
 SOUND_VOLUME_RESPAWN = 0.65
 SOUND_VOLUME_FOOTSTEP = 0.4
 SOUND_VOLUME_FOOTSTEP_LAND = 0.55
@@ -127,6 +131,7 @@ RENDER_CULL_PAD = 120.0
 # des noms de fichiers sprite : les confondre cassait le chargeur.
 TILE_KIND_ICE = "ice_block"
 TILE_KIND_FALLING = "falling_block"
+TILE_KIND_HIDDEN = "hidden_wall"
 
 # Noms de fichiers dans SPRITES_DIR, sans extension. Le chargeur ajoute `.png`.
 # Le terrain (dirt/grass/...) vient desormais de `SHEET_GROUND` plus bas
@@ -1030,6 +1035,10 @@ COLOR_FALLING_BLOCK = (176, 122, 64)
 COLOR_FALLING_BLOCK_INNER = (214, 168, 96)
 COLOR_FALLING_BLOCK_ARMED = (212, 96, 64)
 COLOR_SPECTRAL_WALL = (96, 84, 140)
+# Contour du bloc invisible en mode fantome (bleu tres clair).
+COLOR_HIDDEN_WALL = (176, 216, 255)
+COLOR_HIDDEN_WALL_OUTLINE = (210, 236, 255)
+HIDDEN_WALL_OUTLINE_WIDTH = 2
 COLOR_SPIKE = (196, 84, 84)
 COLOR_FLAMETHROWER = (232, 96, 36)
 COLOR_FLAME_PREVIEW = (255, 120, 40, 55)

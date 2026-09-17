@@ -63,6 +63,7 @@ def check_levels() -> None:
     check_inverted_activator()
     check_ground_theme()
     check_sfx_files()
+    check_hidden_wall()
 
 
 def check_invalid_activator() -> None:
@@ -191,6 +192,8 @@ def check_sfx_files() -> None:
         settings.SOUND_GHOST_START,
         settings.SOUND_GHOST_END,
         settings.SOUND_DASH,
+        settings.SOUND_JUMP,
+        settings.SOUND_BOSS_FIRE,
         settings.SOUND_RESPAWN,
         settings.SOUND_FOOTSTEP,
     )
@@ -198,6 +201,29 @@ def check_sfx_files() -> None:
         path = settings.SOUNDS_DIR / name
         assert path.is_file(), f"bruitage manquant : {path}"
     print(f"  bruitages -> {len(names)} fichiers")
+
+
+def check_hidden_wall() -> None:
+    """Bloc invisible : charge, masque, solide pour le vivant et le fantome."""
+    data = {
+        "name": "hidden",
+        "tile_size": 32,
+        "legend": {"#": "wall", "h": settings.TILE_KIND_HIDDEN, "P": "player_spawn"},
+        "rows": [
+            "#####",
+            "#P.h#",
+            "#####",
+        ],
+    }
+    level = Level.from_dict(data)
+    assert len(level.hidden_walls) == 1, "la fabrique hidden_wall doit poser un sprite"
+    wall = level.hidden_walls[0]
+    assert not wall.visible, "le bloc invisible ne doit pas se dessiner vivant"
+    assert wall.alpha == 0
+    assert level.hidden_walls in level.static_walls
+    assert level.hidden_walls in level.ghost_walls
+    assert level.spectral_walls not in level.ghost_walls
+    print("  bloc invisible -> charge, masque, solide")
 
 
 def check_progression() -> None:
@@ -1066,10 +1092,14 @@ def check_tutorial_is_solvable(window: arcade.Window) -> None:
         previous_x = view.player.center_x
         wall_probe = (view.player.center_x + 48, view.player.center_y)
         floor_probe = (view.player.center_x + view.player.width / 2 + 28, view.player.bottom - 4)
-        wall_ahead = bool(arcade.get_sprites_at_point(wall_probe, view.level.walls))
+        wall_ahead = bool(
+            arcade.get_sprites_at_point(wall_probe, view.level.walls)
+            or arcade.get_sprites_at_point(wall_probe, view.level.hidden_walls)
+        )
         hole_ahead = not (
             arcade.get_sprites_at_point(floor_probe, view.level.walls)
             or arcade.get_sprites_at_point(floor_probe, view.level.spectral_walls)
+            or arcade.get_sprites_at_point(floor_probe, view.level.hidden_walls)
         )
         if view.player.on_ground and (blocked or wall_ahead or hole_ahead):
             view.player.jump()

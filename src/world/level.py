@@ -96,6 +96,8 @@ from src.world.obstacles import (
     TILE_SPECS,
     Checkpoint,
     Door,
+    GroundCell,
+    HiddenWall,
     IceBlock,
     SpectralWall,
     Spike,
@@ -169,6 +171,7 @@ class Level:
     theme: str = settings.GROUND_THEME_DEFAULT
     walls: arcade.SpriteList = field(default_factory=_static_sprite_list)
     spectral_walls: arcade.SpriteList = field(default_factory=_static_sprite_list)
+    hidden_walls: arcade.SpriteList = field(default_factory=_static_sprite_list)
     hazards: arcade.SpriteList = field(default_factory=_static_sprite_list)
     doors: arcade.SpriteList = field(default_factory=_dynamic_sprite_list)
     checkpoints: arcade.SpriteList = field(default_factory=_dynamic_sprite_list)
@@ -416,6 +419,7 @@ class Level:
             ("une torche", self.torches),
             ("un lance-flammes", self.flamethrowers),
             ("un bloc tombant", self.falling_blocks),
+            ("un bloc invisible", self.hidden_walls),
             ("une porte", self.doors),
             ("un checkpoint", self.checkpoints),
             ("un objet", self.items),
@@ -454,13 +458,24 @@ class Level:
 
     @property
     def static_walls(self) -> list[arcade.SpriteList]:
-        """Terrain immobile (hash spatial) : murs normaux et spectraux."""
-        return [self.walls, self.spectral_walls]
+        """Terrain immobile (hash spatial) : murs, spectraux et blocs invisibles."""
+        return [self.walls, self.spectral_walls, self.hidden_walls]
+
+    @property
+    def ghost_walls(self) -> list[arcade.SpriteList]:
+        """Murs opaques au fantome (les spectraux restent traversables)."""
+        return [self.walls, self.hidden_walls]
 
     @property
     def solid_platforms(self) -> list[arcade.SpriteList]:
-        """Listes solides pour le corps physique (murs + murs spectraux + cadavres)."""
-        return [self.walls, self.spectral_walls, self.corpses, self.falling_blocks]
+        """Listes solides pour le corps physique (murs + spectraux + invisibles + cadavres)."""
+        return [
+            self.walls,
+            self.spectral_walls,
+            self.hidden_walls,
+            self.corpses,
+            self.falling_blocks,
+        ]
 
     def spawn_corpse(self, corpse: arcade.Sprite) -> None:
         """Ajoute un cadavre au niveau (il devient solide immediatement)."""
@@ -538,6 +553,7 @@ class Level:
         if view_rect is None or not self._wall_chunks:
             self.walls.draw_hit_boxes(color)
             self.spectral_walls.draw_hit_boxes(color)
+            self.hidden_walls.draw_hit_boxes(color)
             self.hazards.draw_hit_boxes(color)
             return
         for chunk in self._iter_visible_chunks(self._wall_chunks, view_rect):
@@ -546,6 +562,7 @@ class Level:
             chunk.draw_hit_boxes(color)
         for chunk in self._iter_visible_chunks(self._hazard_chunks, view_rect):
             chunk.draw_hit_boxes(color)
+        self.hidden_walls.draw_hit_boxes(color)
 
     def count_visible_tiles(self, view_rect) -> tuple[int, int, int, int]:
         """Retourne (tuiles visibles, tuiles totales, murs visibles, murs totaux)."""
@@ -575,6 +592,7 @@ class Level:
         for sprite_list in (
             self.walls,
             self.spectral_walls,
+            self.hidden_walls,
             self.hazards,
             self.doors,
             self.checkpoints,
@@ -814,6 +832,10 @@ def _add_spectral_wall(level: Level, x: float, y: float, cell: GroundCell | None
     )
 
 
+def _add_hidden_wall(level: Level, x: float, y: float) -> None:
+    level.hidden_walls.append(HiddenWall(x, y, size=level.tile_size))
+
+
 def _add_door(level: Level, x: float, y: float) -> None:
     level.doors.append(Door(x, y, size=level.tile_size))
 
@@ -949,6 +971,7 @@ def _decoration_factory(kind: str) -> Callable[[Level, float, float], None]:
 
 _FACTORIES: dict[str, Callable[[Level, float, float], None]] = {
     "spectral_wall": _add_spectral_wall,
+    settings.TILE_KIND_HIDDEN: _add_hidden_wall,
     "door": _add_door,
     "checkpoint": _add_checkpoint,
     "player_spawn": _add_player_spawn,

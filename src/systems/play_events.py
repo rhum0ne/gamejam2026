@@ -94,7 +94,7 @@ def on_player_death_enter_ghost(view: PlayView, data: dict) -> None:
         spawn_x, spawn_y = corpse.center_x, corpse.center_y
     stats = view.session.progression.ghost_stats
     view.ghost = Ghost(spawn_x, spawn_y, stats, anchor=(spawn_x, spawn_y))
-    view.ghost.bind_world(view.level.walls)
+    view.ghost.bind_world(view.level.ghost_walls)
     view.session.knows_esprit = True
     play_ghost_start()
     view.start_ghost_emergence(spawn_x, spawn_y)
