@@ -6,6 +6,7 @@ l'ecran, puis reapparaissent a leur case d'origine.
 
 Les delais (`delay` avant la chute, `respawn` avant le retour) sont par
 instance, comme les lance-flammes, via le champ JSON `falling_blocks`.
+`ghost_only` : invisible pour le corps, visible et pleinement solide.
 """
 
 from __future__ import annotations
@@ -51,26 +52,34 @@ class FallingSpec:
     row: int
     delay: float = settings.FALLING_BLOCK_DELAY
     respawn: float = settings.FALLING_BLOCK_RESPAWN
+    ghost_only: bool = False
 
     def __post_init__(self) -> None:
         if self.column < 0 or self.row < 0:
             raise ValueError("column et row doivent etre positifs")
         object.__setattr__(self, "delay", _clamp_delay(self.delay))
         object.__setattr__(self, "respawn", _clamp_respawn(self.respawn))
+        object.__setattr__(self, "ghost_only", bool(self.ghost_only))
 
     def with_delay(self, delay: float) -> FallingSpec:
-        return FallingSpec(self.column, self.row, delay, self.respawn)
+        return FallingSpec(self.column, self.row, delay, self.respawn, self.ghost_only)
 
     def with_respawn(self, respawn: float) -> FallingSpec:
-        return FallingSpec(self.column, self.row, self.delay, respawn)
+        return FallingSpec(self.column, self.row, self.delay, respawn, self.ghost_only)
+
+    def with_ghost_only(self, ghost_only: bool) -> FallingSpec:
+        return FallingSpec(self.column, self.row, self.delay, self.respawn, ghost_only)
 
     def to_json(self) -> dict:
-        return {
+        payload = {
             "x": self.column,
             "y": self.row,
             "delay": round(self.delay, 3),
             "respawn": round(self.respawn, 3),
         }
+        if self.ghost_only:
+            payload["ghost_only"] = True
+        return payload
 
 
 class FallingBlock(arcade.Sprite):
@@ -87,6 +96,7 @@ class FallingBlock(arcade.Sprite):
         size: int = settings.TILE_SIZE,
         delay: float = settings.FALLING_BLOCK_DELAY,
         respawn: float = settings.FALLING_BLOCK_RESPAWN,
+        ghost_only: bool = False,
     ) -> None:
         texture = sprites.placeholder_tile(
             settings.COLOR_FALLING_BLOCK,
@@ -104,12 +114,15 @@ class FallingBlock(arcade.Sprite):
         self.home_y = center_y
         self.delay = _clamp_delay(delay)
         self.respawn = _clamp_respawn(respawn)
+        self.ghost_only = bool(ghost_only)
         self._size = size
         self.state = FallingState.IDLE
         self._timer = 0.0
         self._shake_age = 0.0
         self._fall_speed = 0.0
         self.just_respawned = False
+        self._ghost_view = False
+        self._refresh_look()
 
     @property
     def is_solid(self) -> bool:
@@ -130,7 +143,7 @@ class FallingBlock(arcade.Sprite):
         self.state = FallingState.ARMED
         self._timer = self.delay
         self._shake_age = 0.0
-        self.color = settings.COLOR_FALLING_BLOCK_ARMED
+        self._refresh_look()
 
     def tick(self, delta_time: float) -> None:
         """Avance les timers, la gravite et la position.
@@ -165,7 +178,7 @@ class FallingBlock(arcade.Sprite):
         self._fall_speed = 0.0
         self.change_x = 0.0
         self.change_y = 0.0
-        self.color = settings.COLOR_FALLING_BLOCK
+        self._refresh_look()
 
     def went_off_screen(self) -> bool:
         return self.state is FallingState.FALLING and self.top < -self._size
@@ -192,9 +205,9 @@ class FallingBlock(arcade.Sprite):
         self._fall_speed = 0.0
         self.change_x = 0.0
         self.change_y = 0.0
-        self.color = settings.COLOR_FALLING_BLOCK
         self._shake_age = 0.0
         self.just_respawned = True
+        self._refresh_look()
 
     def stick_rider(self, rider: arcade.Sprite) -> None:
         """Colle `rider` sur le dessus pour qu'il tombe avec le bloc."""
@@ -220,6 +233,37 @@ class FallingBlock(arcade.Sprite):
             guard += 1
         rider.change_y = 0.0
 
+    def set_ghost_view(self, ghost_view: bool) -> None:
+        """Le corps ne voit pas un bloc `ghost_only` ; le fantome si."""
+        visible = bool(ghost_view)
+        if visible == self._ghost_view:
+            return
+        self._ghost_view = visible
+        self._refresh_look()
+
+    def _refresh_look(self) -> None:
+        armed = self.state is FallingState.ARMED
+        if not self.ghost_only:
+            self.visible = True
+            self.alpha = 255
+            self.color = (
+                settings.COLOR_FALLING_BLOCK_ARMED
+                if armed
+                else settings.COLOR_FALLING_BLOCK
+            )
+            return
+        if self._ghost_view:
+            self.visible = True
+            self.alpha = settings.FALLING_BLOCK_GHOST_ALPHA
+            self.color = (
+                settings.COLOR_FALLING_BLOCK_GHOST_ARMED
+                if armed
+                else settings.COLOR_FALLING_BLOCK_GHOST
+            )
+            return
+        self.visible = False
+        self.alpha = 0
+
 
 def parse_falling_specs(raw: object) -> dict[tuple[int, int], FallingSpec]:
     """Lit le champ `falling_blocks` d'une carte, ou {} s'il est absent."""
@@ -241,6 +285,7 @@ def parse_falling_specs(raw: object) -> dict[tuple[int, int], FallingSpec]:
                 respawn=_as_float(
                     entry.get("respawn", settings.FALLING_BLOCK_RESPAWN), "respawn"
                 ),
+                ghost_only=_as_bool(entry.get("ghost_only", False), "ghost_only"),
             )
         except ValueError as error:
             raise ValueError(f"falling_blocks[{index}] : {error}") from error
@@ -263,3 +308,9 @@ def _as_float(value: object, name: str) -> float:
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         raise ValueError(f"{name} doit etre un nombre")
     return float(value)
+
+
+def _as_bool(value: object, name: str) -> bool:
+    if not isinstance(value, bool):
+        raise ValueError(f"{name} doit etre un booleen")
+    return value

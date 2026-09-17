@@ -27,6 +27,18 @@ from src.entities.player import Player
 from src.world.flamethrower import Flamethrower
 from src.world.level import Level
 from src.world.obstacles import Checkpoint, Door
+from src.world.spring import Spring
+
+
+def springs_launching_player(player: Player, springs: arcade.SpriteList) -> list[Spring]:
+    """Ressorts dont la face active touche le corps vivant."""
+    if not player.alive:
+        return []
+    launched: list[Spring] = []
+    for sprite in arcade.check_for_collision_with_list(player, springs):
+        if isinstance(sprite, Spring) and sprite.can_launch(player):
+            launched.append(sprite)
+    return launched
 
 
 def player_hits_flame(player: Player, throwers: arcade.SpriteList) -> bool:
@@ -78,7 +90,7 @@ def player_hits_hazard(player: Player, level: Level) -> bool:
 
     Seul un contact vertical est mortel : sauter sur une pique au sol, se
     cogner la tete contre une pique de plafond, ou se faire tomber dessus une
-    pique en chute. Frôler une pique par le côté en marchant ne tue pas.
+    pique en chute. Froler une pique par le cote en marchant ne tue pas.
     """
     if not player.alive:
         return False

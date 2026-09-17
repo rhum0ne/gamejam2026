@@ -521,44 +521,45 @@ def check_enemy_ai() -> None:
     assert enemy.state is EnemyState.CHASE, "a portee et au meme niveau : doit poursuivre"
     assert enemy.change_x != 0.0
 
-    # Approche a portee de melee : l'ennemi s'arrete et arme son coup.
+    # Approche a portee de melee : l'ennemi s'arrete et attend avant de frapper.
     player.center_x = enemy.center_x + settings.ENEMY_ATTACK_RANGE - 5.0
     enemy.update(FRAME, player=player, corpses=None)
-    assert enemy.state is EnemyState.ATTACK, "assez proche : doit s'arreter pour frapper"
-    assert enemy.change_x == 0.0, "l'ennemi ne doit pas glisser pendant l'attaque"
+    assert enemy.state is EnemyState.WINDUP, "assez proche : doit s'arreter avant de frapper"
+    assert enemy.change_x == 0.0, "l'ennemi ne doit pas glisser pendant l'armement"
 
-    # Toucher le corps ne tue pas : joueur colle contre l'ennemi pendant l'armement.
+    # Toucher le corps ne tue pas : joueur colle contre l'ennemi pendant l'attente.
     player.center_x = enemy.center_x + 10.0
     assert arcade.check_for_collision(enemy, player), "le joueur doit chevaucher le corps"
     assert collisions.enemy_striking_player(player, [enemy]) is None, (
         "le simple contact avec le corps ne doit pas tuer"
     )
 
-    # Joueur immobile a portee : la lame finit par le toucher, apres l'armement.
+    # Joueur immobile a portee : la lame finit par le toucher, apres l'attente.
     frames_to_hit = None
-    for frame in range(120):
+    for frame in range(180):
         enemy.update(FRAME, player=player, corpses=None)
         if collisions.enemy_striking_player(player, [enemy]) is enemy:
             frames_to_hit = frame + 1
             break
     assert frames_to_hit is not None, "un joueur immobile a portee doit etre touche par le coup"
-    assert frames_to_hit > 5, "le coup doit etre annonce (armement) avant de toucher"
+    windup_frames = int(settings.ENEMY_ATTACK_WINDUP / FRAME)
+    assert frames_to_hit > windup_frames, "le coup doit attendre le delai avant de toucher"
 
-    # Esquive : le joueur recule hors de portee de la lame pendant l'armement.
+    # Esquive : le joueur recule pendant l'attente, le squelette annule le coup.
     dodger = Enemy(200.0, 200.0)
     player.center_x = dodger.center_x + settings.ENEMY_ATTACK_RANGE - 5.0
     player.center_y = dodger.center_y
     dodger.update(FRAME, player=player, corpses=None)
-    assert dodger.state is EnemyState.ATTACK
+    assert dodger.state is EnemyState.WINDUP
     player.center_x = dodger.center_x + settings.ENEMY_ATTACK_REACH + 10.0
     for _ in range(120):
         dodger.update(FRAME, player=player, corpses=None)
         assert collisions.enemy_striking_player(player, [dodger]) is None, (
-            "hors de portee de la lame : le coup doit rater"
+            "hors de portee : le coup ne doit pas partir"
         )
-        if dodger.state is not EnemyState.ATTACK:
+        if dodger.state is EnemyState.CHASE:
             break
-    assert dodger.state is EnemyState.CHASE, "coup fini, joueur recule : doit reprendre la poursuite"
+    assert dodger.state is EnemyState.CHASE, "cible partie pendant l'attente : doit reprendre la poursuite"
 
     # Mort : bille bleue, etat DYING, un 2e coup pendant DYING est ignore.
     orb = enemy.take_damage()
@@ -1603,22 +1604,47 @@ def check_editor_document() -> None:
     assert tuned_fall is not None
     assert abs(tuned_fall.delay - (placed_fall.delay + 0.15)) < 1e-6
     assert abs(tuned_fall.respawn - (placed_fall.respawn + 0.6)) < 1e-6
+    assert not tuned_fall.ghost_only
+    ghost_fall = document.adjust_falling(*fall_cell, invert_ghost=True)
+    assert ghost_fall is not None and ghost_fall.ghost_only
     fall_path = Path(tempfile.mkdtemp()) / "falling_roundtrip.json"
     fall_saved = document.save(fall_path)
     fall_payload = json.loads(fall_saved.read_text(encoding="utf-8"))
     assert settings.TILE_KIND_FALLING in fall_payload["legend"].values()
     fall_entries = fall_payload.get("falling_blocks", [])
     assert fall_entries, "la carte doit ecrire le champ falling_blocks"
-    assert abs(fall_entries[0]["delay"] - tuned_fall.delay) < 1e-6
-    assert abs(fall_entries[0]["respawn"] - tuned_fall.respawn) < 1e-6
+    assert abs(fall_entries[0]["delay"] - ghost_fall.delay) < 1e-6
+    assert abs(fall_entries[0]["respawn"] - ghost_fall.respawn) < 1e-6
+    assert fall_entries[0].get("ghost_only") is True
     reloaded_fall = EditorDocument.from_file(fall_saved)
     restored_fall = reloaded_fall.falling_at(*fall_cell)
     assert restored_fall is not None
-    assert abs(restored_fall.delay - tuned_fall.delay) < 1e-6
-    assert abs(restored_fall.respawn - tuned_fall.respawn) < 1e-6
+    assert abs(restored_fall.delay - ghost_fall.delay) < 1e-6
+    assert abs(restored_fall.respawn - ghost_fall.respawn) < 1e-6
+    assert restored_fall.ghost_only
     fall_saved.unlink()
     document.undo()
     assert document.falling_at(*fall_cell) is None
+    spring_cell = (9, 9)
+    document.paint((spring_cell,), settings.TILE_KIND_SPRING)
+    placed_spring = document.spring_at(*spring_cell)
+    assert placed_spring is not None, "peindre un ressort doit creer ses reglages"
+    assert placed_spring.direction == "up"
+    tuned_spring = document.adjust_spring(*spring_cell, rotate=True)
+    assert tuned_spring is not None and tuned_spring.direction == "right"
+    spring_path = Path(tempfile.mkdtemp()) / "spring_roundtrip.json"
+    spring_saved = document.save(spring_path)
+    spring_payload = json.loads(spring_saved.read_text(encoding="utf-8"))
+    assert settings.TILE_KIND_SPRING in spring_payload["legend"].values()
+    spring_entries = spring_payload.get("springs", [])
+    assert spring_entries, "la carte doit ecrire le champ springs"
+    assert spring_entries[0]["dir"] == "right"
+    reloaded_spring = EditorDocument.from_file(spring_saved)
+    restored_spring = reloaded_spring.spring_at(*spring_cell)
+    assert restored_spring is not None and restored_spring.direction == "right"
+    spring_saved.unlink()
+    document.undo()
+    assert document.spring_at(*spring_cell) is None
     print(f"  editeur document -> {document.columns}x{document.rows}, "
           f"{len(palette.PALETTE)} elements de palette")
 
@@ -1705,7 +1731,7 @@ def check_ice_block(window: arcade.Window) -> None:
     player.change_x = settings.PLAYER_SPEED
     for _ in range(24):
         player.update(FRAME)
-    assert abs(player.change_x) > settings.PLAYER_SPEED * 0.45, (
+    assert abs(player.change_x) > settings.PLAYER_SPEED * 0.85, (
         f"la glace doit conserver l'elan, vitesse restante {player.change_x:.2f}"
     )
     print(f"  glace -> {len(ices)} blocs, elan conserve ({player.change_x:.2f} px/frame)")
@@ -1849,6 +1875,223 @@ def check_falling_block(window: arcade.Window) -> None:
         f"respawn ejecte"
     )
 
+    ghost_data = {
+        "name": "Chute fantome",
+        "tile_size": settings.TILE_SIZE,
+        "legend": {
+            ".": "vide",
+            "#": "wall",
+            "F": settings.TILE_KIND_FALLING,
+            "P": "player_spawn",
+        },
+        "rows": [
+            "########",
+            "#......#",
+            "#..P...#",
+            "#..F...#",
+            "########",
+        ],
+        "falling_blocks": [
+            {"x": 3, "y": 3, "delay": 0.05, "respawn": 0.2, "ghost_only": True},
+        ],
+    }
+    ghost_level = Level.from_dict(ghost_data)
+    ghost_block = ghost_level.falling_blocks[0]
+    assert ghost_block.ghost_only
+    assert not ghost_block.visible, "invisible pour le corps"
+    assert ghost_block.alpha == 0
+    ghost_player = Player(*ghost_level.player_spawn)
+    ghost_player.bind_world(
+        ghost_level.static_walls,
+        platforms=[ghost_level.corpses, ghost_level.falling_blocks],
+    )
+    for _ in range(6):
+        ghost_level.update(FRAME)
+        ghost_player.update(FRAME)
+        if ghost_block.supports(ghost_player):
+            ghost_block.arm()
+    assert ghost_block.state is FallingState.ARMED or ghost_block.state is FallingState.FALLING
+    assert not ghost_block.visible, "reste invisible une fois arme"
+    ghost_block.set_ghost_view(True)
+    assert ghost_block.visible, "le fantome doit voir le bloc"
+    assert ghost_block.alpha == settings.FALLING_BLOCK_GHOST_ALPHA
+    ghost_block.set_ghost_view(False)
+    assert not ghost_block.visible
+    print("  bloc tombant fantome -> invisible au corps, solide, visible au fantome")
+
+
+def check_spring(window: arcade.Window) -> None:
+    """Ressort vertical : garde vx, relance ~7 tuiles. Horizontal : inverse vx."""
+    from src.systems import collisions
+    from src.world.level import Level
+
+    vertical = {
+        "name": "Ressort vertical",
+        "tile_size": settings.TILE_SIZE,
+        "legend": {
+            ".": "vide",
+            "#": "wall",
+            "S": settings.TILE_KIND_SPRING,
+            "P": "player_spawn",
+        },
+        "rows": [
+            "##########",
+            "#........#",
+            "#........#",
+            "#........#",
+            "#........#",
+            "#........#",
+            "#........#",
+            "#........#",
+            "#........#",
+            "#........#",
+            "#........#",
+            "#........#",
+            "#..P.....#",
+            "#........#",
+            "#..S.....#",
+            "##########",
+        ],
+        "springs": [{"x": 3, "y": 14, "dir": "up"}],
+    }
+    level = Level.from_dict(vertical)
+    assert len(level.springs) == 1
+    spring = level.springs[0]
+    assert spring.direction == "up"
+    player = Player(*level.player_spawn)
+    player.bind_world(level.static_walls, platforms=[level.corpses])
+    player.walk(0)
+    launched = False
+    peak_rise = 0.0
+    vx_kept = settings.PLAYER_SPEED
+
+    def step() -> None:
+        nonlocal launched, peak_rise, vx_kept
+        if not launched:
+            player.change_x = 2.0
+        player.update(FRAME)
+        for pad in collisions.springs_launching_player(player, level.springs):
+            vx_kept = player.change_x
+            pad.launch(player)
+            launched = True
+        if launched and player.change_y > 0.0:
+            peak_rise = max(peak_rise, player.bottom - spring.top)
+        level.update(FRAME)
+
+    for _ in range(180):
+        step()
+        if launched and player.change_y <= 0.0 and peak_rise > settings.TILE_SIZE:
+            break
+    assert launched, "le ressort vertical doit relancer le joueur"
+    target = settings.SPRING_LAUNCH_TILES * settings.TILE_SIZE
+    assert abs(peak_rise - target) < settings.TILE_SIZE * 1.5, (
+        f"montee {peak_rise:.1f} px, vise {target:.1f} px (~7 tuiles)"
+    )
+    assert abs(player.change_x) > abs(vx_kept) * 0.85, (
+        f"le ressort vertical doit garder vx, restant {player.change_x:.2f}"
+    )
+    print(
+        f"  ressort vertical -> {peak_rise / settings.TILE_SIZE:.1f} tuiles, "
+        f"vx {player.change_x:.2f}"
+    )
+
+    horizontal = {
+        "name": "Ressort horizontal",
+        "tile_size": settings.TILE_SIZE,
+        "legend": {
+            ".": "vide",
+            "#": "wall",
+            "S": settings.TILE_KIND_SPRING,
+            "P": "player_spawn",
+        },
+        "rows": [
+            "########",
+            "#......#",
+            "#P....S#",
+            "########",
+        ],
+        "springs": [{"x": 6, "y": 2, "dir": "left"}],
+    }
+    side_level = Level.from_dict(horizontal)
+    side = side_level.springs[0]
+    assert side.direction == "left"
+    bumper = Player(*side_level.player_spawn)
+    bumper.bind_world(side_level.static_walls, platforms=[side_level.corpses])
+    bumper.walk(1)
+    bumper.change_x = settings.PLAYER_SPEED
+    flipped = False
+    for _ in range(40):
+        bumper.update(FRAME)
+        for pad in collisions.springs_launching_player(bumper, side_level.springs):
+            before = bumper.change_x
+            pad.launch(bumper)
+            flipped = True
+            assert bumper.change_x * before < 0.0 or bumper.change_x < 0.0
+        side_level.update(FRAME)
+        if flipped:
+            break
+    assert flipped, "le ressort horizontal doit inverser l'elan"
+    assert bumper.change_x < 0.0, f"vx devrait aller a gauche, {bumper.change_x:.2f}"
+    print(f"  ressort horizontal -> vx inversee ({bumper.change_x:.2f})")
+
+    open_sky = {
+        "name": "Dash ressort",
+        "tile_size": settings.TILE_SIZE,
+        "legend": {".": "vide", "#": "wall", "P": "player_spawn"},
+        "rows": [
+            "#" + "." * 28 + "#",
+            "#" + "." * 28 + "#",
+            "#" + "." * 28 + "#",
+            "#" + "." * 28 + "#",
+            "#" + "." * 28 + "#",
+            "#" + "." * 28 + "#",
+            "#" + "." * 28 + "#",
+            "#" + "." * 28 + "#",
+            "#" + "." * 28 + "#",
+            "#" + "." * 28 + "#",
+            "#" + "." * 13 + "P" + "." * 14 + "#",
+            "#" + "#" * 28 + "#",
+        ],
+    }
+    dash_level = Level.from_dict(open_sky)
+    dasher = Player(*dash_level.player_spawn)
+    dasher.bind_world(dash_level.static_walls, platforms=[dash_level.corpses])
+    for _ in range(4):
+        dasher.update(FRAME)
+    dasher.walk(1)
+    assert dasher.dash(), "le dash doit partir"
+    dasher.launch_vertical(settings.SPRING_LAUNCH_SPEED)
+    assert dasher._dash_jump, "un dash dans un ressort doit se porter comme un dash-saut"
+    dash_frames = int(settings.PLAYER_DASH_DURATION / FRAME) + 8
+    for _ in range(dash_frames):
+        dasher.walk(0)
+        dasher.update(FRAME)
+    assert not dasher.is_dashing, "la fenetre de dash doit etre terminee"
+    assert abs(dasher.change_x) >= settings.PLAYER_DASH_SPEED * 0.85, (
+        f"le dash dans un ressort doit garder l'elan, vx={dasher.change_x:.2f}"
+    )
+    print(f"  dash ressort vertical -> vx {dasher.change_x:.2f} apres le dash")
+
+    bumper_dash = Player(*dash_level.player_spawn)
+    bumper_dash.bind_world(dash_level.static_walls, platforms=[dash_level.corpses])
+    for _ in range(4):
+        bumper_dash.update(FRAME)
+    bumper_dash.jump()
+    for _ in range(3):
+        bumper_dash.update(FRAME)
+    bumper_dash.walk(1)
+    assert bumper_dash.dash(), "le dash doit partir"
+    bumper_dash.reverse_horizontal(-1)
+    assert bumper_dash._dash_jump
+    assert bumper_dash.change_x < 0.0
+    for _ in range(dash_frames):
+        bumper_dash.walk(0)
+        bumper_dash.update(FRAME)
+    assert bumper_dash.change_x <= -settings.PLAYER_DASH_SPEED * 0.85, (
+        f"le dash inverse par un ressort doit garder l'elan, vx={bumper_dash.change_x:.2f}"
+    )
+    print(f"  dash ressort horizontal -> vx {bumper_dash.change_x:.2f} apres le dash")
+
 
 def check_editor_views(window: arcade.Window) -> None:
     """Le navigateur et la vue d'edition se dessinent, peignent et annulent."""
@@ -1947,6 +2190,8 @@ def main() -> int:
         check_dash_stops_on_wall(window)
         print("[18/18] blocs tombants")
         check_falling_block(window)
+        print("[19/19] ressorts")
+        check_spring(window)
     finally:
         window.close()
     print("OK : le squelette demarre et tourne.")

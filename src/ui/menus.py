@@ -24,6 +24,7 @@ from src.ui.menu_kit import (
     draw_panel,
 )
 from src.ui.sfx import play_menu_click, play_menu_hover
+from src.ui.music import music
 from src.ui.title_fx import TitleStage
 from src.world.level import (
     LevelFormatError,
@@ -161,6 +162,7 @@ class TitleView(_HeldKeysMixin, arcade.View):
     def on_show_view(self) -> None:
         use_default_camera(self.window)
         load_level_catalog(reload=True)
+        music.play_main_theme()
         self._rebuild()
 
     def on_resize(self, width: int, height: int) -> None:

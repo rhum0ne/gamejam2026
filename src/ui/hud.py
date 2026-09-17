@@ -60,7 +60,9 @@ class Hud:
         self._soul_icon = sprites.load_sheet_region(
             settings.SPRITE_SOUL_ORB, (0, 0, soul_frame, soul_frame), size=icon
         )
-        self._key_icon = sprites.load_texture(settings.SPRITE_KEY, size=icon)
+        self._key_icon = sprites.load_trimmed_texture(
+            settings.SPRITE_KEY, width=settings.HUD_KEY_ICON
+        )
         self._build_texts()
 
     def _build_texts(self) -> None:
@@ -174,7 +176,6 @@ class Hud:
         """Jauge fantome en haut, puis une ligne par stat."""
         right = float(self.screen_width - self._MARGIN)
         icon = settings.HUD_STAT_ICON
-        row = icon + settings.HUD_STAT_GAP
         gauge_row = max(settings.HUD_GAUGE_HEIGHT, settings.HUD_GAUGE_LABEL_SIZE) + 4
         time_left = data.ghost_time_left
         active = time_left is not None
@@ -205,8 +206,10 @@ class Hud:
         self._soul_value.draw()
         self._draw_soul_icon(icon_x, y, alpha)
         if data.has_key:
-            y -= row
-            self._draw_key_icon(right - icon / 2, y, alpha)
+            key_w = float(self._key_icon.width)
+            key_h = float(self._key_icon.height)
+            y -= icon / 2 + settings.HUD_STAT_GAP + key_h / 2
+            self._draw_key_icon(right - key_w / 2, y, alpha)
 
     def _draw_soul_icon(self, center_x: float, center_y: float, alpha: int) -> None:
         size = settings.HUD_STAT_ICON
@@ -219,10 +222,14 @@ class Hud:
         )
 
     def _draw_key_icon(self, center_x: float, center_y: float, alpha: int) -> None:
-        size = settings.HUD_STAT_ICON
         arcade.draw_texture_rect(
             self._key_icon,
-            XYWH(center_x, center_y, size, size),
+            XYWH(
+                center_x,
+                center_y,
+                self._key_icon.width,
+                self._key_icon.height,
+            ),
             pixelated=True,
             color=WHITE,
             alpha=alpha,

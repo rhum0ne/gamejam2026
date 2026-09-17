@@ -27,7 +27,7 @@ FONTS_DIR = ASSETS_DIR / "fonts"
 # Version nettoyee du coup d'epee : l'original a ~570 ms de silence en tete.
 SOUND_ATTACK = "attack_sword_sync.wav"
 SOUND_ATTACK_FALLBACK = ":resources:sounds/hit1.wav"
-SOUND_LEVEL_WIN = "level-win.wav"
+SOUND_LEVEL_WIN = "victoire-level.wav"
 SOUND_SOUL_GET = "soul_get.wav"
 SOUND_CHECKPOINT = "checkpoint_set.wav"
 SOUND_KEY_FOUND = "key_found.wav"
@@ -37,6 +37,7 @@ SOUND_MOB_HIT = "mob_hit.wav"
 SOUND_GHOST_START = "ghost_start.wav"
 SOUND_GHOST_END = "ghost_end.wav"
 SOUND_DASH = "dash.wav"
+SOUND_ZOMBIE_BREATH ="Zombie_Breath.wav"
 # Temporaire : pas de sample de saut dedie, on reutilise le dash.
 SOUND_JUMP = "dash.wav"
 SOUND_BOSS_FIRE = "boss-fire.wav"
@@ -60,6 +61,8 @@ SOUND_VOLUME_FOOTSTEP = 0.4
 SOUND_VOLUME_FOOTSTEP_LAND = 0.55
 SOUND_FOOTSTEP_PITCH_MIN = 0.92
 SOUND_FOOTSTEP_PITCH_MAX = 1.08
+SOUND_VOLUME_ZOMBIE_BREATH = 0.55
+ZOMBIE_BREATH_INTERVAL = 5
 # Echo "caverne" : copies plus faibles et un peu plus graves, pour le vide.
 SOUND_ECHO_DELAY = 0.22
 SOUND_ECHO_DECAY = 0.34
@@ -68,6 +71,16 @@ SOUND_ECHO_SPEED = 0.97
 SOUND_ECHO_FOOTSTEP_DELAY = 0.12
 SOUND_ECHO_FOOTSTEP_DECAY = 0.22
 SOUND_ECHO_FOOTSTEP_TAPS = 1
+
+# Musique de fond (bouclee, distincte des bruitages tir-et-oublie ci-dessus) :
+# theme principal (menu + niveaux), theme du combat de boss, et boucle du mode
+# fantome qui remplace temporairement le theme en cours (voir `src.ui.music`).
+SOUND_MAIN_THEME = "main-theme.wav"
+SOUND_BOSS_FIGHT = "boss-fight.wav"
+SOUND_MODE_SPECTRAL = "mode-spectral.wav"
+SOUND_VOLUME_MAIN_THEME = 0.35
+SOUND_VOLUME_BOSS_FIGHT = 0.4
+SOUND_VOLUME_MODE_SPECTRAL = 0.4
 
 # --------------------------------------------------------------------------- #
 # Police
@@ -85,13 +98,13 @@ EDITOR_UI_FONT = ("Segoe UI", "Calibri", "Arial", "Helvetica")
 
 # Ordre de parcours des niveaux : le nom du fichier dans assets/maps/.
 LEVEL_SEQUENCE: tuple[str, ...] = (
-    "level_1_tuto.json",
     "Niveau_1-1.json",
     "Niveau_1-2.json",
     "Niveau_1-3.json",
     "Niveau_1-4.json",
     "Niveau_1-5.json",
     "Niveau_1-6.json",
+    "BOSS.json",
     "Niveau_Bonus_ouvert.json",
 )
 # Champ JSON `type` : menu Basic / Puzzle / Others, plus un seul Dev world.
@@ -131,6 +144,7 @@ SCREEN_WIDTH = 1280
 SCREEN_HEIGHT = 720
 SCREEN_MIN_WIDTH = 640
 SCREEN_MIN_HEIGHT = 360
+START_FULLSCREEN = True
 GAME_TITLE = "Out Of Body!"
 SCREEN_TITLE = GAME_TITLE
 FPS = 60
@@ -165,6 +179,7 @@ RENDER_CULL_PAD = 120.0
 TILE_KIND_ICE = "ice_block"
 TILE_KIND_FALLING = "falling_block"
 TILE_KIND_HIDDEN = "hidden_wall"
+TILE_KIND_SPRING = "spring"
 
 # Noms de fichiers dans SPRITES_DIR, sans extension. Le chargeur ajoute `.png`.
 # Le terrain (dirt/grass/...) vient desormais de `SHEET_GROUND` plus bas
@@ -406,6 +421,16 @@ FALLING_BLOCK_GRAVITY = GRAVITY
 FALLING_BLOCK_MAX_SPEED = 12.0
 FALLING_BLOCK_SHAKE = 1.6  # pixels, pendant le delay
 
+# Ressorts : H dans l'editeur cycle up / right / down / left.
+# Vertical : conserve change_x, impose une montee d'environ SPRING_LAUNCH_TILES
+# tuiles (v=13.6 et gravite 0.40 : ~7 tuiles). Horizontal : inverse change_x.
+SPRING_LAUNCH_TILES = 7.0
+SPRING_LAUNCH_SPEED = 13.6
+SPRING_MIN_SPEED = 1.0  # si l'elan horizontal est quasi nul, on pousse au moins ca
+SPRING_APPROACH = 0.05  # deja en train de s'eloigner si la vitesse projetee depasse
+SPRING_COOLDOWN = 0.12
+SPRING_HORIZONTAL_LOCK = 0.18  # ignore le frein aerien juste apres un rebond lateral
+
 # Halo rouge des menaces (piques et ennemis), perce le voile fantome.
 # Gros, saturé, identique pour les deux : un signal DANGER, pas un point.
 HAZARD_GHOST_GLOW_SIZE = 260.0
@@ -478,10 +503,11 @@ CHECKPOINT_IGNITE_RISE = 0.18  # part du flash consacree a la montee
 PLAYER_ACCEL_TIME = 0.25
 # Glissade a l'arret (sol) : 2-3 frames, quelques pixels tout au plus.
 PLAYER_SLIDE_TIME = 0.01
-# Glace : le corps conserve son elan, acceleration et demi-tour sont mous.
-PLAYER_ICE_SLIDE_TIME = 1.7
-PLAYER_ICE_ACCEL_SCALE = 0.38
-PLAYER_ICE_STOP_SPEED = 0.06
+# Glace : quasi pas de frein. Dash ou cadavre pour s'arreter.
+PLAYER_ICE_SLIDE_TIME = 9.0
+PLAYER_ICE_ACCEL_SCALE = 0.10
+PLAYER_ICE_TURN_SCALE = 0.32  # multiplier encore plus faible en demi-tour
+PLAYER_ICE_STOP_SPEED = 0.015
 # Fraction de l'acceleration au sol quand le joueur est en l'air (1 = aussi vif qu'au sol).
 PLAYER_AIR_CONTROL = 1.15
 # Ralentissement juste apres l'atterrissage.
@@ -623,7 +649,7 @@ GHOST_GLOW_PULSE = 0.12  # variation d'opacite (0 = halo fixe)
 # Cadavre
 # --------------------------------------------------------------------------- #
 
-CORPSE_LIFETIME = 15.0  # secondes avant transformation en squelette
+CORPSE_LIFETIME = 20.0  # secondes avant transformation en squelette
 CORPSE_FADE_TIME = 0.35  # fondu cadavre -> os (court, masque par les particules)
 CORPSE_EAT_TIME = 4.0  # secondes pour qu'un ennemi devore un cadavre (laisse un squelette)
 CORPSE_DECAY_COUNT = 28
@@ -754,6 +780,7 @@ ENEMY_ATTACK_VERTICAL_RANGE = 40.0  # tolerance verticale (doit etre a peu pres 
 # (avant frame 1) est plus courte qu'avec l'ancienne planche a 10 frames ;
 # compense en partie par ANIM_ENEMY_ATTACK_FRAME_TIME plus long (voir plus bas).
 ENEMY_ATTACK_HIT_FRAMES: tuple[int, int] = (1, 1)
+ENEMY_ATTACK_WINDUP = 0.4  # arret telegraphie avant de lancer le coup
 ENEMY_ATTACK_COOLDOWN = 0.4  # secondes de pause entre deux coups
 ENEMY_CORPSE_SMELL_RANGE = 320.0  # distance d'attraction vers un cadavre
 ENEMY_HIT_FLASH_DURATION = 0.18
@@ -1021,6 +1048,17 @@ BOSS_SHOT_ORIGIN_Y = 0.0
 BOSS_SHOT_SPEED = 8.0  # px/frame, vitesse initiale
 BOSS_SHOT_SPEED_END = 4.0  # px/frame, palier en fin de course
 BOSS_SHOT_LIFE = 2.4
+# arm_projectile_glowing.png : planche rognee au plus proche du contenu visible
+# (35x15/frame, pas 100x100 comme les autres planches du boss) pour que le
+# centre de la texture coincide avec le halo au lieu d'un cadre 100x100 avec
+# une grosse marge transparente asymetrique. BOSS_SHOT_WIDTH/HEIGHT restent
+# des valeurs mesurees sur le halo reel (35x14 apres rognage) : avec l'ancienne
+# planche, la hitbox (centree sur la texture, sans offset) tombait a cote du
+# halo visible (~82x39 px de decalage a BOSS_SCALE) au lieu d'a l'interieur -
+# le joueur pouvait etre touche par un rectangle invisible loin du projectile
+# affiche. Le rognage aligne enfin les deux.
+BOSS_PROJECTILE_FRAME_WIDTH = 35
+BOSS_PROJECTILE_FRAME_HEIGHT = 15
 BOSS_SHOT_WIDTH = 16.0 * BOSS_SCALE
 BOSS_SHOT_HEIGHT = 7.0 * BOSS_SCALE
 BOSS_SHOT_SPREAD_DEG = 11.0  # ecart aleatoire autour du joueur
@@ -1116,6 +1154,27 @@ CAMERA_BOSS_DEATH_SHAKE_TIME = 0.62
 CAMERA_BOSS_DEATH_BOOM_SHAKE = 9.0
 CAMERA_BOSS_DEATH_BOOM_SHAKE_TIME = 0.24
 
+# Directeur de spawn : les ennemis de la carte servent de graines, puis les
+# points `enemy_spawns` alimentent de petites vagues de renforts. Le directeur
+# attend que la zone soit hors camera et assez loin du joueur avant d'armer
+# une apparition mystique.
+ENEMY_SPAWN_MAX_ACTIVE = 6
+ENEMY_SPAWN_WAVE_SIZE = 2
+ENEMY_SPAWN_INITIAL_DELAY = 5.0
+ENEMY_SPAWN_WAVE_INTERVAL = 6.0
+ENEMY_SPAWN_WARNING_DURATION = 0.7
+ENEMY_SPAWN_OFFSCREEN_MARGIN = 64.0
+ENEMY_SPAWN_MARKER_RADIUS = 22.0
+ENEMY_SPAWN_GHOST_HINT_SIZE = 36.0
+ENEMY_SPAWN_GHOST_HINT_ALPHA = 86
+
+# Compatibilite avec les reglages de la premiere version du respawn. Le
+# directeur les lit encore pour le delai et les distances de securite.
+ENEMY_RESPAWN_DELAY = 4.0
+ENEMY_RESPAWN_RETRY_DELAY = 0.5
+ENEMY_RESPAWN_MIN_PLAYER_DISTANCE = 192.0
+ENEMY_RESPAWN_MIN_ENEMY_DISTANCE = 96.0
+
 # --------------------------------------------------------------------------- #
 # Objets et progression
 # --------------------------------------------------------------------------- #
@@ -1172,6 +1231,12 @@ COLOR_ICE_INNER = (186, 232, 244)
 COLOR_FALLING_BLOCK = (176, 122, 64)
 COLOR_FALLING_BLOCK_INNER = (214, 168, 96)
 COLOR_FALLING_BLOCK_ARMED = (212, 96, 64)
+COLOR_FALLING_BLOCK_GHOST = (150, 214, 255)
+COLOR_FALLING_BLOCK_GHOST_ARMED = (214, 168, 255)
+COLOR_SPRING = (168, 116, 64)
+COLOR_SPRING_COIL = (214, 168, 92)
+COLOR_SPRING_PAD = (236, 214, 150)
+FALLING_BLOCK_GHOST_ALPHA = 210
 COLOR_SPECTRAL_WALL = (96, 84, 140)
 # Contour du bloc invisible en mode fantome (bleu tres clair).
 COLOR_HIDDEN_WALL = (176, 216, 255)
@@ -1216,6 +1281,8 @@ COLOR_ENEMY = (188, 92, 160)
 COLOR_ENEMY_HIT = (255, 155, 155)
 COLOR_ENEMY_GLOW = (255, 28, 22)
 COLOR_ENEMY_GLOW_CORE = (255, 92, 64)
+COLOR_ENEMY_SPAWN = (190, 78, 232)
+COLOR_ENEMY_SPAWN_GHOST = (144, 208, 255)
 COLOR_KEY = (232, 204, 96)
 COLOR_KEY_GLOW = (255, 214, 96)
 COLOR_KEY_GLOW_CORE = (255, 244, 190)
@@ -1421,6 +1488,7 @@ UI_KEY_CAPTION_SIZE = 16  # libelles a cote des icones
 
 # Stats haut-droit : jauge fantome en haut, puis une ligne par item.
 HUD_STAT_ICON = 40
+HUD_KEY_ICON = 80  # largeur de la cle HUD (sprite 20x10 recadre, ratio 2:1)
 HUD_STAT_GAP = 8  # espace vertical entre deux lignes
 HUD_STAT_VALUE_GAP = 10  # espace icone -> valeur
 HUD_GAUGE_WIDTH = 168

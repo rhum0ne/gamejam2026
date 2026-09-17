@@ -5,9 +5,10 @@ Priorites de comportement, de la plus forte a la plus faible :
                 (c'est le coeur de la mecanique d'appat) ;
     2. CHASE  : le corps physique vivant est a portee -> poursuite. Une fois a
                 portee de melee, l'ennemi s'arrete et donne un coup d'epee
-                (ATTACK, voir `_start_swing`) : seul ce coup tue le joueur, et
-                seulement pendant les frames ou la lame est tendue
-                (`strike_active`). Toucher le corps de l'ennemi ne tue pas ;
+                (WINDUP puis ATTACK, voir `_start_windup`) : seul ce coup tue
+                le joueur, et seulement pendant les frames ou la lame est
+                tendue (`strike_active`). Toucher le corps de l'ennemi ne tue
+                pas ;
     3. PATROL : va-et-vient, demi-tour devant un mur ou au bord d'une plateforme.
 `_player_in_range` ignore un joueur trop eloigne verticalement (pas sur le
 meme "etage") : sans ca, un ennemi au sol "suit" un joueur juste au-dessus de
@@ -39,6 +40,7 @@ class EnemyState(Enum):
 
     PATROL = auto()
     CHASE = auto()
+    WINDUP = auto()
     ATTACK = auto()
     FEAST = auto()
     DYING = auto()
@@ -91,7 +93,13 @@ def _die_animation() -> sprites.StripAnimation:
 class Enemy(EnemyBase):
     """Ennemi terrestre carnivore."""
 
-    def __init__(self, center_x: float, center_y: float) -> None:
+    def __init__(
+        self,
+        center_x: float,
+        center_y: float,
+        *,
+        drops_soul: bool = True,
+    ) -> None:
         self._idle = _idle_animation()
         self._walk = _walk_animation()
         self._attack = _attack_animation()
@@ -122,9 +130,11 @@ class Enemy(EnemyBase):
         self.attack_reach = settings.ENEMY_ATTACK_REACH
         self.attack_vertical_range = settings.ENEMY_ATTACK_VERTICAL_RANGE
         self._attack_cooldown = 0.0
+        self._attack_windup = 0.0
         self._base_color = self.color
         self._hit_flash_left = 0.0
         self._knockback_x = 0.0
+        self._drops_soul = drops_soul
         self._physics: arcade.PhysicsEnginePlatformer | None = None
         self._ground: arcade.SpriteList | None = None
         self._hazards: arcade.SpriteList | None = None
@@ -189,9 +199,27 @@ class Enemy(EnemyBase):
         self.state = EnemyState.DYING
         self.change_x = 0.0
 
+    @property
+    def drops_soul(self) -> bool:
+        """Vrai si la prochaine mort de cet ennemi peut liberer une ame."""
+        return self._drops_soul
+
+    @property
+    def is_defeated(self) -> bool:
+        """Alias de compatibilite pour l'ancien nom de l'etat de mort."""
+        return self.is_dying
+
+    def _death_drop(self):
+        """Ne recompense qu'une seule fois les ennemis initiaux."""
+        if not self._drops_soul:
+            return None
+        self._drops_soul = False
+        return super()._death_drop()
+
     def _on_respawn(self) -> None:
         self.state = EnemyState.PATROL
         self._attack_cooldown = 0.0
+        self._attack_windup = 0.0
         self._hit_flash_left = 0.0
         self._knockback_x = 0.0
         self.color = self._base_color
@@ -214,6 +242,8 @@ class Enemy(EnemyBase):
     ) -> None:
         self._tick_hit_feedback(delta_time)
         self._attack_cooldown = max(0.0, self._attack_cooldown - delta_time)
+        if self.state is EnemyState.WINDUP:
+            self._attack_windup = max(0.0, self._attack_windup - delta_time)
         if self.state is EnemyState.ATTACK and self._animator.finished:
             self._end_swing()
         if self.state is EnemyState.DYING:
@@ -226,6 +256,8 @@ class Enemy(EnemyBase):
             # Coup engage : l'ennemi reste immobile et ne se retourne pas tant
             # que l'animation n'est pas finie, ce qui laisse le joueur esquiver.
             self.change_x = 0.0
+        elif self.state is EnemyState.WINDUP:
+            self._hold_windup(player)
         elif self.state is not EnemyState.DYING:
             target_corpse = self._closest_corpse(corpses)
             if target_corpse is not None:
@@ -268,17 +300,32 @@ class Enemy(EnemyBase):
 
     def _chase(self, player: Player) -> None:
         if self._in_melee_range(player):
-            # A portee : on s'arrete face au joueur et on frappe des que le
-            # coup precedent a fini de recharger.
+            # A portee : on s'arrete face au joueur, on attend, puis on frappe.
             self.change_x = 0.0
             self.facing = 1 if player.center_x >= self.center_x else -1
             if self._attack_cooldown <= 0.0:
-                self._start_swing()
+                self._start_windup()
             else:
                 self.state = EnemyState.CHASE
             return
         self.state = EnemyState.CHASE
         self._walk_towards(player.center_x)
+
+    def _start_windup(self) -> None:
+        self.state = EnemyState.WINDUP
+        self._attack_windup = settings.ENEMY_ATTACK_WINDUP
+        self.change_x = 0.0
+
+    def _hold_windup(self, player: Player | None) -> None:
+        """Reste plante. Si la cible part, on annule ; sinon on lance le coup."""
+        self.change_x = 0.0
+        if player is None or not player.alive or not self._in_melee_range(player):
+            self.state = EnemyState.CHASE
+            self._attack_windup = 0.0
+            return
+        self.facing = 1 if player.center_x >= self.center_x else -1
+        if self._attack_windup <= 0.0:
+            self._start_swing()
 
     def _start_swing(self) -> None:
         self.state = EnemyState.ATTACK
@@ -355,6 +402,8 @@ class Enemy(EnemyBase):
             self._animator.play(self._die)
         elif self.state is EnemyState.ATTACK:
             self._animator.play(self._attack)
+        elif self.state is EnemyState.WINDUP:
+            self._animator.play(self._idle)
         elif self.state is EnemyState.FEAST or abs(self.change_x) <= 0.05:
             self._animator.play(self._idle)
         else:

@@ -32,6 +32,7 @@ from src.editor.history import CellChange, Edit, GridState, History
 from src.editor.selection import Block, GridRect
 from src.world.falling_block import FallingSpec, dump_falling_specs, parse_falling_specs
 from src.world.flamethrower import FlameSpec, dump_flame_specs, parse_flame_specs
+from src.world.spring import SpringSpec, dump_spring_specs, parse_spring_specs
 from src.world.themes import normalize_theme, parse_theme
 
 # (colonne, ligne, type present apres l'operation)
@@ -60,6 +61,7 @@ class EditorDocument:
         activators: Sequence[Activator] = (),
         flames: dict[tuple[int, int], FlameSpec] | None = None,
         fallings: dict[tuple[int, int], FallingSpec] | None = None,
+        springs: dict[tuple[int, int], SpringSpec] | None = None,
         theme: str = settings.GROUND_THEME_DEFAULT,
         level_type: str = settings.LEVEL_TYPE_BASIC,
     ) -> None:
@@ -89,11 +91,14 @@ class EditorDocument:
         self._flame_brush = FlameSpec(0, 0)
         self._fallings: dict[tuple[int, int], FallingSpec] = dict(fallings or {})
         self._falling_brush = FallingSpec(0, 0)
+        self._springs: dict[tuple[int, int], SpringSpec] = dict(springs or {})
+        self._spring_brush = SpringSpec(0, 0)
         self._stroke: list[CellChange] | None = None
         self._stroke_label = ""
         self._stroke_activators: tuple[Activator, ...] | None = None
         self._sync_flames()
         self._sync_fallings()
+        self._sync_springs()
 
     # ------------------------------------------------------------------ #
     # Construction
@@ -174,6 +179,10 @@ class EditorDocument:
         except ValueError as error:
             raise DocumentError(str(error)) from error
         try:
+            springs = parse_spring_specs(data.get("springs"))
+        except ValueError as error:
+            raise DocumentError(str(error)) from error
+        try:
             theme = parse_theme(data.get("theme"))
         except (TypeError, ValueError) as error:
             raise DocumentError(str(error)) from error
@@ -187,6 +196,7 @@ class EditorDocument:
             activators=activators,
             flames=flames,
             fallings=fallings,
+            springs=springs,
             theme=theme,
             level_type=settings.parse_level_type(data.get("type")),
         )
@@ -262,6 +272,10 @@ class EditorDocument:
         """Reglages du bloc tombant pose en (colonne, ligne), s'il y en a un."""
         return self._fallings.get((column, row))
 
+    def falling_specs(self) -> tuple[FallingSpec, ...]:
+        """Tous les blocs tombants poses, pour le rendu de l'editeur."""
+        return tuple(self._fallings.values())
+
     def adjust_falling(
         self,
         column: int,
@@ -269,6 +283,7 @@ class EditorDocument:
         *,
         delay_delta: float = 0.0,
         respawn_delta: float = 0.0,
+        invert_ghost: bool = False,
     ) -> FallingSpec | None:
         """Modifie le bloc tombant sous le curseur. None si la cellule n'en est pas un."""
         if self.cell(column, row) != settings.TILE_KIND_FALLING:
@@ -279,10 +294,31 @@ class EditorDocument:
             updated = updated.with_delay(updated.delay + delay_delta)
         if respawn_delta:
             updated = updated.with_respawn(updated.respawn + respawn_delta)
+        if invert_ghost:
+            updated = updated.with_ghost_only(not updated.ghost_only)
         if updated == current:
             return current
         self._fallings[(column, row)] = updated
-        self._falling_brush = FallingSpec(0, 0, updated.delay, updated.respawn)
+        self._falling_brush = FallingSpec(
+            0, 0, updated.delay, updated.respawn, updated.ghost_only
+        )
+        self._version += 1
+        return updated
+
+    def spring_at(self, column: int, row: int) -> SpringSpec | None:
+        """Orientation du ressort pose en (colonne, ligne), s'il y en a un."""
+        return self._springs.get((column, row))
+
+    def adjust_spring(self, column: int, row: int, *, rotate: bool = False) -> SpringSpec | None:
+        """Tourne le ressort sous le curseur. None si la cellule n'en est pas un."""
+        if self.cell(column, row) != settings.TILE_KIND_SPRING:
+            return None
+        current = self._springs.get((column, row)) or SpringSpec(column, row)
+        updated = current.rotated() if rotate else current
+        if updated == current:
+            return current
+        self._springs[(column, row)] = updated
+        self._spring_brush = SpringSpec(0, 0, updated.direction)
         self._version += 1
         return updated
 
@@ -519,6 +555,7 @@ class EditorDocument:
         self._layout_version += 1
         self._sync_flames()
         self._sync_fallings()
+        self._sync_springs()
         return True
 
     def can_link(self, column: int, row: int) -> bool:
@@ -679,6 +716,9 @@ class EditorDocument:
         fallings = dump_falling_specs(self._fallings)
         if fallings:
             payload["falling_blocks"] = fallings
+        springs = dump_spring_specs(self._springs)
+        if springs:
+            payload["springs"] = springs
         return payload
 
     def save(self, path: str | Path | None = None) -> Path:
@@ -722,6 +762,7 @@ class EditorDocument:
         self._version += 1
         self._sync_flames()
         self._sync_fallings()
+        self._sync_springs()
         return tuple((change.column, change.row, change.after) for change in changes)
 
     def _sync_activators(self) -> None:
@@ -772,8 +813,25 @@ class EditorDocument:
                     row,
                     brush.delay,
                     brush.respawn,
+                    brush.ghost_only,
                 )
         self._fallings = kept
+
+    def _sync_springs(self) -> None:
+        """Garde un spec par cellule `spring`, jette le reste."""
+        kept: dict[tuple[int, int], SpringSpec] = {}
+        brush = self._spring_brush
+        kind_name = settings.TILE_KIND_SPRING
+        for row, line in enumerate(self._cells):
+            for column, kind in enumerate(line):
+                if kind != kind_name:
+                    continue
+                existing = self._springs.get((column, row))
+                if existing is not None:
+                    kept[(column, row)] = existing
+                    continue
+                kept[(column, row)] = SpringSpec(column, row, brush.direction)
+        self._springs = kept
 
     def _commit_activators(self, label: str, before: tuple[Activator, ...]) -> None:
         if before == self._activators:
@@ -818,6 +876,7 @@ class EditorDocument:
             self._activators = restored
         self._sync_flames()
         self._sync_fallings()
+        self._sync_springs()
         return states
 
     def _snapshot(self) -> GridState:

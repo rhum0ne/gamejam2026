@@ -53,6 +53,26 @@ fantome, touche F, champ `duration` en secondes). `width` est optionnel
 (1 tuile par defaut). Une pique de plafond (`spike_up`) tombe si le bloc
 au-dessus d'elle disparait : elle tue au contact puis se brise au sol.
 
+Les points de spawn optionnels des ennemis vivent dans `enemy_spawns`, en
+coordonnees de grille (`x` = colonne, `y` = ligne depuis le haut). Le bloc
+optionnel `enemy_spawn_director` regle la population et les vagues :
+
+    "enemy_spawns": [
+      {"x": 65, "y": 39},
+      {"x": 95, "y": 39}
+    ],
+    "enemy_spawn_director": {
+      "max_active": 6,
+      "wave_size": 2,
+      "wave_interval": 6.0,
+      "respawn_delay": 4.0,
+      "warning_duration": 0.7
+    }
+
+Chaque point est une position candidate : les points sont utilises au
+chargement, puis le directeur choisit une position libre et hors camera pour
+les renforts. Il doit etre place sur une case vide, juste au-dessus d'un sol.
+
 Pour ajouter un sprite de terrain : deposer le PNG dans `assets/sprites/`,
 l'enregistrer dans `TILE_SPECS` (`src/world/obstacles.py`), puis l'utiliser
 dans la legende de la carte.
@@ -68,7 +88,12 @@ vivent dans le champ JSON `flamethrowers`, comme les plaques. L'ancien champ
 
 `falling_block` est une plateforme qui s'effondre : delay puis chute sans
 collision avec le terrain, puis respawn. Les delais vivent dans le champ
-JSON `falling_blocks` (`delay` et `respawn`, en secondes).
+JSON `falling_blocks` (`delay`, `respawn`, et `ghost_only` optionnel).
+
+`spring` est un pad trigger (pas solide). Vertical : conserve l'elan
+horizontal et relance d'environ 7 tuiles. Horizontal : inverse `change_x`.
+L'orientation (`dir` up/right/down/left) vit dans le champ JSON `springs`.
+H dans l'editeur fait tourner la face active.
 """
 
 from __future__ import annotations
@@ -93,6 +118,8 @@ from src.entities.zombie import Zombie
 from src.world.decorations import Decoration, decoration_kinds
 from src.world.falling_block import FallingBlock, FallingSpec, parse_falling_specs
 from src.world.flamethrower import FlameSpec, Flamethrower, parse_flame_specs
+from src.world.spring import Spring, SpringSpec, parse_spring_specs
+from src.systems.enemy_spawner import EnemySpawnConfig, parse_enemy_spawn_config
 from src.world.mechanisms import (
     GatedTile,
     Mechanism,
@@ -305,6 +332,8 @@ class Level:
     checkpoints: arcade.SpriteList = field(default_factory=_dynamic_sprite_list)
     items: arcade.SpriteList = field(default_factory=_dynamic_sprite_list)
     enemies: arcade.SpriteList = field(default_factory=_dynamic_sprite_list)
+    enemy_spawn_points: list[tuple[float, float]] = field(default_factory=list)
+    enemy_spawn_config: EnemySpawnConfig = field(default_factory=EnemySpawnConfig.defaults)
     corpses: arcade.SpriteList = field(default_factory=_dynamic_sprite_list)
     remains: arcade.SpriteList = field(default_factory=_dynamic_sprite_list)
     plates: arcade.SpriteList = field(default_factory=_dynamic_sprite_list)
@@ -316,6 +345,7 @@ class Level:
     torch_stems: arcade.SpriteList = field(default_factory=_dynamic_sprite_list)
     flamethrowers: arcade.SpriteList = field(default_factory=_dynamic_sprite_list)
     falling_blocks: arcade.SpriteList = field(default_factory=_dynamic_sprite_list)
+    springs: arcade.SpriteList = field(default_factory=_dynamic_sprite_list)
     player_spawn: tuple[float, float] = (0.0, 0.0)
     checkpoint_spawn: tuple[float, float] = (0.0, 0.0)
     tiles_drawn: int = 0
@@ -330,6 +360,7 @@ class Level:
     _hazard_chunks: list[arcade.SpriteList] = field(default_factory=list)
     _flame_specs: dict[tuple[int, int], FlameSpec] = field(default_factory=dict)
     _falling_specs: dict[tuple[int, int], FallingSpec] = field(default_factory=dict)
+    _spring_specs: dict[tuple[int, int], SpringSpec] = field(default_factory=dict)
     _falling_gone: list[FallingBlock] = field(default_factory=list)
 
     # ------------------------------------------------------------------ #
@@ -390,7 +421,23 @@ class Level:
             level._falling_specs = parse_falling_specs(data.get("falling_blocks"))
         except ValueError as error:
             raise LevelFormatError(str(error)) from error
+        try:
+            level._spring_specs = parse_spring_specs(data.get("springs"))
+            level.enemy_spawn_config = parse_enemy_spawn_config(
+                data.get("enemy_spawn_director")
+            )
+        except ValueError as error:
+            raise LevelFormatError(str(error)) from error
         level._build(grid, legend)
+        try:
+            level.enemy_spawn_points = _parse_enemy_spawn_points(
+                data.get("enemy_spawns", []),
+                level,
+                grid,
+                legend,
+            )
+        except LevelFormatError as error:
+            raise LevelFormatError(f"enemy_spawns : {error}") from error
         level._bind_activators(data.get("activators", []))
         return level
 
@@ -445,7 +492,6 @@ class Level:
         if nearest is not None and nearest_distance <= 3 * self.tile_size:
             self.checkpoint_spawn = nearest.spawn_point
             return
-        self.checkpoint_spawn = self.player_spawn
 
     def activate_checkpoint(self, checkpoint: Checkpoint, *, ignite: bool = True) -> None:
         """Allume `checkpoint` et eteint les autres statues.
@@ -582,6 +628,7 @@ class Level:
             ("un decor", self.decorations),
             ("une torche", self.torches),
             ("un bloc tombant", self.falling_blocks),
+            ("un ressort", self.springs),
             ("une porte", self.doors),
             ("un checkpoint", self.checkpoints),
             ("un objet", self.items),
@@ -701,6 +748,7 @@ class Level:
             thrower.draw_flame()
         self.flamethrowers.draw(pixelated=True)
         self.falling_blocks.draw(pixelated=True)
+        self.springs.draw(pixelated=True)
         self.remains.draw(pixelated=True)
         self.corpses.draw(pixelated=True)
         for body in (*self.remains, *self.corpses):
@@ -772,6 +820,7 @@ class Level:
             self.torch_stems,
             self.flamethrowers,
             self.falling_blocks,
+            self.springs,
         ):
             sprite_list.initialize()
         for chunks in (self._wall_chunks, self._spectral_chunks, self._hazard_chunks):
@@ -882,6 +931,7 @@ class Level:
         self.checkpoints.update(delta_time)
         self.doors.update(delta_time)
         self.flamethrowers.update(delta_time)
+        self.springs.update(delta_time)
         self._update_falling_blocks(delta_time)
         for item in self.items:
             item.update(delta_time, attractor=attractor)
@@ -1041,6 +1091,38 @@ def _add_boss(level: Level, x: float, y: float) -> None:
     level.enemies.append(Boss(x, y))
 
 
+def _parse_enemy_spawn_points(
+    entries: object,
+    level: Level,
+    grid: list[str],
+    legend: dict[str, str],
+) -> list[tuple[float, float]]:
+    """Valide et convertit les points de spawn additionnels d'une carte."""
+    if entries is None:
+        return []
+    if not isinstance(entries, list):
+        raise LevelFormatError("doit etre une liste")
+
+    points: list[tuple[float, float]] = []
+    for index, raw in enumerate(entries):
+        if not isinstance(raw, dict):
+            raise LevelFormatError(f"[{index}] doit etre un objet")
+        column = _coord(raw, "x")
+        row = _coord(raw, "y")
+        level._ensure_in_bounds(column, row)
+        symbol = grid[row][column]
+        kind = legend.get(symbol, "vide" if symbol == "." else None)
+        if kind != "vide":
+            raise LevelFormatError(
+                f"[{index}] doit etre sur une case vide, pas '{symbol}'"
+            )
+        point = level.tile_center(column, row, level.rows)
+        if point in points:
+            raise LevelFormatError(f"[{index}] duplique un autre point")
+        points.append(point)
+    return points
+
+
 def _coord(raw: dict, *keys: str) -> int:
     for key in keys:
         if key in raw:
@@ -1129,8 +1211,22 @@ def _add_falling_block(level: Level, x: float, y: float) -> None:
         size=level.tile_size,
         delay=spec.delay if spec is not None else settings.FALLING_BLOCK_DELAY,
         respawn=spec.respawn if spec is not None else settings.FALLING_BLOCK_RESPAWN,
+        ghost_only=spec.ghost_only if spec is not None else False,
     )
     level.falling_blocks.append(block)
+
+
+def _add_spring(level: Level, x: float, y: float) -> None:
+    column = int(x // level.tile_size)
+    row = level.rows - 1 - int(y // level.tile_size)
+    spec = level._spring_specs.get((column, row))
+    spring = Spring(
+        x,
+        y,
+        size=level.tile_size,
+        direction=spec.direction if spec is not None else "up",
+    )
+    level.springs.append(spring)
 
 
 def _decoration_factory(kind: str) -> Callable[[Level, float, float], None]:
@@ -1158,6 +1254,7 @@ _FACTORIES: dict[str, Callable[[Level, float, float], None]] = {
     **{kind: _decoration_factory(kind) for kind in decoration_kinds()},
     "flamethrower": _add_flamethrower,
     settings.TILE_KIND_FALLING: _add_falling_block,
+    settings.TILE_KIND_SPRING: _add_spring,
 }
 
 

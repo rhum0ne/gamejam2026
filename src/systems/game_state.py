@@ -28,13 +28,16 @@ import arcade
 
 import settings
 from src.entities.batch_draw import SpriteOverlay
+from src.entities.boss import Boss
 from src.entities.corpse import Corpse
+from src.entities.enemy import Enemy
 from src.entities.ghost import Ghost
 from src.entities.glow import draw_glow, glow_pass
 from src.entities.item import ItemKind
 from src.entities.particles import BloodBurst, SoulBurst
 from src.entities.player import Player
 from src.systems import collisions
+from src.systems.enemy_spawner import EnemySpawnDirector
 from src.systems.ghost_emergence import GhostEmergence
 from src.systems.player_rebirth import PlayerRebirth
 from src.systems.play_events import bind_play_view, emit_ghost_end, emit_player_death, emit_player_win
@@ -43,6 +46,7 @@ from src.ui.debug import DebugOverlay, DebugSnapshot
 from src.ui.display import handle_display_key
 from src.ui.hud import Hud, HudData
 from src.ui import cursor
+from src.ui.music import music
 from src.ui.sfx import (
     play_attack,
     play_boss_fire,
@@ -55,6 +59,7 @@ from src.ui.sfx import (
     play_mob_hit,
     play_respawn,
     play_soul_get,
+    
 )
 from src.ui.sprites import draw_pixel_sprite
 from src.world.atmosphere import ForegroundAtmosphere
@@ -270,6 +275,8 @@ class PlayView(arcade.View):
         self.anchor_corpse: Corpse | None = None
         self._emergence: GhostEmergence | None = None
         self._rebirth: PlayerRebirth | None = None
+        self._linger_fog: tuple[float, float, float] | None = None
+        self._linger_warp: float = 0.0
         self.held_keys: set[int] = set()
         self._hitstop_timer = 0.0
         self._door_win_timer = 0.0
@@ -280,6 +287,7 @@ class PlayView(arcade.View):
         self._paused_from = GameState.PLAYING
         self._level_up_menu = None
         self._level_up_from = GameState.PLAYING
+        self._enemy_spawner: EnemySpawnDirector | None = None
         bind_play_view(self)
         self._fps = 0.0
         self._last_draw_time = 0.0
@@ -295,7 +303,14 @@ class PlayView(arcade.View):
     def setup(self) -> None:
         """(Re)charge le niveau courant de la session et remet les entites a zero."""
         self.level = Level.from_file(self.session.level_file)
+        if any(isinstance(enemy, Boss) for enemy in self.level.enemies):
+            music.play_boss_theme()
+        else:
+            music.play_main_theme()
         self.player = Player(*self.level.player_spawn)
+        for spawn_x, spawn_y in self.level.enemy_spawn_points:
+            self.level.enemies.append(Enemy(spawn_x, spawn_y))
+        seed_enemies = list(self.level.enemies)
         self.player.respawn_point = self.level.checkpoint_spawn
         for checkpoint in self.level.checkpoints:
             if checkpoint.spawn_point == self.level.checkpoint_spawn:
@@ -307,14 +322,21 @@ class PlayView(arcade.View):
         )
         for enemy in self.level.enemies:
             enemy.bind_world(self._static_platforms(), hazards=self.level.hazards)
+        self._enemy_spawner = EnemySpawnDirector(
+            self.level.enemy_spawn_points,
+            seed_enemies,
+            self.level.enemy_spawn_config,
+        )
+        self._enemy_spawner.bind_world(self._static_platforms(), hazards=self.level.hazards)
         self.level.prepare_draw()
         self.camera.set_bounds(self.level.width, self.level.height)
-        self._enemy_spawns = [(enemy, enemy.center_x, enemy.center_y) for enemy in self.level.enemies]
         self.camera.snap_to(self.player)
         self.ghost = None
         self.anchor_corpse = None
         self._emergence = None
         self._rebirth = None
+        self._linger_fog = None
+        self._linger_warp = 0.0
         self.held_keys.clear()
         self._hitstop_timer = 0.0
         self._door_win_timer = 0.0
@@ -363,7 +385,32 @@ class PlayView(arcade.View):
 
     def start_player_rebirth(self, origin_x: float, origin_y: float) -> None:
         """Lance le voile noir et la reconstruction du corps au checkpoint."""
+        ghost = self.ghost
+        if ghost is not None:
+            self._linger_fog = (
+                ghost.center_x,
+                ghost.center_y,
+                max(1.0, ghost.vision_radius),
+            )
+            self._linger_warp = ghost.warp_strength
+        else:
+            self._linger_fog = None
+            self._linger_warp = 0.0
         self._rebirth = PlayerRebirth(origin_x, origin_y)
+
+    def _ghost_fog_pose(self) -> tuple[float, float, float] | None:
+        """Centre et rayon du voile : fantome vivant, ou dernier trou pendant le fade-out."""
+        rebirth = self._rebirth
+        if rebirth is not None and rebirth.covers_hud and self._linger_fog is not None:
+            return self._linger_fog
+        if (
+            self.machine.state is GameState.GHOST
+            and self.ghost is not None
+            and not self.ghost_emerging
+        ):
+            ghost = self.ghost
+            return ghost.center_x, ghost.center_y, max(1.0, ghost.vision_radius)
+        return None
 
     def _static_platforms(self) -> list[arcade.SpriteList]:
         """Plateformes solides hors cadavres (un cadavre ne doit pas se bloquer lui-meme)."""
@@ -376,15 +423,13 @@ class PlayView(arcade.View):
         coutait ~5 ms et faisait chuter le FPS a 45.
         """
         view = self.camera.cull_rect()
-        ghost = self.ghost
-        if (
-            self.machine.state is not GameState.GHOST
-            or ghost is None
-            or self.ghost_emerging
-        ):
+        pose = self._ghost_fog_pose()
+        if pose is None:
             return view
-        radius = ghost.vision_radius + settings.RENDER_CULL_PAD
-        return self.camera.cull_rect_around(ghost.center_x, ghost.center_y, radius)
+        center_x, center_y, radius = pose
+        return self.camera.cull_rect_around(
+            center_x, center_y, radius + settings.RENDER_CULL_PAD
+        )
 
     # ------------------------------------------------------------------ #
     # Dessin
@@ -396,24 +441,25 @@ class PlayView(arcade.View):
         defer_player = rebirth is not None and rebirth.shows_player
         self.camera.begin_frame()
         self.camera.use_world()
-        tight_cull = (
-            self.machine.state is GameState.GHOST
-            and not self.ghost_emerging
-            and (rebirth is None or rebirth.shows_world)
-        )
+        fog_pose = self._ghost_fog_pose()
+        tight_cull = fog_pose is not None and (rebirth is None or rebirth.shows_world)
         if rebirth is None or rebirth.shows_world:
+            ghost_view = fog_pose is not None or self.machine.state is GameState.GHOST
+            for block in self.level.falling_blocks:
+                block.set_ghost_view(ghost_view)
             self.level.draw(self._terrain_cull_rect(), tight_cull=tight_cull)
+            if self.machine.state is GameState.PLAYING and self._enemy_spawner is not None:
+                self._enemy_spawner.draw()
             if self.player.alive and not defer_player:
                 self.player.draw_fx()
                 draw_pixel_sprite(self.player)
                 self.player.draw_particles()
             # Premier plan : passe devant le monde, reste sous le voile fantome et le HUD.
             self.atmosphere.draw(self.camera.world)
-            if self.ghost is not None:
-                if self.machine.state is GameState.GHOST:
-                    self._draw_ghost_or_emergence(self.ghost)
-                elif self.ghost.vanishing:
-                    draw_pixel_sprite(self.ghost)
+            if self.machine.state is GameState.GHOST and self.ghost is not None:
+                self._draw_ghost_or_emergence(self.ghost)
+            elif fog_pose is not None:
+                self._draw_closing_fog(fog_pose)
             self._blood.draw()
             self._soul_pickup_fx.draw()
             if settings.DEBUG_SHOW_HITBOXES:
@@ -444,6 +490,8 @@ class PlayView(arcade.View):
             emergence = self._emergence
             if emergence is not None and emergence.active:
                 warp *= emergence.fog_strength
+        elif rebirth is not None and rebirth.covers_hud:
+            warp = self._linger_warp
         self.camera.present(warp)
 
     def _draw_player_attack(self) -> None:
@@ -569,10 +617,22 @@ class PlayView(arcade.View):
                 left, right, bottom, top = thrower.flame_bounds()
                 arcade.draw_lrbt_rectangle_outline(left, right, bottom, top, color, 1)
         self.level.falling_blocks.draw_hit_boxes(color)
+        self.level.springs.draw_hit_boxes(color)
         if self.player.alive:
             self.player.draw_hit_box(color)
         if self.ghost is not None:
             self.ghost.draw_hit_box(color)
+
+    def _draw_closing_fog(self, pose: tuple[float, float, float]) -> None:
+        """Garde le voile pendant le fade-out : le fantome peut deja etre parti."""
+        center_x, center_y, radius = pose
+        self.fog.draw_at(center_x, center_y, radius, self.camera.world)
+        ghost = self.ghost
+        if ghost is None:
+            return
+        with glow_pass():
+            ghost.draw_fx()
+        draw_pixel_sprite(ghost)
 
     def _draw_ghost_or_emergence(self, ghost: Ghost) -> None:
         """Voile du fantome, ou cinematique de sortie hors du corps."""
@@ -598,7 +658,7 @@ class PlayView(arcade.View):
             wall.set_revealed(ghost.reveals(wall))
             if wall.revealed:
                 revealed_walls.append(wall)
-        self.fog.draw(ghost, self.camera.world)
+        self.fog.draw_at(ghost.center_x, ghost.center_y, ghost.vision_radius, self.camera.world)
         self.level.spectral_buttons.draw()
         self._draw_hidden_wall_outlines()
         self._reveal_walls.draw(revealed_walls)
@@ -609,6 +669,9 @@ class PlayView(arcade.View):
             self._draw_threat_glows()
             self._draw_mechanism_hints()
             ghost.draw_fx()
+        if self._enemy_spawner is not None:
+            self._enemy_spawner.draw(ghost_mode=True)
+            self._enemy_spawner.draw_ghost_hints(ghost)
         revealed_actors: list[arcade.Sprite] = []
         for item in self.level.items:
             if ghost.reveals(item):
@@ -621,7 +684,7 @@ class PlayView(arcade.View):
         self._draw_body_arrow(ghost)
 
     def _draw_hidden_wall_outlines(self) -> None:
-        """Blocs invisibles : contour bleu clair, visible seulement en fantome."""
+        """Secrets du fantome : murs invisibles et blocs tombants `ghost_only`."""
         view = self.camera.cull_rect()
         color = (*settings.COLOR_HIDDEN_WALL_OUTLINE, 220)
         width = settings.HIDDEN_WALL_OUTLINE_WIDTH
@@ -630,6 +693,15 @@ class PlayView(arcade.View):
                 continue
             arcade.draw_lrbt_rectangle_outline(
                 wall.left, wall.right, wall.bottom, wall.top, color, width
+            )
+        falling_color = (*settings.COLOR_FALLING_BLOCK_GHOST, 220)
+        for block in self.level.falling_blocks:
+            if not block.ghost_only or not block.is_solid:
+                continue
+            if not _in_view(block, view, 0):
+                continue
+            arcade.draw_lrbt_rectangle_outline(
+                block.left, block.right, block.bottom, block.top, falling_color, width
             )
 
     def _draw_threat_glows(self) -> None:
@@ -830,6 +902,13 @@ class PlayView(arcade.View):
         self._resolve_flame_kills()
         self._blood.update(delta_time)
         self._soul_pickup_fx.update(delta_time)
+        if self.machine.state is GameState.PLAYING and self._enemy_spawner is not None:
+            self._enemy_spawner.update(
+                delta_time,
+                self.level.enemies,
+                self.player,
+                self.camera.visible_rect(),
+            )
         self.atmosphere.update(delta_time)
 
     def _tick_door_win(self, delta_time: float) -> None:
@@ -892,6 +971,7 @@ class PlayView(arcade.View):
         self._play_attack_sound_events()
         self._play_footstep_events()
         self._resolve_falling_blocks()
+        self._resolve_springs()
         self._block_hazard_sides()
         self._update_enemies(delta_time)
         self._resolve_player_collisions()
@@ -927,6 +1007,14 @@ class PlayView(arcade.View):
             if block.supports(player):
                 block.arm()
             block.stick_rider(player)
+
+    def _resolve_springs(self) -> None:
+        """Relance le corps au contact de la face active d'un ressort."""
+        player = self.player
+        if not player.alive:
+            return
+        for spring in collisions.springs_launching_player(player, self.level.springs):
+            spring.launch(player)
 
     def _block_hazard_sides(self) -> None:
         """Une pique bloque comme un mur si on la touche par le cote (cf Mario)."""
@@ -986,14 +1074,20 @@ class PlayView(arcade.View):
             return
         rebirth.update(delta_time, self.camera)
         if rebirth.consume_body_spawn():
+            self._linger_fog = None
+            self._linger_warp = 0.0
             self._materialize_body()
         if rebirth.active:
             return
         self._rebirth = None
+        self._linger_fog = None
+        self._linger_warp = 0.0
         self._finish_rebirth()
 
     def _materialize_body(self) -> None:
         """Place le corps au checkpoint une fois l'ecran noir."""
+        for wall in self.level.spectral_walls:
+            wall.set_revealed(False)
         self.ghost = None
         origin_x, origin_y = self.player.respawn_point
         self.player.respawn_at((origin_x, origin_y))
@@ -1015,20 +1109,14 @@ class PlayView(arcade.View):
             for kind in self._delivered_items:
                 self.player.give_item(kind)
             self._delivered_items.clear()
-        self._update_respawn_enemies()
+        if self._enemy_spawner is not None:
+            self._enemy_spawner.reset_after_player_death(self.level.enemies)
         self.machine.try_to(GameState.PLAYING)
 
     def _update_enemies(self, delta_time: float) -> None:
         for enemy in list(self.level.enemies):
             enemy.update(delta_time, player=self.player, corpses=self.level.corpses)
         self._play_enemy_sound_events()
-
-    def _update_respawn_enemies(self) -> None:
-        for enemy, spawn_x, spawn_y in self._enemy_spawns:
-            enemy.respawn(spawn_x, spawn_y)
-            if enemy not in self.level.enemies:
-                self.level.enemies.append(enemy)
-            
 
     # ------------------------------------------------------------------ #
     # Consequences des collisions
