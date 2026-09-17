@@ -1387,6 +1387,7 @@ DEBUG_SHOW_HITBOXES = False
 DEBUG_SHOW_FPS = True  # si l'overlay est off, affiche quand meme le FPS en bas a gauche
 # Ignore piques, flammes, ennemis et chute hors carte. F (sacrifice) reste actif.
 PLAYER_INVINCIBLE = False
+MOUSE_HIDE_DELAY = 3.0  # cache le curseur en jeu apres ce delai sans mouvement
 COLOR_DEBUG = (140, 230, 160)
 COLOR_DEBUG_PANEL = (8, 12, 18, 180)
 COLOR_DEBUG_HITBOX = (80, 255, 120, 200)
