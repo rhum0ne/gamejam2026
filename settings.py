@@ -37,6 +37,7 @@ SOUND_MOB_HIT = "mob_hit.wav"
 SOUND_GHOST_START = "ghost_start.wav"
 SOUND_GHOST_END = "ghost_end.wav"
 SOUND_DASH = "dash.wav"
+SOUND_ZOMBIE_BREATH ="Zombie_Breath.wav"
 # Temporaire : pas de sample de saut dedie, on reutilise le dash.
 SOUND_JUMP = "dash.wav"
 SOUND_BOSS_FIRE = "boss-fire.wav"
@@ -60,6 +61,8 @@ SOUND_VOLUME_FOOTSTEP = 0.4
 SOUND_VOLUME_FOOTSTEP_LAND = 0.55
 SOUND_FOOTSTEP_PITCH_MIN = 0.92
 SOUND_FOOTSTEP_PITCH_MAX = 1.08
+SOUND_VOLUME_ZOMBIE_BREATH = 0.55
+ZOMBIE_BREATH_INTERVAL = 5
 # Echo "caverne" : copies plus faibles et un peu plus graves, pour le vide.
 SOUND_ECHO_DELAY = 0.22
 SOUND_ECHO_DECAY = 0.34

@@ -181,3 +181,6 @@ def play_footstep(*, land: bool = False) -> None:
         echo_decay=settings.SOUND_ECHO_FOOTSTEP_DECAY,
         echo_taps=settings.SOUND_ECHO_FOOTSTEP_TAPS,
     )
+
+def play_zombie_breath()->None:
+    play(settings.SOUND_ZOMBIE_BREATH, settings.SOUND_VOLUME_ZOMBIE_BREATH)
