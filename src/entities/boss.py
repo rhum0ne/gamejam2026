@@ -26,6 +26,7 @@ import settings
 from src.entities.boss_death_fx import BossDeathFx
 from src.entities.boss_spikes import BossSpikeWave
 from src.entities.enemy_base import EnemyBase
+from src.entities.item import Item, ItemKind
 from src.entities.particles import LaserBurst
 from src.entities.player import Player
 from src.ui import sprites
@@ -536,6 +537,10 @@ class Boss(EnemyBase):
     # ------------------------------------------------------------------ #
     # Mort
     # ------------------------------------------------------------------ #
+
+    def _death_drop(self) -> Item:
+        """Le boss laisse la cle du niveau, pas la bille bleue habituelle."""
+        return Item(ItemKind.KEY, self.center_x, self.center_y)
 
     def _on_death(self) -> None:
         self._death_ground_y = (

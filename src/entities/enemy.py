@@ -91,7 +91,13 @@ def _die_animation() -> sprites.StripAnimation:
 class Enemy(EnemyBase):
     """Ennemi terrestre carnivore."""
 
-    def __init__(self, center_x: float, center_y: float) -> None:
+    def __init__(
+        self,
+        center_x: float,
+        center_y: float,
+        *,
+        drops_soul: bool = True,
+    ) -> None:
         self._idle = _idle_animation()
         self._walk = _walk_animation()
         self._attack = _attack_animation()
@@ -125,6 +131,7 @@ class Enemy(EnemyBase):
         self._base_color = self.color
         self._hit_flash_left = 0.0
         self._knockback_x = 0.0
+        self._drops_soul = drops_soul
         self._physics: arcade.PhysicsEnginePlatformer | None = None
         self._ground: arcade.SpriteList | None = None
         self._hazards: arcade.SpriteList | None = None
@@ -188,6 +195,23 @@ class Enemy(EnemyBase):
         """
         self.state = EnemyState.DYING
         self.change_x = 0.0
+
+    @property
+    def drops_soul(self) -> bool:
+        """Vrai si la prochaine mort de cet ennemi peut liberer une ame."""
+        return self._drops_soul
+
+    @property
+    def is_defeated(self) -> bool:
+        """Alias de compatibilite pour l'ancien nom de l'etat de mort."""
+        return self.is_dying
+
+    def _death_drop(self):
+        """Ne recompense qu'une seule fois les ennemis initiaux."""
+        if not self._drops_soul:
+            return None
+        self._drops_soul = False
+        return super()._death_drop()
 
     def _on_respawn(self) -> None:
         self.state = EnemyState.PATROL

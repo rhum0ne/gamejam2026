@@ -33,8 +33,8 @@
     "...................................T................T.......",
     "...................................T................TTT.....",
     "...................................T.D................TT....",
-    "TTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTT^^^^^^^^.........TTT..",
-    "T.............................TT^^...TTTTTTTTT...........TTT",
+    "TTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTT^^^^^^^.........TTT..",
+    "T.............................TT^^....TTTTTTTT...........TTT",
     "T.............................TTTT........................TT",
     "T.............................TTTT^.............TTTTTT.....T",
     "T..............................TTTT^.......................T",
@@ -60,42 +60,44 @@
           {
             "x": 45,
             "y": 18,
-            "type": "void"
+            "type": "void",
+            "action": "hide"
           },
           {
             "x": 44,
             "y": 18,
-            "type": "void"
+            "type": "void",
+            "action": "hide"
           },
           {
             "x": 43,
             "y": 18,
-            "type": "void"
+            "type": "void",
+            "action": "hide"
           },
           {
             "x": 42,
             "y": 18,
-            "type": "void"
+            "type": "void",
+            "action": "hide"
           },
           {
             "x": 41,
             "y": 18,
-            "type": "void"
+            "type": "void",
+            "action": "hide"
           },
           {
             "x": 40,
             "y": 18,
-            "type": "void"
+            "type": "void",
+            "action": "hide"
           },
           {
             "x": 39,
             "y": 18,
-            "type": "void"
-          },
-          {
-            "x": 38,
-            "y": 18,
-            "type": "void"
+            "type": "void",
+            "action": "hide"
           }
         ]
       }
@@ -109,51 +111,59 @@
           {
             "x": 15,
             "y": 29,
-            "type": "void"
+            "type": "void",
+            "action": "show"
           },
           {
             "x": 17,
             "y": 29,
-            "type": "void"
+            "type": "void",
+            "action": "show"
           },
           {
             "x": 16,
             "y": 29,
-            "type": "void"
+            "type": "void",
+            "action": "show"
           },
           {
             "x": 19,
             "y": 27,
-            "type": "void"
+            "type": "void",
+            "action": "show"
           },
           {
             "x": 20,
             "y": 27,
-            "type": "void"
+            "type": "void",
+            "action": "show"
           },
           {
             "x": 21,
             "y": 27,
-            "type": "void"
+            "type": "void",
+            "action": "show"
           },
           {
             "x": 23,
             "y": 25,
-            "type": "void"
+            "type": "void",
+            "action": "show"
           },
           {
             "x": 24,
             "y": 25,
-            "type": "void"
+            "type": "void",
+            "action": "show"
           },
           {
             "x": 25,
             "y": 25,
-            "type": "void"
+            "type": "void",
+            "action": "show"
           }
         ]
-      },
-      "invert": true
+      }
     }
   ]
 }
