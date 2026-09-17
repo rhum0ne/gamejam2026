@@ -401,6 +401,9 @@ class PlayView(arcade.View):
             and (rebirth is None or rebirth.shows_world)
         )
         if rebirth is None or rebirth.shows_world:
+            ghost_view = self.machine.state is GameState.GHOST
+            for block in self.level.falling_blocks:
+                block.set_ghost_view(ghost_view)
             self.level.draw(self._terrain_cull_rect(), tight_cull=tight_cull)
             if self.player.alive and not defer_player:
                 self.player.draw_fx()
@@ -620,7 +623,7 @@ class PlayView(arcade.View):
         self._draw_body_arrow(ghost)
 
     def _draw_hidden_wall_outlines(self) -> None:
-        """Blocs invisibles : contour bleu clair, visible seulement en fantome."""
+        """Secrets du fantome : murs invisibles et blocs tombants `ghost_only`."""
         view = self.camera.cull_rect()
         color = (*settings.COLOR_HIDDEN_WALL_OUTLINE, 220)
         width = settings.HIDDEN_WALL_OUTLINE_WIDTH
@@ -629,6 +632,15 @@ class PlayView(arcade.View):
                 continue
             arcade.draw_lrbt_rectangle_outline(
                 wall.left, wall.right, wall.bottom, wall.top, color, width
+            )
+        falling_color = (*settings.COLOR_FALLING_BLOCK_GHOST, 220)
+        for block in self.level.falling_blocks:
+            if not block.ghost_only or not block.is_solid:
+                continue
+            if not _in_view(block, view, 0):
+                continue
+            arcade.draw_lrbt_rectangle_outline(
+                block.left, block.right, block.bottom, block.top, falling_color, width
             )
 
     def _draw_threat_glows(self) -> None:

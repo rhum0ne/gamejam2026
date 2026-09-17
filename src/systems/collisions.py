@@ -78,7 +78,7 @@ def player_hits_hazard(player: Player, level: Level) -> bool:
 
     Seul un contact vertical est mortel : sauter sur une pique au sol, se
     cogner la tete contre une pique de plafond, ou se faire tomber dessus une
-    pique en chute. Frôler une pique par le côté en marchant ne tue pas.
+    pique en chute. Froler une pique par le cote en marchant ne tue pas.
     """
     if not player.alive:
         return False

@@ -1533,19 +1533,24 @@ def check_editor_document() -> None:
     assert tuned_fall is not None
     assert abs(tuned_fall.delay - (placed_fall.delay + 0.15)) < 1e-6
     assert abs(tuned_fall.respawn - (placed_fall.respawn + 0.6)) < 1e-6
+    assert not tuned_fall.ghost_only
+    ghost_fall = document.adjust_falling(*fall_cell, invert_ghost=True)
+    assert ghost_fall is not None and ghost_fall.ghost_only
     fall_path = Path(tempfile.mkdtemp()) / "falling_roundtrip.json"
     fall_saved = document.save(fall_path)
     fall_payload = json.loads(fall_saved.read_text(encoding="utf-8"))
     assert settings.TILE_KIND_FALLING in fall_payload["legend"].values()
     fall_entries = fall_payload.get("falling_blocks", [])
     assert fall_entries, "la carte doit ecrire le champ falling_blocks"
-    assert abs(fall_entries[0]["delay"] - tuned_fall.delay) < 1e-6
-    assert abs(fall_entries[0]["respawn"] - tuned_fall.respawn) < 1e-6
+    assert abs(fall_entries[0]["delay"] - ghost_fall.delay) < 1e-6
+    assert abs(fall_entries[0]["respawn"] - ghost_fall.respawn) < 1e-6
+    assert fall_entries[0].get("ghost_only") is True
     reloaded_fall = EditorDocument.from_file(fall_saved)
     restored_fall = reloaded_fall.falling_at(*fall_cell)
     assert restored_fall is not None
-    assert abs(restored_fall.delay - tuned_fall.delay) < 1e-6
-    assert abs(restored_fall.respawn - tuned_fall.respawn) < 1e-6
+    assert abs(restored_fall.delay - ghost_fall.delay) < 1e-6
+    assert abs(restored_fall.respawn - ghost_fall.respawn) < 1e-6
+    assert restored_fall.ghost_only
     fall_saved.unlink()
     document.undo()
     assert document.falling_at(*fall_cell) is None
@@ -1635,7 +1640,7 @@ def check_ice_block(window: arcade.Window) -> None:
     player.change_x = settings.PLAYER_SPEED
     for _ in range(24):
         player.update(FRAME)
-    assert abs(player.change_x) > settings.PLAYER_SPEED * 0.45, (
+    assert abs(player.change_x) > settings.PLAYER_SPEED * 0.85, (
         f"la glace doit conserver l'elan, vitesse restante {player.change_x:.2f}"
     )
     print(f"  glace -> {len(ices)} blocs, elan conserve ({player.change_x:.2f} px/frame)")
@@ -1778,6 +1783,50 @@ def check_falling_block(window: arcade.Window) -> None:
         f"  bloc tombant -> delay {block.delay:.2f}s, chute a travers le terrain, "
         f"respawn ejecte"
     )
+
+    ghost_data = {
+        "name": "Chute fantome",
+        "tile_size": settings.TILE_SIZE,
+        "legend": {
+            ".": "vide",
+            "#": "wall",
+            "F": settings.TILE_KIND_FALLING,
+            "P": "player_spawn",
+        },
+        "rows": [
+            "########",
+            "#......#",
+            "#..P...#",
+            "#..F...#",
+            "########",
+        ],
+        "falling_blocks": [
+            {"x": 3, "y": 3, "delay": 0.05, "respawn": 0.2, "ghost_only": True},
+        ],
+    }
+    ghost_level = Level.from_dict(ghost_data)
+    ghost_block = ghost_level.falling_blocks[0]
+    assert ghost_block.ghost_only
+    assert not ghost_block.visible, "invisible pour le corps"
+    assert ghost_block.alpha == 0
+    ghost_player = Player(*ghost_level.player_spawn)
+    ghost_player.bind_world(
+        ghost_level.static_walls,
+        platforms=[ghost_level.corpses, ghost_level.falling_blocks],
+    )
+    for _ in range(6):
+        ghost_level.update(FRAME)
+        ghost_player.update(FRAME)
+        if ghost_block.supports(ghost_player):
+            ghost_block.arm()
+    assert ghost_block.state is FallingState.ARMED or ghost_block.state is FallingState.FALLING
+    assert not ghost_block.visible, "reste invisible une fois arme"
+    ghost_block.set_ghost_view(True)
+    assert ghost_block.visible, "le fantome doit voir le bloc"
+    assert ghost_block.alpha == settings.FALLING_BLOCK_GHOST_ALPHA
+    ghost_block.set_ghost_view(False)
+    assert not ghost_block.visible
+    print("  bloc tombant fantome -> invisible au corps, solide, visible au fantome")
 
 
 def check_editor_views(window: arcade.Window) -> None:

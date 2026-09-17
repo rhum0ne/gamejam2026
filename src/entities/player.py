@@ -761,7 +761,9 @@ class Player(arcade.Sprite):
                     self.change_x = 0.0
                 return
             if self.change_x * direction < 0.0:
-                accel *= 1.55
+                accel *= (
+                    settings.PLAYER_ICE_TURN_SCALE if on_ice else 1.55
+                )
             self.change_x = _approach(self.change_x, direction * max_speed, accel * delta_time)
             return
         if direction == 0:

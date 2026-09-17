@@ -103,6 +103,7 @@ SCREEN_WIDTH = 1280
 SCREEN_HEIGHT = 720
 SCREEN_MIN_WIDTH = 640
 SCREEN_MIN_HEIGHT = 360
+START_FULLSCREEN = True
 GAME_TITLE = "Out Of Body!"
 SCREEN_TITLE = GAME_TITLE
 FPS = 60
@@ -450,10 +451,11 @@ CHECKPOINT_IGNITE_RISE = 0.18  # part du flash consacree a la montee
 PLAYER_ACCEL_TIME = 0.25
 # Glissade a l'arret (sol) : 2-3 frames, quelques pixels tout au plus.
 PLAYER_SLIDE_TIME = 0.01
-# Glace : le corps conserve son elan, acceleration et demi-tour sont mous.
-PLAYER_ICE_SLIDE_TIME = 1.7
-PLAYER_ICE_ACCEL_SCALE = 0.38
-PLAYER_ICE_STOP_SPEED = 0.06
+# Glace : quasi pas de frein. Dash ou cadavre pour s'arreter.
+PLAYER_ICE_SLIDE_TIME = 9.0
+PLAYER_ICE_ACCEL_SCALE = 0.10
+PLAYER_ICE_TURN_SCALE = 0.32  # multiplier encore plus faible en demi-tour
+PLAYER_ICE_STOP_SPEED = 0.015
 # Fraction de l'acceleration au sol quand le joueur est en l'air (1 = aussi vif qu'au sol).
 PLAYER_AIR_CONTROL = 1.15
 # Ralentissement juste apres l'atterrissage.
@@ -1144,6 +1146,9 @@ COLOR_ICE_INNER = (186, 232, 244)
 COLOR_FALLING_BLOCK = (176, 122, 64)
 COLOR_FALLING_BLOCK_INNER = (214, 168, 96)
 COLOR_FALLING_BLOCK_ARMED = (212, 96, 64)
+COLOR_FALLING_BLOCK_GHOST = (150, 214, 255)
+COLOR_FALLING_BLOCK_GHOST_ARMED = (214, 168, 255)
+FALLING_BLOCK_GHOST_ALPHA = 210
 COLOR_SPECTRAL_WALL = (96, 84, 140)
 # Contour du bloc invisible en mode fantome (bleu tres clair).
 COLOR_HIDDEN_WALL = (176, 216, 255)

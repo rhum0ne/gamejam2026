@@ -1,10 +1,10 @@
 """Point d'entree de Project Astral Platformer.
 
 Usage :
-    python main.py               # demarre sur l'ecran titre
+    python main.py               # demarre sur l'ecran titre, en plein ecran
     python main.py --play        # saute le menu et lance directement le niveau
     python main.py --level 0     # choisit le niveau de depart (index dans LEVEL_SEQUENCE)
-    python main.py --fullscreen  # demarre en plein ecran
+    python main.py --windowed    # demarre en fenetre (F11 pour basculer ensuite)
 
 Si Arcade manque dans l'interpreteur utilise, ce fichier prepare
 l'environnement et se relance tout seul (voir `tools/bootstrap.py`) : aucune
@@ -54,15 +54,21 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default=0,
         help="index du niveau de depart dans settings.LEVEL_SEQUENCE",
     )
-    parser.add_argument(
+    display = parser.add_mutually_exclusive_group()
+    display.add_argument(
         "--fullscreen",
         action="store_true",
-        help="demarre en plein ecran (F11 pour basculer ensuite)",
+        help="demarre en plein ecran (deja le defaut)",
+    )
+    display.add_argument(
+        "--windowed",
+        action="store_true",
+        help="demarre en fenetre (F11 pour basculer ensuite)",
     )
     return parser.parse_args(argv)
 
 
-def create_window(*, fullscreen: bool = False) -> arcade.Window:
+def create_window(*, fullscreen: bool = settings.START_FULLSCREEN) -> arcade.Window:
     """Cree la fenetre de jeu, redimensionnable, cadencee a 60 FPS avec vsync."""
     window = arcade.Window(
         width=settings.SCREEN_WIDTH,
@@ -91,7 +97,13 @@ def main(argv: list[str] | None = None) -> None:
         )
 
     session = GameSession(level_index=args.level)
-    window = create_window(fullscreen=args.fullscreen)
+    if args.windowed:
+        fullscreen = False
+    elif args.fullscreen:
+        fullscreen = True
+    else:
+        fullscreen = settings.START_FULLSCREEN
+    window = create_window(fullscreen=fullscreen)
     if args.play:
         open_play_view(window, session)
     else:
