@@ -205,6 +205,11 @@ def plate_is_weighted(plate: arcade.Sprite, weights: Sequence[arcade.Sprite]) ->
     return any(arcade.check_for_collision(plate, body) for body in weights)
 
 
+def ghost_overlaps_trigger(ghost: arcade.Sprite, trigger: arcade.Sprite) -> bool:
+    """Le fantome recouvre-t-il le bouton spectral ?"""
+    return arcade.check_for_collision(ghost, trigger)
+
+
 def enemies_hit_by_falling_spikes(
     enemies: arcade.SpriteList,
     falling_spikes: arcade.SpriteList,

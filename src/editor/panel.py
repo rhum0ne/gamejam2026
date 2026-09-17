@@ -16,7 +16,7 @@ from arcade.types import XYWH
 
 import settings
 from src.editor import icons, palette
-from src.editor.activators import Activator
+from src.editor.activators import Activator, KIND_LABEL
 from src.editor.palette import PaletteItem
 from src.ui import labels
 from src.world.themes import theme_ids, theme_label
@@ -39,8 +39,9 @@ class PanelHit:
 
     item: PaletteItem | None = None
     activator_index: int | None = None
-    invert_index: int | None = None
+    kind_index: int | None = None
     delete_index: int | None = None
+    place_kind: str | None = None
     tab: str | None = None
     theme: str | None = None
     help: bool = False
@@ -160,6 +161,7 @@ class PalettePanel:
         selected_activator: int | None = None,
         plate_tool: bool = False,
         current_theme: str = "",
+        place_kind: str = settings.ACTIVATOR_KIND_PLATE,
     ) -> None:
         """Dessine le chrome puis le contenu de l'onglet actif."""
         right = self._left + self._width
@@ -173,7 +175,9 @@ class PalettePanel:
         self._draw_chrome(hover_x, hover_y, current_theme)
         hovered = self.hit(hover_x, hover_y, activators)
         if self.tab == TAB_PLAQUES:
-            self._draw_plates(activators, selected_activator, hovered, plate_tool)
+            self._draw_plates(
+                activators, selected_activator, hovered, plate_tool, place_kind
+            )
         else:
             self._draw_grid(current_kind, counts, hovered)
 
@@ -301,11 +305,13 @@ class PalettePanel:
         selected_index: int | None,
         hovered: PanelHit | None,
         plate_tool: bool,
+        place_kind: str,
     ) -> None:
         hints = _plate_hints(bool(activators))
         row_h = float(settings.EDITOR_ROW_HEIGHT)
         hint_h = 22.0
-        content = 8 + len(hints) * hint_h + max(1, len(activators)) * row_h
+        chip_h = 28.0
+        content = 8 + len(hints) * hint_h + chip_h + max(1, len(activators)) * row_h
         self._clamp_scroll(content)
         top = self._content_top() + self._scroll - 6
         for hint in hints:
@@ -320,6 +326,21 @@ class PalettePanel:
                 max_width=self._width - 24,
                 overflow="clip",
             )
+        top -= chip_h
+        plate_rect, spectral_rect = self._place_kind_rects(top, top + chip_h)
+        self._draw_chip(
+            plate_rect,
+            KIND_LABEL[settings.ACTIVATOR_KIND_PLATE],
+            hovered=hovered is not None and hovered.place_kind == settings.ACTIVATOR_KIND_PLATE,
+            active=place_kind == settings.ACTIVATOR_KIND_PLATE,
+        )
+        self._draw_chip(
+            spectral_rect,
+            KIND_LABEL[settings.ACTIVATOR_KIND_SPECTRAL],
+            hovered=hovered is not None
+            and hovered.place_kind == settings.ACTIVATOR_KIND_SPECTRAL,
+            active=place_kind == settings.ACTIVATOR_KIND_SPECTRAL,
+        )
         if not activators:
             return
         for index, activator in enumerate(activators):
@@ -331,7 +352,7 @@ class PalettePanel:
             active = selected_index == index and plate_tool
             hovered_row = hovered is not None and (
                 hovered.activator_index == index
-                or hovered.invert_index == index
+                or hovered.kind_index == index
                 or hovered.delete_index == index
             )
             right = self._left + self._width
@@ -343,13 +364,12 @@ class PalettePanel:
                 arcade.draw_lrbt_rectangle_filled(
                     self._left + 2, right, bottom, row_top, settings.COLOR_EDITOR_ROW_HOVER
                 )
-            invert_rect, delete_rect = self._plate_controls(bottom, row_top)
-            mode = "montre" if activator.inverted else "cache"
+            kind_rect, delete_rect = self._plate_controls(bottom, row_top)
             self._draw_chip(
-                invert_rect,
-                mode,
-                hovered=hovered is not None and hovered.invert_index == index,
-                active=activator.inverted,
+                kind_rect,
+                KIND_LABEL.get(activator.kind, activator.kind),
+                hovered=hovered is not None and hovered.kind_index == index,
+                active=activator.is_spectral,
             )
             self._draw_chip(
                 delete_rect,
@@ -358,16 +378,17 @@ class PalettePanel:
                 active=False,
             )
             color = settings.COLOR_EDITOR_TEXT if active else settings.COLOR_EDITOR_TEXT_DIM
+            extra = f"  {activator.duration:.1f}s" if activator.is_spectral else ""
             label = (
                 f"#{index + 1}  {activator.column},{activator.row}  "
-                f"x{activator.width}  {len(activator.targets)}"
+                f"x{activator.width}  {len(activator.targets)}{extra}"
             )
             self._line(f"plate:{index}", color).draw(
                 label,
                 self._left + 12,
                 bottom + 10,
                 color,
-                max_width=invert_rect[0] - self._left - 16,
+                max_width=kind_rect[0] - self._left - 16,
                 overflow="clip",
             )
 
@@ -399,28 +420,45 @@ class PalettePanel:
         hints = _plate_hints(bool(activators))
         row_h = float(settings.EDITOR_ROW_HEIGHT)
         hint_h = 22.0
+        chip_h = 28.0
         top = self._content_top() + self._scroll - 6 - len(hints) * hint_h
+        top -= chip_h
+        plate_rect, spectral_rect = self._place_kind_rects(top, top + chip_h)
+        if _inside(x, y, *plate_rect):
+            return PanelHit(place_kind=settings.ACTIVATOR_KIND_PLATE)
+        if _inside(x, y, *spectral_rect):
+            return PanelHit(place_kind=settings.ACTIVATOR_KIND_SPECTRAL)
         for index, _activator in enumerate(activators):
             top -= row_h
             bottom = top
             row_top = top + row_h
             if not (bottom <= y <= row_top):
                 continue
-            invert_rect, delete_rect = self._plate_controls(bottom, row_top)
-            if _inside(x, y, *invert_rect):
-                return PanelHit(invert_index=index)
+            kind_rect, delete_rect = self._plate_controls(bottom, row_top)
+            if _inside(x, y, *kind_rect):
+                return PanelHit(kind_index=index)
             if _inside(x, y, *delete_rect):
                 return PanelHit(delete_index=index)
             return PanelHit(activator_index=index)
         return None
+
+    def _place_kind_rects(
+        self, bottom: float, top: float
+    ) -> tuple[tuple[float, float, float, float], tuple[float, float, float, float]]:
+        left = self._left + 10
+        width = 70.0
+        gap = 8.0
+        plate = (left, left + width, bottom + 4, top - 4)
+        spectral = (left + width + gap, left + width * 2 + gap, bottom + 4, top - 4)
+        return plate, spectral
 
     def _plate_controls(
         self, bottom: float, top: float
     ) -> tuple[tuple[float, float, float, float], tuple[float, float, float, float]]:
         right = self._left + self._width
         delete = (right - 34, right - 8, bottom + 6, top - 6)
-        invert = (right - 118, right - 38, bottom + 6, top - 6)
-        return invert, delete
+        kind = (right - 118, right - 38, bottom + 6, top - 6)
+        return kind, delete
 
     def _help_rect(self) -> tuple[float, float, float, float]:
         panel_top = self._bottom + self._height
@@ -521,11 +559,11 @@ def _plate_hints(has_plates: bool) -> tuple[str, ...]:
     if has_plates:
         return (
             "Glisser pour poser. Clic un bloc pour lier.",
-            "cache = disparait  |  montre = apparait",
+            "Reclic = action (cache / montre / allume).",
         )
     return (
-        "Glisser sur la carte pour poser une plaque.",
-        "Puis clic un mur, des piques ou un lance-flammes.",
+        "Choisir sol ou esprit, puis glisser sur la carte.",
+        "Clic un mur, des piques ou un lance-flammes.",
     )
 
 

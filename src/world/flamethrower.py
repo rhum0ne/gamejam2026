@@ -235,6 +235,10 @@ class Flamethrower(arcade.Sprite):
         self.intensity = 0.0
         self._tile_size = size
         self._seed = (center_x * 0.07 + center_y * 0.11) % 32.0
+        # True par defaut : un lance-flammes non lie crache selon son cycle.
+        self.commanded_on = True
+        # Lie a un activateur : plus de periode interne, allume ou eteint.
+        self.activator_driven = False
 
     @property
     def is_lethal(self) -> bool:
@@ -267,8 +271,28 @@ class Flamethrower(arcade.Sprite):
 
     def update(self, delta_time: float = settings.FRAME_TIME, *args, **kwargs) -> None:
         dt = max(0.0, delta_time)
+        if self.activator_driven:
+            self._sync_gated_intensity()
+            return
         self._age += dt
         self.intensity = _cycle_intensity(self._age, self.interval)
+
+    def bind_to_activator(self) -> None:
+        """Ignore le cycle interne : l'activateur decide allume / eteint."""
+        self.activator_driven = True
+        self._sync_gated_intensity()
+
+    def set_commanded(self, on: bool) -> None:
+        """Allume ou coupe le jet, sans retirer la buse du niveau."""
+        self.commanded_on = bool(on)
+        self.activator_driven = True
+        self._sync_gated_intensity()
+
+    def _sync_gated_intensity(self) -> None:
+        if self.commanded_on and self.sprite_lists:
+            self.intensity = 1.0
+        else:
+            self.intensity = 0.0
 
     def overlaps(self, sprite: arcade.Sprite) -> bool:
         """Le sprite chevauche-t-il le jet allume ?"""
