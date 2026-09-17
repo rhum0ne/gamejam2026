@@ -608,7 +608,7 @@ GHOST_GLOW_PULSE = 0.12  # variation d'opacite (0 = halo fixe)
 # Cadavre
 # --------------------------------------------------------------------------- #
 
-CORPSE_LIFETIME = 15.0  # secondes avant transformation en squelette
+CORPSE_LIFETIME = 20.0  # secondes avant transformation en squelette
 CORPSE_FADE_TIME = 0.35  # fondu cadavre -> os (court, masque par les particules)
 CORPSE_EAT_TIME = 4.0  # secondes pour qu'un ennemi devore un cadavre (laisse un squelette)
 CORPSE_DECAY_COUNT = 28
