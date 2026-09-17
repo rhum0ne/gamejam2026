@@ -40,7 +40,7 @@ from src.entities.corpse import Corpse
 from src.entities.enemy_base import EnemyBase
 from src.entities.player import Player
 from src.ui import sprites
-
+from src.ui.sfx import (play_zombie_breath)
 
 class ZombieState(Enum):
     """Etats de l'IA."""
@@ -70,6 +70,7 @@ class Zombie(EnemyBase):
     """Ennemi terrestre qui traque le joueur une fois qu'il l'a vu."""
 
     def __init__(self, center_x: float, center_y: float) -> None:
+        self._breath_timer = 0.0
         walk = _strip(settings.ZOMBIE_SPRITE_WALK)
         attack = _strip(settings.ZOMBIE_SPRITE_ATTACK)
         hurt = _strip(settings.ZOMBIE_SPRITE_HURT)
@@ -247,6 +248,10 @@ class Zombie(EnemyBase):
         self._tick_hit_feedback(delta_time)
         self._attack_cooldown = max(0.0, self._attack_cooldown - delta_time)
         self._sight_timer = max(0.0, self._sight_timer - delta_time)
+        self._breath_timer -= delta_time
+        if self._breath_timer <= 0.0:
+            play_zombie_breath()
+            self._breath_timer = settings.ZOMBIE_BREATH_INTERVAL
         self._grounded = self._physics is None or self._physics.can_jump()
         self._update_ai(delta_time, player, corpses)
         self._advance_animation(delta_time)
@@ -521,3 +526,7 @@ class Zombie(EnemyBase):
         """Planches dessinees tournees vers la gauche (cf. `Bat._apply_facing`)."""
         facing = -self.facing if settings.ZOMBIE_SPRITE_FACES_LEFT else self.facing
         sprites.apply_facing(self, facing)
+
+    def play_zombie_breath(self) -> None:
+        """Joue le souffle du zombie, sans bloquer si le son est deja en cours."""
+        play(settings.SOUND_ZOMBIE_BREATH, settings.SOUND_VOLUME_ZOMBIE_BREATH)

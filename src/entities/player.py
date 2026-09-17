@@ -144,6 +144,9 @@ class Player(arcade.Sprite):
         self._footstep_timer = 0.0
         self._jump_sound_pending = False
         self._death_elapsed = 0.0
+        self._spring_boost = False
+        self._spring_vertical = 0
+        self._spring_lock = 0.0
 
     # ------------------------------------------------------------------ #
     # Initialisation
@@ -314,6 +317,9 @@ class Player(arcade.Sprite):
         self._footstep_timer = 0.0
         self._jump_sound_pending = False
         self._death_elapsed = 0.0
+        self._spring_boost = False
+        self._spring_vertical = 0
+        self._spring_lock = 0.0
         self._animator.play(self._death, restart=True)
         self.texture = self._death.textures[0]
         sprites.apply_facing(self, self.facing)
@@ -395,6 +401,9 @@ class Player(arcade.Sprite):
         self._footstep_timer = 0.0
         self._jump_sound_pending = False
         self._death_elapsed = 0.0
+        self._spring_boost = False
+        self._spring_vertical = 0
+        self._spring_lock = 0.0
         self._animator.play(self._idle_still, restart=True)
         self.texture = self._idle_still.textures[0]
         sprites.apply_facing(self, self.facing)
@@ -541,6 +550,45 @@ class Player(arcade.Sprite):
         if not self.is_dashing:
             self._jump_sound_pending = True
 
+    def launch_vertical(self, speed: float) -> None:
+        """Impulsion verticale d'un ressort : garde change_x, impose change_y."""
+        if not self.alive:
+            return
+        self.change_y = speed
+        self._spring_boost = True
+        self._spring_vertical = 1 if speed > 0.0 else -1
+        self._spring_lock = 0.0
+        self._was_on_ground = False
+        self._time_off_ground = settings.PLAYER_COYOTE_TIME + 1.0
+        self._landing_timer = 0.0
+        self._jump_buffer = 0.0
+        if speed > 0.0:
+            self.center_y += 2.0
+        self._preserve_dash_momentum()
+
+    def reverse_horizontal(self, fallback_dir: int) -> None:
+        """Inverse l'elan horizontal. Si quasi nul, pousse dans `fallback_dir`."""
+        if not self.alive:
+            return
+        self.change_x = -self.change_x
+        if abs(self.change_x) < settings.SPRING_MIN_SPEED:
+            direction = 1 if fallback_dir >= 0 else -1
+            self.change_x = direction * settings.PLAYER_SPEED
+        self._spring_boost = True
+        self._spring_vertical = 0
+        self._spring_lock = settings.SPRING_HORIZONTAL_LOCK
+        if self.is_dashing or abs(self.change_x) > 0.05:
+            self._dash_dir = 1 if self.change_x >= 0.0 else -1
+            self.facing = self._dash_dir
+        self._preserve_dash_momentum()
+        if self.is_dashing:
+            self._dash_timer = settings.PLAYER_DASH_DURATION
+
+    def _preserve_dash_momentum(self) -> None:
+        """Un dash dans un ressort se comporte comme un dash-saut : l'elan reste."""
+        if self.is_dashing or self.is_high_speed:
+            self._dash_jump = True
+
     def draw_fx(self) -> None:
         """Trainee de points du dash, halo, et anneau 'dash pret'."""
         self._dash_trail.draw()
@@ -628,7 +676,7 @@ class Player(arcade.Sprite):
         self._cap_fall_speed()
         grounded = self._physics.can_jump()
         if grounded and not self._was_on_ground:
-            if not self._standing_on_ice():
+            if not self._standing_on_ice() and not self._spring_boost:
                 self._landing_timer = settings.PLAYER_LANDING_SLOW_TIME
             self._dust.emit_landing(
                 self.center_x,
@@ -649,6 +697,7 @@ class Player(arcade.Sprite):
             self._time_off_ground += delta_time
             self._footstep_timer = 0.0
             self._dust.stop_run()
+        self._tick_spring_boost(delta_time, grounded)
         self._tick_jump_buffer(delta_time)
         self._dash_trail.follow(
             self.center_x,
@@ -660,6 +709,24 @@ class Player(arcade.Sprite):
         )
         self._dust.update(delta_time)
 
+    def _tick_spring_boost(self, delta_time: float, grounded: bool) -> None:
+        """Coupe le lock ressort une fois l'apex atteint, au sol, ou timer ecoule."""
+        if not self._spring_boost:
+            return
+        if grounded:
+            self._spring_boost = False
+            self._spring_vertical = 0
+            self._spring_lock = 0.0
+            return
+        if self._spring_vertical > 0 and self.change_y <= 0.0:
+            self._spring_boost = False
+            self._spring_vertical = 0
+            return
+        if self._spring_vertical == 0:
+            self._spring_lock = max(0.0, self._spring_lock - delta_time)
+            if self._spring_lock <= 0.0:
+                self._spring_boost = False
+
     def _tick_jump_buffer(self, delta_time: float) -> None:
         if self._jump_buffer > 0.0:
             self._jump_buffer = max(0.0, self._jump_buffer - delta_time)
@@ -667,6 +734,11 @@ class Player(arcade.Sprite):
     def _apply_jump_gravity(self) -> None:
         """Arc Mario : montee tenue, coupe analogique, descente un peu plus lourde."""
         if self.is_dashing and not self._dash_jump:
+            return
+        if self._spring_boost and self._spring_vertical > 0:
+            extra = settings.PLAYER_JUMP_RISE_GRAVITY - settings.PLAYER_GRAVITY
+            if extra > 0.0:
+                self.change_y -= extra
             return
         if self.change_y > 0:
             target = (
@@ -682,6 +754,8 @@ class Player(arcade.Sprite):
 
     def _cap_fall_speed(self) -> None:
         """Plafonne la vitesse de chute (change_y negatif)."""
+        if self._spring_boost and self._spring_vertical < 0:
+            return
         max_fall = settings.PLAYER_MAX_FALL_SPEED
         if self.change_y < -max_fall:
             self.change_y = -max_fall
@@ -767,7 +841,7 @@ class Player(arcade.Sprite):
             self.change_x = _approach(self.change_x, direction * max_speed, accel * delta_time)
             return
         if direction == 0:
-            if not self._dash_jump:
+            if not self._dash_jump and not self._spring_boost:
                 self.change_x += (0.0 - self.change_x) * _exp_alpha(
                     delta_time, settings.PLAYER_AIR_BRAKE_TIME
                 )

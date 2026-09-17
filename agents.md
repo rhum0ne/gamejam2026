@@ -245,14 +245,15 @@ separation : elle permet de tester les regles sans contexte OpenGL.
 
 ### Ennemis — `entities/enemy.py`
 * Priorite : cadavre a portee d'odorat (`FEAST`) > joueur a portee (`CHASE`,
-  qui passe en `ATTACK` des que le joueur est a portee de melee) > patrouille
+  qui passe en `WINDUP` des que le joueur est a portee de melee) > patrouille
   (`PATROL`, demi-tour sur mur ou bord de plateforme).
 * `_player_in_range` ignore un joueur trop eloigne verticalement
   (`ENEMY_AGGRO_VERTICAL_RANGE`) : un ennemi au sol ne "suit" pas un joueur
   juste au-dessus de lui sur une autre plateforme, inatteignable.
 * En `ATTACK` (declenche a `ENEMY_ATTACK_RANGE` du joueur), l'ennemi s'arrete
-  et donne un coup d'epee engage (il ne bouge ni ne se retourne avant la fin
-  de l'animation), puis attend `ENEMY_ATTACK_COOLDOWN` avant le suivant.
+  (`WINDUP`, `ENEMY_ATTACK_WINDUP`), puis donne un coup d'epee engage (il ne
+  bouge ni ne se retourne avant la fin de l'animation), puis attend
+  `ENEMY_ATTACK_COOLDOWN` avant le suivant.
   **Seul ce coup tue** : `collisions.enemy_striking_player` ne compte que les
   frames ou la lame est tendue (`ENEMY_ATTACK_HIT_FRAMES`,
   `Enemy.strike_active`) et une cible a moins de `ENEMY_ATTACK_REACH` devant
