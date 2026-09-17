@@ -641,13 +641,34 @@ class Door(arcade.Sprite):
         # Collision inchangee : une tuile de large, deux de haut, cales sur la case.
         sprites.apply_rect_hit_box(self, size, size * 2)
         self.locked = True
+        self._open_flash = 0.0
 
     def unlock(self) -> None:
-        """Deverrouille la porte et affiche le vantail ouvert."""
+        """Deverrouille la porte : vantail ouvert + flash lumineux (juice)."""
         if not self.locked:
             return
         self.locked = False
         self.texture = self._open
+        self._open_flash = settings.DOOR_OPEN_FLASH_TIME
+
+    def update(self, delta_time: float = settings.FRAME_TIME, *args, **kwargs) -> None:
+        if self._open_flash > 0.0:
+            self._open_flash = max(0.0, self._open_flash - delta_time)
+
+    def draw_fx(self) -> None:
+        """Flash lumineux au moment ou le vantail s'ouvre, comme le key/checkpoint."""
+        if self._open_flash <= 0.0:
+            return
+        fade = self._open_flash / settings.DOOR_OPEN_FLASH_TIME
+        size = settings.DOOR_OPEN_FLASH_SIZE * (1.3 - 0.3 * fade)
+        draw_glow(
+            self.center_x,
+            self.center_y,
+            size,
+            size * 1.4,
+            settings.COLOR_DOOR_OPEN,
+            int(settings.DOOR_OPEN_FLASH_ALPHA * fade),
+        )
 
 
 class Checkpoint(arcade.Sprite):

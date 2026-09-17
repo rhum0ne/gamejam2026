@@ -15,7 +15,7 @@ from dataclasses import dataclass
 
 import arcade
 from arcade.color import WHITE
-from arcade.types import Color, XYWH
+from arcade.types import XYWH
 
 import settings
 from src.ui import keys, sprites
@@ -54,7 +54,12 @@ class Hud:
         self.screen_width = screen_width
         self.screen_height = screen_height
         icon = settings.HUD_STAT_ICON
-        self._soul_icon = sprites.soul_orb_texture(icon)
+        # 1ere frame seulement (planche animee dans le monde, icone fixe ici) :
+        # deja coloree, pas besoin de teinter au dessin (cf `_draw_soul_icon`).
+        soul_frame = settings.SOUL_ORB_FRAME_SIZE
+        self._soul_icon = sprites.load_sheet_region(
+            settings.SPRITE_SOUL_ORB, (0, 0, soul_frame, soul_frame), size=icon
+        )
         self._key_icon = sprites.load_texture(settings.SPRITE_KEY, size=icon)
         self._build_texts()
 
@@ -209,7 +214,7 @@ class Hud:
             self._soul_icon,
             XYWH(center_x, center_y, size, size),
             pixelated=True,
-            color=Color.from_iterable(settings.COLOR_SOUL_ORB),
+            color=WHITE,
             alpha=alpha,
         )
 
