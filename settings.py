@@ -613,6 +613,13 @@ GHOST_HOME_ARROW_MIN_DISTANCE = 96.0
 GHOST_HOME_ARROW_OFFSET = 42.0  # distance du centre du fantome a la pointe
 GHOST_HOME_ARROW_LENGTH = 12.0
 GHOST_HOME_ARROW_WIDTH = 9.0
+# Chronometre du timer, colle au sprite du fantome.
+GHOST_TIMER_RADIUS = 9.0
+GHOST_TIMER_OFFSET_X = 25.0  # du centre, toujours a droite
+GHOST_TIMER_OFFSET_Y = 10.0
+GHOST_TIMER_BORDER = 1.5
+GHOST_TIMER_TICK = 4.0
+GHOST_TIMER_SEGMENTS = 28
 GHOST_GLOW_SCALE = 3.8
 GHOST_GLOW_ALPHA = 32
 GHOST_GLOW_PULSE_SPEED = 2.2
@@ -1454,7 +1461,7 @@ UI_KEY_CELL = 16  # taille native d'une touche-lettre
 UI_KEY_ICON_HEIGHT = 40  # hauteur a l'ecran (nearest-neighbor)
 UI_KEY_CAPTION_SIZE = 16  # libelles a cote des icones
 
-# Stats haut-droit : jauge fantome en haut, puis une ligne par item.
+# Stats haut-droit : jauge d'XP (niveau du fantome), puis la cle si ramasse.
 HUD_STAT_ICON = 40
 HUD_KEY_ICON = 80  # largeur de la cle HUD (sprite 20x10 recadre, ratio 2:1)
 HUD_STAT_GAP = 8  # espace vertical entre deux lignes
@@ -1463,7 +1470,7 @@ HUD_GAUGE_WIDTH = 168
 HUD_GAUGE_HEIGHT = 12
 HUD_GAUGE_GAP = 8  # espace libelle "Lvl. X" -> jauge
 HUD_GAUGE_LABEL_SIZE = 14
-HUD_GAUGE_LOW = 0.22  # le timer fantome pulse sous ce ratio
+HUD_GAUGE_LOW = 0.22  # le chronometre fantome pulse sous ce ratio
 
 # --------------------------------------------------------------------------- #
 # Debug

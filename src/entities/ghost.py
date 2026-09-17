@@ -295,6 +295,60 @@ class Ghost(arcade.Sprite):
             int(settings.GHOST_GLOW_ALPHA * pulse),
         )
 
+    def draw_timer(self) -> None:
+        """Petit chronometre colle au fantome : le disque se vide avec le timer."""
+        if self._emerging or self.alpha <= 0:
+            return
+        duration = max(self.stats.duration, 0.001)
+        remaining = max(0.0, min(1.0, self.time_left / duration))
+        radius = settings.GHOST_TIMER_RADIUS
+        center_x = self.center_x + settings.GHOST_TIMER_OFFSET_X
+        center_y = self.center_y + settings.GHOST_TIMER_OFFSET_Y
+        alpha = self.alpha
+        back = (*settings.COLOR_HUD_BAR_BACKGROUND, alpha)
+        fill = (*settings.COLOR_HUD_GHOST_GAUGE, alpha)
+        arcade.draw_circle_filled(center_x, center_y, radius, back)
+        if remaining >= 0.999:
+            arcade.draw_circle_filled(center_x, center_y, radius - 1.0, fill)
+        elif remaining > 0.0:
+            # 12h = 90 deg ; le disque se vide dans le sens horaire.
+            start_angle = 90.0 - 360.0 * remaining
+            arcade.draw_arc_filled(
+                center_x,
+                center_y,
+                radius * 2.0,
+                radius * 2.0,
+                fill,
+                start_angle,
+                90.0,
+                num_segments=settings.GHOST_TIMER_SEGMENTS,
+            )
+        arcade.draw_circle_outline(
+            center_x,
+            center_y,
+            radius,
+            fill,
+            settings.GHOST_TIMER_BORDER,
+        )
+        tick = settings.GHOST_TIMER_TICK
+        arcade.draw_line(
+            center_x,
+            center_y + radius - 1.0,
+            center_x,
+            center_y + radius + tick,
+            fill,
+            settings.GHOST_TIMER_BORDER,
+        )
+        if remaining <= settings.HUD_GAUGE_LOW:
+            flash = 0.45 + 0.55 * abs((self.time_left * 6.0) % 1.0 - 0.5) * 2.0
+            arcade.draw_circle_outline(
+                center_x,
+                center_y,
+                radius + 1.0 + 2.0 * flash,
+                (*settings.COLOR_HUD_GHOST_GAUGE, int(220 * flash * alpha / 255)),
+                2,
+            )
+
     # ------------------------------------------------------------------ #
     # Boucle de jeu
     # ------------------------------------------------------------------ #
