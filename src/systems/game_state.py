@@ -803,7 +803,7 @@ class PlayView(arcade.View):
         for mechanism in self.level.mechanisms:
             pressed = collisions.plate_is_weighted(mechanism.plate, weights)
             if pressed != mechanism.pressed:
-                play_menu_click()
+                play_menu_click(echo=True)
             mechanism.set_pressed(pressed, weights)
 
     def _update_playing(self, delta_time: float) -> None:

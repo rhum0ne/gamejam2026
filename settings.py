@@ -56,6 +56,14 @@ SOUND_VOLUME_FOOTSTEP = 0.4
 SOUND_VOLUME_FOOTSTEP_LAND = 0.55
 SOUND_FOOTSTEP_PITCH_MIN = 0.92
 SOUND_FOOTSTEP_PITCH_MAX = 1.08
+# Echo "caverne" : copies plus faibles et un peu plus graves, pour le vide.
+SOUND_ECHO_DELAY = 0.22
+SOUND_ECHO_DECAY = 0.34
+SOUND_ECHO_TAPS = 2
+SOUND_ECHO_SPEED = 0.97
+SOUND_ECHO_FOOTSTEP_DELAY = 0.12
+SOUND_ECHO_FOOTSTEP_DECAY = 0.22
+SOUND_ECHO_FOOTSTEP_TAPS = 1
 
 # --------------------------------------------------------------------------- #
 # Police
