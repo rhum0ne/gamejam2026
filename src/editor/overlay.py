@@ -24,8 +24,8 @@ SHORTCUTS: tuple[tuple[str, str], ...] = (
     ("Fleches / ZQSD", "deplacer la camera"),
     ("B / R / G", "pinceau / rectangle / remplir la zone"),
     ("X / I / M", "gomme / pipette / selection"),
-    ("L", "plaques et blocs lies"),
-    ("V", "inverser la plaque (montre / cache a l'activation)"),
+    ("L / onglet Plaques", "plaques et blocs lies"),
+    ("V / bouton cache-montre", "inverser la plaque (disparait / apparait)"),
     (", et .", "portee du lance-flammes / delay du bloc tombant"),
     ("9 et 0", "intervalle du lance-flammes / respawn du bloc tombant"),
     ("H", "pivoter le lance-flammes (4 directions)"),
@@ -41,10 +41,10 @@ SHORTCUTS: tuple[tuple[str, str], ...] = (
     ("Ctrl+S / Ctrl+Shift+S", "enregistrer / enregistrer sous"),
     ("Ctrl+P", "essayer le niveau (Echap pour revenir)"),
     ("F2 / F3 / F4", "nom / indice / dimensions"),
-    ("F5", "theme du terrain (terre / sable / roche)"),
+    ("themes du panneau / F5", "theme du terrain (terre / sable / roche)"),
     ("Ctrl+G / Origine", "grille / voir toute la carte"),
     ("Ctrl+O", "revenir a la liste des cartes"),
-    ("F1", "afficher / masquer cette aide"),
+    ("Aide / F1", "afficher / masquer cette aide"),
 )
 
 
@@ -117,7 +117,7 @@ class StatusBar:
             )
         else:
             self._bottom.draw(
-                f"annuler {data.undo_label}   refaire {data.redo_label}   F1 aide",
+                f"annuler {data.undo_label}   refaire {data.redo_label}   Aide dans le panneau",
                 margin,
                 height - 92,
                 settings.COLOR_EDITOR_TEXT_DIM,
@@ -173,7 +173,7 @@ class HelpOverlay:
                 description, x + key_width + gap, y, max_width=desc_width
             )
         self._footer.draw(
-            "F1 ou Echap pour fermer",
+            "Aide ou Echap pour fermer",
             window_width / 2,
             36,
             max_width=max(80.0, window_width - margin * 2),

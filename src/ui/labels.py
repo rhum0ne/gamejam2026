@@ -73,6 +73,7 @@ class Line:
         color: tuple[int, int, int] | tuple[int, int, int, int] = settings.COLOR_EDITOR_TEXT,
         anchor_x: str = "left",
         anchor_y: str = "baseline",
+        font_name: str | tuple[str, ...] | None = None,
     ) -> None:
         self._text = arcade.Text(
             "",
@@ -82,7 +83,7 @@ class Line:
             font_size=size,
             anchor_x=anchor_x,
             anchor_y=anchor_y,
-            font_name=PIXEL_FONT,
+            font_name=font_name if font_name is not None else PIXEL_FONT,
         )
 
     def draw(
@@ -99,7 +100,8 @@ class Line:
 
         Si `max_width` est fourni et que le texte depasse :
             - `marquee` : defilement horizontal ping-pong ;
-            - `end` : aligne la fin (curseur de saisie toujours visible).
+            - `end` : aligne la fin (curseur de saisie toujours visible) ;
+            - `clip` : coupe net a droite, sans defilement.
         """
         self._text.text = text
         self._text.y = y
@@ -114,6 +116,12 @@ class Line:
             self._text.x = x
             self._text.draw()
             return
+        height = max(self._text.content_height, self._text.font_size) + 10
+        if overflow == "clip":
+            self._text.x = x
+            with _clip(x, y - 6, max_width, height):
+                self._text.draw()
+            return
         overflow_px = width - max_width
         if overflow == "end":
             offset = overflow_px
@@ -127,7 +135,6 @@ class Line:
         visible = max(1, int(max_width / char_w) + 2)
         self._text.text = text[start : start + visible]
         self._text.x = x - frac
-        height = max(self._text.content_height, self._text.font_size) + 10
         with _clip(x, y - 6, max_width, height):
             self._text.draw()
 

@@ -39,9 +39,10 @@ Les plaques d'activation sont declarees a part, en coordonnees de grille
 
 `setBlock type=void` retire le bloc existant tant qu'un poids (joueur, cadavre,
 ennemi au sol ; un ennemi volant comme la chauve-souris ne pese pas, voir
-`EnemyBase.weighs_on_plates`) reste sur la plaque. `"invert": true` inverse
-le sens : les blocs sont caches au chargement et n'apparaissent que tant que
-la plaque est enfoncee. `width` est optionnel (1 tuile par defaut).
+`EnemyBase.weighs_on_plates`) reste sur la plaque. Cibles possibles : murs,
+murs spectraux, blocs invisibles, piques, lance-flammes. `"invert": true`
+inverse le sens : les cibles sont cachees au chargement et n'apparaissent
+que tant que la plaque est enfoncee. `width` est optionnel (1 tuile par defaut).
 Une pique de plafond (`spike_up`) tombe si le bloc au-dessus d'elle disparait :
 elle tue au contact puis se brise au sol.
 
@@ -394,7 +395,8 @@ class Level:
             )
             raise LevelFormatError(
                 f"setBlock void : aucun bloc a ({column}, {row}) "
-                f"({detail} ; la plaque ne retire que murs, murs spectraux et piques)"
+                f"({detail} ; la plaque commande murs, piques, blocs invisibles "
+                f"et lance-flammes)"
             )
         lists = tuple(sprite.sprite_lists)
         if not lists:
@@ -405,7 +407,13 @@ class Level:
 
     def _terrain_at(self, column: int, row: int) -> arcade.Sprite | None:
         x, y = self.tile_center(column, row, self.rows)
-        for sprite_list in (self.walls, self.spectral_walls, self.hazards):
+        for sprite_list in (
+            self.walls,
+            self.spectral_walls,
+            self.hazards,
+            self.hidden_walls,
+            self.flamethrowers,
+        ):
             for sprite in sprite_list:
                 if abs(sprite.center_x - x) < 1 and abs(sprite.center_y - y) < 1:
                     return sprite
@@ -417,9 +425,7 @@ class Level:
         named = (
             ("un decor", self.decorations),
             ("une torche", self.torches),
-            ("un lance-flammes", self.flamethrowers),
             ("un bloc tombant", self.falling_blocks),
-            ("un bloc invisible", self.hidden_walls),
             ("une porte", self.doors),
             ("un checkpoint", self.checkpoints),
             ("un objet", self.items),

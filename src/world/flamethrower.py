@@ -238,6 +238,8 @@ class Flamethrower(arcade.Sprite):
 
     @property
     def is_lethal(self) -> bool:
+        if not self.sprite_lists:
+            return False
         return self.intensity >= settings.FLAMETHROWER_LETHAL_INTENSITY
 
     @property
@@ -281,7 +283,7 @@ class Flamethrower(arcade.Sprite):
         )
 
     def draw_flame(self) -> None:
-        if self.intensity <= 0.01:
+        if not self.sprite_lists or self.intensity <= 0.01:
             return
         origin_x, origin_y = self.nozzle()
         _draw_flame_quad(
