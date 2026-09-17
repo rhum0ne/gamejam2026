@@ -45,7 +45,7 @@ from src.systems.upgrades import SoulProgression
 from src.ui.debug import DebugOverlay, DebugSnapshot
 from src.ui.display import handle_display_key
 from src.ui.hud import Hud, HudData
-from src.ui import cursor
+from src.ui import cursor, keys
 from src.ui.music import music
 from src.ui.sfx import (
     play_attack,
@@ -660,6 +660,7 @@ class PlayView(arcade.View):
                 revealed_walls.append(wall)
         self.fog.draw_at(ghost.center_x, ghost.center_y, ghost.vision_radius, self.camera.world)
         self.level.spectral_buttons.draw()
+        self._draw_spectral_press_prompt(ghost)
         self._draw_hidden_wall_outlines()
         self._reveal_walls.draw(revealed_walls)
         with glow_pass():
@@ -942,6 +943,42 @@ class PlayView(arcade.View):
             if pressed != mechanism.pressed:
                 play_menu_click(echo=True)
             mechanism.set_pressed(pressed, weights)
+
+    def _spectral_button_near_ghost(self, ghost: Ghost | None = None) -> Mechanism | None:
+        """Bouton spectral assez proche du fantome pour afficher Press F."""
+        target = ghost if ghost is not None else self.ghost
+        if target is None or target.vanishing or self.ghost_emerging:
+            return None
+        radius = settings.SPECTRAL_BUTTON_PROMPT_RANGE
+        closest: Mechanism | None = None
+        closest_distance = radius
+        for mechanism in self.level.mechanisms:
+            if mechanism.kind != settings.ACTIVATOR_KIND_SPECTRAL:
+                continue
+            plate = mechanism.plate
+            distance = math.hypot(
+                target.center_x - plate.center_x,
+                target.center_y - plate.center_y,
+            )
+            if distance <= closest_distance:
+                closest = mechanism
+                closest_distance = distance
+        return closest
+
+    def _draw_spectral_press_prompt(self, ghost: Ghost) -> None:
+        """Invite clavier au-dessus du bouton spectral proche."""
+        mechanism = self._spectral_button_near_ghost(ghost)
+        if mechanism is None:
+            return
+        plate = mechanism.plate
+        keys.draw_prompt(
+            plate.center_x,
+            plate.top + settings.SPECTRAL_BUTTON_PROMPT_OFFSET,
+            ("f",),
+            settings.SPECTRAL_BUTTON_PROMPT,
+            self.held_keys,
+            height=24,
+        )
 
     def _spectral_button_under_ghost(self) -> Mechanism | None:
         """Bouton spectral sous le fantome, ou None."""

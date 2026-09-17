@@ -75,6 +75,7 @@ def check_level_catalog() -> None:
     import warnings
 
     from src.world.level import (
+        Level,
         LevelEntry,
         catalog_from_entries,
         level_type_label,
@@ -101,6 +102,12 @@ def check_level_catalog() -> None:
     puzzles = {entry.filename for entry in catalog.in_type(settings.LEVEL_TYPE_PUZZLE)}
     assert "Jumping_jack.json" in puzzles
     assert "FindTheDoor.json" in puzzles
+    assert "Corpse_bridge.json" in puzzles
+    assert "Spectral_seal.json" in puzzles
+    bridge = Level.from_file("Corpse_bridge.json")
+    assert bridge.columns >= 20
+    seal = Level.from_file("Spectral_seal.json")
+    assert len(seal.spectral_buttons) == 1
     first = LevelEntry(0, "a.json", "A", "", settings.LEVEL_TYPE_DEV)
     second = LevelEntry(1, "b.json", "B", "", settings.LEVEL_TYPE_DEV)
     basic = LevelEntry(2, "c.json", "C", "", settings.LEVEL_TYPE_BASIC)
