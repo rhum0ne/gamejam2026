@@ -65,3 +65,6 @@ def use_default_camera(window: arcade.Window) -> None:
         camera.scissor = None
         camera.use()
     window.ctx.scissor = None
+    from src.ui.cursor import show as show_cursor
+
+    show_cursor(window)
