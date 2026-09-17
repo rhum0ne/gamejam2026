@@ -140,7 +140,11 @@ class GatedTile:
         if should_hide:
             self.hide()
             return
-        if self.overlaps_any(occupants):
+        # Les murs ne doivent pas naitre dans un corps. Les piques / lave, si :
+        # elles reapparaissent et tuent (cadavre qui quitte une plaque, etc.).
+        if self.overlaps_any(occupants) and not getattr(
+            self.sprite, "lethal_for_body", False
+        ):
             return
         self.show()
 

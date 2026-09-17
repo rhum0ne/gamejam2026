@@ -467,6 +467,21 @@ class Boss(EnemyBase):
             return 1.0
         return remaining / fade_time
 
+    def _laser_charge_timescale(self) -> float:
+        """Ralentit les premieres etincelles, puis reprend le rythme normal."""
+        if self.laser_active:
+            return 1.0
+        slow_frames = settings.BOSS_LASER_CHARGE_SLOW_FRAMES
+        if slow_frames <= 0 or self._beam_anim.frame_index >= slow_frames:
+            return 1.0
+        natural = (
+            slow_frames
+            * self._beam_strip.animation.frame_time
+            / max(self._beam_anim.speed, 0.001)
+        )
+        target = max(settings.BOSS_LASER_CHARGE_SLOW_TIME, 0.001)
+        return natural / target
+
     def _laser_origin(self) -> tuple[float, float]:
         """Gemme frontale, source du rayon."""
         return (
@@ -828,5 +843,5 @@ class Boss(EnemyBase):
         self.texture = self._animator.update(delta_time)
         sprites.apply_facing(self, self.facing)
         if self.state is BossState.LASER:
-            self._beam_anim.update(delta_time)
+            self._beam_anim.update(delta_time * self._laser_charge_timescale())
 

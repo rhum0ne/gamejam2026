@@ -64,6 +64,7 @@ def check_levels() -> None:
     check_inverted_activator()
     check_gated_flamethrower()
     check_link_actions()
+    check_spikes_reappear_inside_player()
     check_spectral_button()
     check_ground_theme()
     check_sfx_files()
@@ -294,6 +295,47 @@ def check_link_actions() -> None:
     assert not thrower.commanded_on
     assert not thrower.is_lethal
     print("  actions par lien -> hide / show / ignite independants")
+
+
+def check_spikes_reappear_inside_player() -> None:
+    """Une pique cachee par une plaque reapparait dans le corps et le tue."""
+    data = {
+        "name": "piques-cadavre",
+        "tile_size": settings.TILE_SIZE,
+        "legend": {"#": "wall", "^": "spike", "P": "player_spawn"},
+        "rows": [
+            "#######",
+            "#P.^..#",
+            "#######",
+        ],
+        "activators": [
+            {
+                "x": 1,
+                "y": 1,
+                "width": 1,
+                "activate": {
+                    "setBlock": [{"x": 3, "y": 1, "type": "void", "action": "hide"}]
+                },
+            }
+        ],
+    }
+    level = Level.from_dict(data)
+    assert len(level.hazards) == 1
+    spike = level.hazards[0]
+    mechanism = level.mechanisms[0]
+    mechanism.set_pressed(True, ())
+    assert spike not in level.hazards, "la plaque doit retirer les piques"
+    player = Player(spike.center_x, spike.center_y - settings.TILE_SIZE / 4)
+    mechanism.set_pressed(False, (player,))
+    assert spike in level.hazards, "les piques doivent reapparaitre meme dans le joueur"
+    assert collisions.player_hits_hazard(player, level) is spike, (
+        "une pique nee dans le corps doit tuer"
+    )
+    side = Player(spike.left - abs(player.width) / 2 + 2, spike.center_y)
+    assert collisions.player_hits_hazard(side, level) is None, (
+        "un frolement lateral ne doit toujours pas tuer"
+    )
+    print("  piques reactivees -> tuent si elles naissent dans le corps")
 
 
 def check_spectral_button() -> None:
@@ -1001,12 +1043,19 @@ def check_boss_ai() -> None:
     assert boss.state is BossState.LASER
     assert not boss.laser_active, "les premieres frames de Laser_sheet ne sont pas encore le rayon"
     lit = False
-    for _ in range(90):
+    charge_frames = 0
+    for _ in range(150):
         boss.update(FRAME, player=player, corpses=None)
+        charge_frames += 1
         if boss.laser_active:
             lit = True
             break
     assert lit, "le laser doit s'allumer pendant l'anim"
+    charge_s = charge_frames * FRAME
+    slow = settings.BOSS_LASER_CHARGE_SLOW_TIME
+    assert charge_s >= slow, (
+        f"les premieres etincelles doivent durer au moins {slow:.2f}s, obtenu {charge_s:.2f}s"
+    )
     origin_x, origin_y = boss._laser_origin()
     player.center_x = origin_x + boss._laser_dir_x * 90.0
     player.center_y = origin_y + boss._laser_dir_y * 90.0
@@ -1470,6 +1519,21 @@ def check_menus(window: arcade.Window) -> None:
     play.on_key_press(arcade.key.F3, 0)
     assert play._debug_enabled is False, "F3 doit pouvoir le recacher"
     play.on_resize(settings.SCREEN_WIDTH, settings.SCREEN_HEIGHT)
+
+    from src.ui.level_up import LevelUpOverlay
+
+    picked: list[str] = []
+    overlay = LevelUpOverlay(on_choose=picked.append)
+    overlay.set_cards(SoulProgression().upgrade_cards())
+    overlay.on_key_press(window, arcade.key.ENTER, 0)
+    overlay.on_key_press(window, arcade.key.A, 0)
+    overlay.on_mouse_press(1.0, 1.0)
+    overlay.on_mouse_release(1.0, 1.0)
+    assert not picked, "l'ecran de niveau doit ignorer l'attaque pendant le delai"
+    overlay.update(settings.MENU_LEVEL_UP_INPUT_LOCK)
+    overlay.on_key_press(window, arcade.key.ENTER, 0)
+    assert picked == ["vision"], "apres le delai, Enter doit valider la carte"
+
     print("  menus -> titre, victoire, pause et resize OK")
 
 
@@ -1738,7 +1802,7 @@ def check_ice_block(window: arcade.Window) -> None:
         "tile_size": settings.TILE_SIZE,
         "legend": {
             ".": "vide",
-            "#": "rock",
+            "#": "wall",
             "~": settings.TILE_KIND_ICE,
             "P": "player_spawn",
         },
@@ -1766,6 +1830,23 @@ def check_ice_block(window: arcade.Window) -> None:
         f"la glace doit conserver l'elan, vitesse restante {player.change_x:.2f}"
     )
     print(f"  glace -> {len(ices)} blocs, elan conserve ({player.change_x:.2f} px/frame)")
+
+    player.walk(1)
+    player.change_x = settings.PLAYER_SPEED
+    for _ in range(90):
+        player.update(FRAME)
+        if abs(player.change_x) < 0.05:
+            break
+    assert abs(player.change_x) < 0.2, (
+        f"un obstacle doit couper l'elan sur la glace, vx={player.change_x:.2f}"
+    )
+    player.walk(-1)
+    for _ in range(24):
+        player.update(FRAME)
+    assert player.change_x < -0.15, (
+        f"apres un obstacle, la glace doit laisser repartir, vx={player.change_x:.2f}"
+    )
+    print(f"  glace obstacle -> elan coupe, depart inverse ({player.change_x:.2f})")
 
 
 def check_dash_stops_on_wall(window: arcade.Window) -> None:

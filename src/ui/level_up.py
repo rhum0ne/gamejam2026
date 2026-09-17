@@ -162,6 +162,7 @@ class LevelUpOverlay:
         )
         self.cards: list[_CardButton] = []
         self.focus_index = 0
+        self._input_lock = 0.0
         self._layout_w = 0.0
         self._layout_h = 0.0
         self._panel = (0.0, 0.0, 0.0, 0.0)
@@ -169,6 +170,7 @@ class LevelUpOverlay:
     def set_cards(self, cards: Sequence[UpgradeCard]) -> None:
         self.cards = [_CardButton(card, on_activate=self._activate) for card in cards]
         self.focus_index = 0
+        self._input_lock = settings.MENU_LEVEL_UP_INPUT_LOCK
         self._sync()
         self._layout_w = self._layout_h = -1.0  # force un relayout au prochain draw
 
@@ -203,7 +205,13 @@ class LevelUpOverlay:
             card.place(card_cx, row_y, card_w, card_h)
 
     def _activate(self, kind: str) -> None:
+        if self._input_lock > 0.0:
+            return
         self._on_choose(kind)
+
+    def update(self, delta_time: float) -> None:
+        """Compte le delai pendant lequel les entrees sont ignorees."""
+        self._input_lock = max(0.0, self._input_lock - max(0.0, delta_time))
 
     def draw(self, width: float, height: float) -> None:
         self.layout(width, height)
@@ -224,7 +232,7 @@ class LevelUpOverlay:
     def on_key_press(self, window: arcade.Window, symbol: int, modifiers: int) -> None:
         if handle_display_key(window, symbol, modifiers):
             return
-        if not self.cards:
+        if self._input_lock > 0.0 or not self.cards:
             return
         if symbol in (arcade.key.LEFT, arcade.key.A):
             self.focus_index = (self.focus_index - 1) % len(self.cards)
@@ -243,9 +251,13 @@ class LevelUpOverlay:
         self._sync()
 
     def on_mouse_press(self, x: float, y: float) -> None:
+        if self._input_lock > 0.0:
+            return
         for card in self.cards:
             card.on_press(x, y)
 
     def on_mouse_release(self, x: float, y: float) -> None:
+        if self._input_lock > 0.0:
+            return
         for card in self.cards:
             card.on_release(x, y)

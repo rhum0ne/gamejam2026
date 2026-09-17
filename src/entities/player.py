@@ -672,8 +672,14 @@ class Player(arcade.Sprite):
         old_x = self.center_x
         intended_x = self.change_x
         self._physics.update()
-        if carried and self._dash_blocked_by_wall(old_x, intended_x):
+        if carried and self._horizontal_blocked(old_x, intended_x):
             self._stop_dash_against_wall()
+        elif (
+            self._horizontal_blocked(old_x, intended_x)
+            and self._standing_on_ice()
+            and abs(intended_x) >= settings.PLAYER_ICE_BLOCK_DUMP_SPEED
+        ):
+            self.change_x = 0.0
         self._cap_fall_speed()
         grounded = self._physics.can_jump()
         if grounded and not self._was_on_ground:
@@ -784,8 +790,8 @@ class Player(arcade.Sprite):
             return
         self._footstep_timer = max(0.0, self._footstep_timer - delta_time)
 
-    def _dash_blocked_by_wall(self, old_x: float, intended_x: float) -> bool:
-        """True si le moteur a absorbe le deplacement horizontal contre un mur."""
+    def _horizontal_blocked(self, old_x: float, intended_x: float) -> bool:
+        """True si le moteur a absorbe le deplacement horizontal contre un obstacle."""
         if intended_x == 0.0:
             return False
         moved = self.center_x - old_x

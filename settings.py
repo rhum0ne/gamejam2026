@@ -526,6 +526,8 @@ PLAYER_ICE_SLIDE_TIME = 9.0
 PLAYER_ICE_ACCEL_SCALE = 0.10
 PLAYER_ICE_TURN_SCALE = 0.32  # multiplier encore plus faible en demi-tour
 PLAYER_ICE_STOP_SPEED = 0.015
+# Un obstacle (mur, cadavre) coupe l'elan glissant au-dela de ce seuil.
+PLAYER_ICE_BLOCK_DUMP_SPEED = 1.0
 # Fraction de l'acceleration au sol quand le joueur est en l'air (1 = aussi vif qu'au sol).
 PLAYER_AIR_CONTROL = 1.15
 # Ralentissement juste apres l'atterrissage.
@@ -1069,6 +1071,9 @@ BOSS_LASER_RANGE = 360.0 * BOSS_SCALE
 BOSS_LASER_HEIGHT = 14.0 * BOSS_SCALE  # hitbox du rayon, independante de la hauteur du sprite
 BOSS_LASER_LINGER_FRAMES = 8  # alternance derniere / avant-derniere frame du rayon
 BOSS_LASER_FADE_TIME = 0.16  # fondu leger en fin de rayon, en secondes
+# Premieres etincelles du laser, beaucoup plus lentes (temps reel).
+BOSS_LASER_CHARGE_SLOW_FRAMES = 3
+BOSS_LASER_CHARGE_SLOW_TIME = 0.72
 # Temps de lissage de la visee (smooth damp) : plus grand = plus inerte.
 BOSS_LASER_SMOOTH_TIME = 0.7
 # Vitesse max de rotation du rayon, en deg/s. 0 = pas de plafond.
@@ -1368,6 +1373,8 @@ MENU_CARD_HEIGHT = 220
 MENU_CARD_GAP = 24
 
 MENU_PAUSE_VEIL_ALPHA = 176
+# Ignore clavier/souris a l'ouverture, pour ne pas valider une carte avec l'attaque.
+MENU_LEVEL_UP_INPUT_LOCK = 1.0
 MENU_GRID_COLUMNS = 2
 MENU_CELL_WIDTH = 220
 MENU_CELL_HEIGHT = 56

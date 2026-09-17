@@ -72,6 +72,12 @@ def enemies_hit_by_flame(
     return hit
 
 
+def _overlap_xy(player: Player, hazard: arcade.Sprite) -> tuple[float, float]:
+    overlap_x = min(player.right, hazard.right) - max(player.left, hazard.left)
+    overlap_y = min(player.top, hazard.top) - max(player.bottom, hazard.bottom)
+    return overlap_x, overlap_y
+
+
 def _vertical_contact(player: Player, hazard: arcade.Sprite) -> bool:
     """True si le contact se fait par le haut/bas (on tombe/saute dessus).
 
@@ -79,11 +85,18 @@ def _vertical_contact(player: Player, hazard: arcade.Sprite) -> bool:
     recouvrement vertical est le plus petit, le contact vient d'un
     atterrissage sur la pique plutot que d'un frolement lateral.
     """
-    overlap_x = min(player.right, hazard.right) - max(player.left, hazard.left)
-    overlap_y = min(player.top, hazard.top) - max(player.bottom, hazard.bottom)
+    overlap_x, overlap_y = _overlap_xy(player, hazard)
     if overlap_x <= 0 or overlap_y <= 0:
         return False
     return overlap_y <= overlap_x
+
+
+def _embedded_in_hazard(player: Player, hazard: arcade.Sprite) -> bool:
+    """True si le centre du corps est dans la pique (elle est nee autour de lui)."""
+    return (
+        hazard.left < player.center_x < hazard.right
+        and hazard.bottom < player.center_y < hazard.top
+    )
 
 
 def player_hits_hazard(player: Player, level: Level) -> arcade.Sprite | None:
@@ -95,15 +108,21 @@ def player_hits_hazard(player: Player, level: Level) -> arcade.Sprite | None:
     Les piques ne tuent que sur un contact vertical : sauter sur une pique au
     sol, se cogner la tete contre une pique de plafond, ou se faire tomber
     dessus une pique en chute. Froler une pique par le cote en marchant ne
-    tue pas. La lave et l'eau (`omni_lethal`) tuent au moindre contact,
-    cote compris - ce sont des mares, pas des murs qu'on peut raser.
+    tue pas. Une pique qui reapparait dans le corps (plaque, cadavre) tue
+    aussi : le centre du joueur est alors dans la hitbox. La lave et l'eau
+    (`omni_lethal`) tuent au moindre contact, cote compris - ce sont des
+    mares, pas des murs qu'on peut raser.
     """
     if not player.alive:
         return None
     for hazard in arcade.check_for_collision_with_list(player, level.hazards):
         if not getattr(hazard, "lethal_for_body", True):
             continue
-        if getattr(hazard, "omni_lethal", False) or _vertical_contact(player, hazard):
+        if (
+            getattr(hazard, "omni_lethal", False)
+            or _vertical_contact(player, hazard)
+            or _embedded_in_hazard(player, hazard)
+        ):
             return hazard
     for hazard in arcade.check_for_collision_with_list(player, level.falling_spikes):
         if getattr(hazard, "lethal_for_body", True):
@@ -115,14 +134,17 @@ def hazard_side_contacts(player: Player, level: Level) -> list[arcade.Sprite]:
     """Piques (fixes) touchees par le cote : bloquent comme un mur, ne tuent pas.
 
     La lave et l'eau (`omni_lethal`) ne bloquent jamais : un frolement lateral
-    tue au lieu de pousser le joueur comme le ferait un mur.
+    tue au lieu de pousser le joueur comme le ferait un mur. Un corps enfonce
+    dans la pique n'est pas un frolement : `player_hits_hazard` le tue.
     """
     if not player.alive:
         return []
     return [
         hazard
         for hazard in arcade.check_for_collision_with_list(player, level.hazards)
-        if not getattr(hazard, "omni_lethal", False) and not _vertical_contact(player, hazard)
+        if not getattr(hazard, "omni_lethal", False)
+        and not _vertical_contact(player, hazard)
+        and not _embedded_in_hazard(player, hazard)
     ]
 
 
