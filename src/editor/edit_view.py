@@ -549,9 +549,9 @@ class EditView(arcade.View):
         range_delta = 0
         interval_delta = 0.0
         rotate = False
-        if symbol == arcade.key.PERIOD:
+        if symbol == arcade.key.L:
             range_delta = 1
-        elif symbol == arcade.key.COMMA:
+        elif symbol == arcade.key.K:
             range_delta = -1
         elif symbol in _FLAME_INTERVAL_LONGER:
             interval_delta = settings.FLAMETHROWER_INTERVAL_STEP
