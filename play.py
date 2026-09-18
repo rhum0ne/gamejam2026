@@ -6,6 +6,7 @@ A utiliser quand on ne veut rien savoir des environnements virtuels :
     python3 play.py --play      # options transmises a main.py
     python3 play.py --edit      # editeur de niveaux
     python3 play.py --check     # lance le test de demarrage au lieu du jeu
+    python3 play.py --pad       # ecran de test manette
 
 Sur macOS / Linux, `./play.sh` fait la meme chose en trouvant Python tout seul.
 Sur Windows, double-clique sur `play.bat`.
@@ -26,7 +27,12 @@ def main(argv: list[str] | None = None) -> int:
     arguments = list(sys.argv[1:] if argv is None else argv)
     run_tests = "--check" in arguments
     run_editor = "--edit" in arguments
-    arguments = [argument for argument in arguments if argument not in ("--check", "--edit")]
+    run_pad = "--pad" in arguments
+    arguments = [
+        argument
+        for argument in arguments
+        if argument not in ("--check", "--edit", "--pad")
+    ]
 
     try:
         python = ensure_environment()
@@ -34,6 +40,8 @@ def main(argv: list[str] | None = None) -> int:
             script = ROOT / "tools" / "smoke_test.py"
         elif run_editor:
             script = ROOT / "tools" / "level_editor.py"
+        elif run_pad:
+            script = ROOT / "tools" / "pad_test.py"
         else:
             script = ROOT / "main.py"
         return run_script(python, script, arguments)

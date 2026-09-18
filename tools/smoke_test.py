@@ -437,6 +437,72 @@ def check_hidden_wall() -> None:
     print("  bloc invisible -> charge, masque, solide")
 
 
+def check_pad() -> None:
+    """Mapping Super Nintendo USB et hub sans peripherique."""
+    from src.ui import pad
+
+    assert pad.direction_from_axes(0.0, 0.0, -1.0, 0.0) == (-1, 0)
+    assert pad.direction_from_axes(0.0, 0.0, 1.0, 0.0) == (1, 0)
+    assert pad.direction_from_axes(0.0, 0.0, 0.0, 1.0) == (0, 1)
+    assert pad.direction_from_axes(0.0, 0.0, 0.0, -1.0) == (0, -1)
+    assert pad.direction_from_axes(0.0, -1.0, 0.0, 0.0) == (0, 1)
+    assert pad.direction_from_axes(0.0, 1.0, 0.0, 0.0) == (0, -1)
+    assert pad.direction_from_axes(0.2, 0.2, 0.0, 0.0) == (0, 0)
+    assert pad.direction_from_axes(-0.8, 0.0, 0.0, 0.0) == (-1, 0)
+    assert pad.hat_from_pov(0) == (0.0, 1.0)
+    assert pad.hat_from_pov(9000) == (1.0, 0.0)
+    assert pad.hat_from_pov(18000) == (0.0, -1.0)
+    assert pad.hat_from_pov(65535) == (0.0, 0.0)
+    buttons = [False] * 10
+    buttons[settings.PAD_BTN_B] = True
+    assert "jump" in pad.actions_from_buttons(buttons)
+    buttons[settings.PAD_BTN_B] = False
+    buttons[settings.PAD_BTN_A] = True
+    actions = pad.actions_from_buttons(buttons)
+    assert "attack" in actions and "confirm" in actions
+    buttons[settings.PAD_BTN_A] = False
+    buttons[settings.PAD_BTN_Y] = True
+    assert "dash" in pad.actions_from_buttons(buttons)
+    buttons[settings.PAD_BTN_Y] = False
+    buttons[settings.PAD_BTN_X] = True
+    assert "project" in pad.actions_from_buttons(buttons)
+    buttons[settings.PAD_BTN_X] = False
+    buttons[7] = True
+    assert "start" in pad.actions_from_buttons(buttons)
+    assert pad.layout_for_pad("PowerA Nintendo Switch Controller", 14) == settings.PAD_LAYOUT_SWITCH
+    switch = [False] * 14
+    switch[settings.PAD_SWITCH_BTN_B] = True
+    assert "jump" in pad.actions_from_buttons(switch, name="PowerA Nintendo Switch Controller")
+    switch[settings.PAD_SWITCH_BTN_B] = False
+    switch[settings.PAD_SWITCH_BTN_Y] = True
+    assert "dash" in pad.actions_from_buttons(switch, name="PowerA Nintendo Switch Controller")
+    switch[settings.PAD_SWITCH_BTN_Y] = False
+    switch[settings.PAD_SWITCH_BTN_ZL] = True
+    switch_actions = pad.actions_from_buttons(switch, name="PowerA Nintendo Switch Controller")
+    assert "dash" in switch_actions
+    assert "start" not in switch_actions
+    switch[settings.PAD_SWITCH_BTN_ZL] = False
+    switch[settings.PAD_SWITCH_BTN_PLUS] = True
+    assert "start" in pad.actions_from_buttons(switch, name="PowerA Nintendo Switch Controller")
+    hub = pad.PadHub()
+    hub.poll(None, settings.FRAME_TIME)
+    assert hub.pressed == frozenset()
+    from src.ui import keys
+
+    pad_hub = pad.get_pad()
+    pad_hub.using_pad = False
+    assert keys.playing_prompts(show_esprit=True)[-1][0] == ("f",)
+    assert keys.ghost_prompts()[1][0] == ("r",)
+    assert keys.confirm_prompt() == ("enter",)
+    pad_hub.using_pad = True
+    assert keys.playing_prompts(show_esprit=True)[-1][0] == ("btn_x",)
+    assert keys.ghost_prompts()[0][0] == ("stick",)
+    assert keys.confirm_prompt() == ("btn_b",)
+    assert keys.spectral_prompt()[1] == settings.SPECTRAL_BUTTON_PROMPT_PAD
+    pad_hub.using_pad = False
+    print("  manette -> SNES, PowerA Switch (B saut, ZL dash) et hub inerte OK")
+
+
 def check_progression() -> None:
     """XP + ames exponentiels ; les ameliorations sont choisies, pas automatiques."""
     progression = SoulProgression()
@@ -2198,7 +2264,9 @@ def main() -> int:
     print("Project Astral Platformer - smoke test")
     print("[1/17] chargement des cartes")
     check_levels()
-    print("[2/17] progression et ameliorations")
+    print("[2/19] manette SNES (mapping)")
+    check_pad()
+    print("[3/19] progression et ameliorations")
     check_progression()
     print("[3/17] event manager")
     check_event_manager()

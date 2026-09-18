@@ -10,6 +10,7 @@ import settings
 from src.ui.display import handle_display_key, toggle_fullscreen
 from src.ui.fonts import PIXEL_FONT
 from src.ui.menu_kit import ButtonColumn, TextButton, draw_panel
+from src.ui.pad import get_pad
 
 
 class PauseMenu:
@@ -90,6 +91,9 @@ class PauseMenu:
         draw_panel(left, right, bottom, top, accent=settings.COLOR_MENU_FOCUS)
         self.title.draw()
         self.column.draw()
+        self.hint.text = (
+            "+ pour reprendre" if get_pad().using_pad else "Echap pour reprendre"
+        )
         self.hint.draw()
 
     def on_key_press(self, window: arcade.Window, symbol: int, modifiers: int) -> None:

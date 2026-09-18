@@ -466,6 +466,44 @@ PLAYER_JUMP_BUFFER = 0.12
 # En l'air, on garde l'elan ; inverser la direction reste possible.
 PLAYER_AIR_BRAKE_TIME = 0.90
 PLAYER_AIR_TURN_BOOST = 1.35
+# Manettes : SNES USB (DirectInput) et PowerA / Switch (sticks + hat).
+PAD_DEADZONE = 0.28
+PAD_REPEAT_DELAY = 0.32
+PAD_REPEAT_RATE = 0.11
+PAD_RESCAN_INTERVAL = 2.0
+PAD_RESCAN_EMPTY = 0.4  # plus frequent tant qu'aucune manette n'est vue
+PAD_LAYOUT_SNES = "snes"
+PAD_LAYOUT_SWITCH = "switch"
+PAD_SWITCH_NAME_TOKENS = ("switch", "nintendo", "powera", "pro controller")
+PAD_SWITCH_MIN_BUTTONS = 12
+# Clones USB SNES : B A Y X, L, R, Select, Start.
+PAD_BTN_B = 0
+PAD_BTN_A = 1
+PAD_BTN_Y = 2
+PAD_BTN_X = 3
+PAD_BTN_L = 4
+PAD_BTN_R = 5
+PAD_BTN_SELECT = (6, 8)
+PAD_BTN_START = (7, 9)
+# PowerA / Switch DirectInput (SDL Windows) : Y B A X, L R ZL ZR, Minus Plus Home.
+PAD_SWITCH_BTN_Y = 0
+PAD_SWITCH_BTN_B = 1
+PAD_SWITCH_BTN_A = 2
+PAD_SWITCH_BTN_X = 3
+PAD_SWITCH_BTN_L = 4
+PAD_SWITCH_BTN_R = 5
+PAD_SWITCH_BTN_ZL = 6
+PAD_SWITCH_BTN_ZR = 7
+PAD_SWITCH_BTN_MINUS = 8
+PAD_SWITCH_BTN_PLUS = 9
+PAD_SWITCH_BTN_HOME = 12
+PAD_CTRL_JUMP = ("a",)
+PAD_CTRL_ATTACK = ("b", "rightshoulder")
+PAD_CTRL_DASH = ("x", "leftshoulder")
+PAD_CTRL_PROJECT = ("y",)
+PAD_CTRL_START = ("start",)
+PAD_CTRL_BACK = ("back",)
+PAD_CTRL_TRIGGER_ON = 0.45
 # PLAYER_RESPAWN_DELAY est la somme des phases REBIRTH_* (plus bas).
 # Eclat d'ames bleues sur la statue au moment du respawn.
 CHECKPOINT_BURST_COUNT = 22
@@ -700,6 +738,7 @@ SPECTRAL_BUTTON_DURATION_MAX = 20.0
 SPECTRAL_BUTTON_DURATION_STEP = 0.5
 SPECTRAL_BUTTON_INSET = 6
 SPECTRAL_BUTTON_PROMPT = "Press F"
+SPECTRAL_BUTTON_PROMPT_PAD = "Press X"
 SPECTRAL_BUTTON_PROMPT_OFFSET = 28
 SPECTRAL_BUTTON_PROMPT_RANGE = TILE_SIZE * 1.75
 # Halo spectral : plaque en nappe floue, lien en brume (pas de trait net).
@@ -1504,6 +1543,13 @@ UI_KEYBOARD_EXTRAS = "Keyboard Extras.png"
 UI_KEY_CELL = 16  # taille native d'une touche-lettre
 UI_KEY_ICON_HEIGHT = 40  # hauteur a l'ecran (nearest-neighbor)
 UI_KEY_CAPTION_SIZE = 16  # libelles a cote des icones
+# Boutons Switch / PowerA (couleurs Nintendo).
+COLOR_PAD_B = (250, 210, 70)
+COLOR_PAD_A = (235, 86, 86)
+COLOR_PAD_Y = (92, 196, 92)
+COLOR_PAD_X = (90, 168, 245)
+COLOR_PAD_PLUS = (210, 214, 222)
+COLOR_PAD_STICK = (188, 196, 210)
 
 # Stats haut-droit : jauge d'XP (niveau du fantome), puis la cle si ramasse.
 HUD_STAT_ICON = 40

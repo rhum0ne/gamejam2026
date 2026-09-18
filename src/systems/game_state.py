@@ -42,10 +42,11 @@ from src.systems.ghost_emergence import GhostEmergence
 from src.systems.player_rebirth import PlayerRebirth
 from src.systems.play_events import bind_play_view, emit_ghost_end, emit_player_death, emit_player_win
 from src.systems.upgrades import SoulProgression
+from src.ui import cursor, keys
 from src.ui.debug import DebugOverlay, DebugSnapshot
 from src.ui.display import handle_display_key
 from src.ui.hud import Hud, HudData
-from src.ui import cursor, keys
+from src.ui.pad import get_pad
 from src.ui.music import music
 from src.ui.sfx import (
     play_attack,
@@ -295,6 +296,7 @@ class PlayView(arcade.View):
 
     def on_show_view(self) -> None:
         self.camera.on_resize(self.window.width, self.window.height)
+        get_pad().calm()
 
     # ------------------------------------------------------------------ #
     # Mise en place
@@ -861,7 +863,10 @@ class PlayView(arcade.View):
             enemy_states=enemy_states,
             deaths=self.session.deaths,
             essence=self.session.progression.essence,
-            extra=(f"chunks {self.level.chunks_drawn}/{self.level.chunks_total}",),
+            extra=(
+                f"chunks {self.level.chunks_drawn}/{self.level.chunks_total}",
+                get_pad().status_line(),
+            ),
         )
 
     # ------------------------------------------------------------------ #
@@ -869,6 +874,8 @@ class PlayView(arcade.View):
     # ------------------------------------------------------------------ #
 
     def on_update(self, delta_time: float) -> None:
+        get_pad().poll(self.window, delta_time)
+        pad_blocks = self._apply_pad()
         hide_cursor = self.machine.state not in (
             GameState.PAUSED,
             GameState.LEVEL_UP,
@@ -877,7 +884,7 @@ class PlayView(arcade.View):
             GameState.GAME_OVER,
         )
         cursor.tick(self.window, delta_time, hide=hide_cursor)
-        if self.machine.state in (GameState.PAUSED, GameState.LEVEL_UP):
+        if pad_blocks or self.machine.state in (GameState.PAUSED, GameState.LEVEL_UP):
             return
         self._tick_door_win(delta_time)
         if self._hitstop_timer > 0.0:
@@ -970,16 +977,17 @@ class PlayView(arcade.View):
         return closest
 
     def _draw_spectral_press_prompt(self, ghost: Ghost) -> None:
-        """Invite clavier au-dessus du bouton spectral proche."""
+        """Invite clavier ou manette au-dessus du bouton spectral proche."""
         mechanism = self._spectral_button_near_ghost(ghost)
         if mechanism is None:
             return
         plate = mechanism.plate
+        names, caption = keys.spectral_prompt()
         keys.draw_prompt(
             plate.center_x,
             plate.top + settings.SPECTRAL_BUTTON_PROMPT_OFFSET,
-            ("f",),
-            settings.SPECTRAL_BUTTON_PROMPT,
+            names,
+            caption,
             self.held_keys,
             height=24,
         )
@@ -1332,21 +1340,66 @@ class PlayView(arcade.View):
 
     def _horizontal_input(self) -> int:
         direction = 0
-        if self.held_keys & _LEFT_KEYS:
+        if self.held_keys & _LEFT_KEYS or get_pad().axis_x < 0:
             direction -= 1
-        if self.held_keys & _RIGHT_KEYS:
+        if self.held_keys & _RIGHT_KEYS or get_pad().axis_x > 0:
             direction += 1
         return direction
 
     def _vertical_input(self) -> int:
         direction = 0
-        if self.held_keys & _DOWN_KEYS:
+        if self.held_keys & _DOWN_KEYS or get_pad().axis_y < 0:
             direction -= 1
-        if self.held_keys & _UP_KEYS:
+        if self.held_keys & _UP_KEYS or get_pad().axis_y > 0:
             direction += 1
         return direction
 
+    def _apply_pad(self) -> bool:
+        """Applique les appuis manette. True = ne pas avancer le monde."""
+        pad = get_pad()
+        state = self.machine.state
+        if state is GameState.PAUSED:
+            for symbol in pad.menu_symbols(allow_back=True, start_is_back=True):
+                self._pause_overlay().on_key_press(self.window, symbol, 0)
+            return True
+        if state is GameState.LEVEL_UP:
+            for symbol in pad.menu_symbols(allow_back=False, start_is_back=False):
+                self._level_up_overlay().on_key_press(self.window, symbol, 0)
+            return True
+        if "start" in pad.pressed:
+            if self.session.on_leave is not None:
+                self.session.on_leave()
+                return True
+            self.enter_pause()
+            return True
+        if state is GameState.PLAYING:
+            if "jump" in pad.pressed:
+                self.player.jump()
+            if "jump" in pad.released:
+                self.player.cut_jump()
+            if "dash" in pad.pressed:
+                if self.player.dash():
+                    play_dash()
+                    self.camera.shake(
+                        settings.CAMERA_DASH_SHAKE, settings.CAMERA_DASH_SHAKE_TIME
+                    )
+            if "attack" in pad.pressed:
+                self.player.attack()
+            if "project" in pad.pressed:
+                emit_player_death(self, "sacrifice")
+            return False
+        if state is GameState.GHOST:
+            if "project" in pad.pressed or "confirm" in pad.pressed:
+                self._press_spectral_button()
+            if "back" in pad.pressed:
+                if self.ghost_emerging:
+                    return False
+                if self.ghost is not None:
+                    self.ghost.start_vanish()
+        return False
+
     def on_key_press(self, symbol: int, modifiers: int) -> None:
+        get_pad().note_keyboard()
         if handle_display_key(self.window, symbol, modifiers):
             return
         if symbol == arcade.key.F3:
@@ -1453,6 +1506,7 @@ class PlayView(arcade.View):
             return
         self._paused_from = self.machine.state
         self.held_keys.clear()
+        get_pad().calm()
         self.machine.try_to(GameState.PAUSED)
         cursor.show(self.window)
 
@@ -1484,6 +1538,7 @@ class PlayView(arcade.View):
             return
         self._level_up_from = self.machine.state
         self.held_keys.clear()
+        get_pad().calm()
         self._level_up_overlay().set_cards(self.session.progression.upgrade_cards())
         self.machine.try_to(GameState.LEVEL_UP)
 

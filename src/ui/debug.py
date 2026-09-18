@@ -13,7 +13,7 @@ import arcade
 import settings
 from src.ui.fonts import PIXEL_FONT
 
-_LINE_COUNT = 12
+_LINE_COUNT = 13
 _LINE_HEIGHT = 16
 _PADDING = 10
 

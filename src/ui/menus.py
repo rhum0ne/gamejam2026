@@ -12,7 +12,7 @@ import arcade
 
 import settings
 from src.systems.game_state import GameSession, PlayView
-from src.ui import keys
+from src.ui import keys, labels
 from src.ui.display import handle_display_key, use_default_camera
 from src.ui.fonts import PIXEL_FONT
 from src.ui.menu_kit import (
@@ -23,6 +23,7 @@ from src.ui.menu_kit import (
     TextButton,
     draw_panel,
 )
+from src.ui.pad import dispatch_menu_pad, get_pad
 from src.ui.sfx import play_menu_click, play_menu_hover
 from src.ui.music import music
 from src.ui.title_fx import TitleStage
@@ -72,6 +73,10 @@ class _HeldKeysMixin:
     def __init__(self, *args, **kwargs) -> None:
         self.held_keys = set()
         super().__init__(*args, **kwargs)
+
+    def on_key_press(self, symbol: int, modifiers: int) -> None:
+        get_pad().note_keyboard()
+        self.held_keys.add(symbol)
 
     def on_key_release(self, symbol: int, modifiers: int) -> None:
         self.held_keys.discard(symbol)
@@ -158,12 +163,19 @@ class TitleView(_HeldKeysMixin, arcade.View):
         self._on_quit = False
         self._panel = (0.0, 0.0, 0.0, 0.0)
         self._warn_text: arcade.Text | None = None
+        self._pad_line = labels.Line(
+            13,
+            settings.COLOR_MENU_HINT,
+            anchor_x="center",
+            font_name=settings.EDITOR_UI_FONT,
+        )
 
     def on_show_view(self) -> None:
         use_default_camera(self.window)
         load_level_catalog(reload=True)
         music.play_main_theme()
         self._rebuild()
+        get_pad().calm()
 
     def on_resize(self, width: int, height: int) -> None:
         self._rebuild()
@@ -214,7 +226,7 @@ class TitleView(_HeldKeysMixin, arcade.View):
             )
         max_rows = max(((len(grid.cells) + cols - 1) // cols) for grid in grids)
         rows = max(2, max_rows)
-        prompt_reserve = 52.0
+        prompt_reserve = 72.0
         button_h = settings.MENU_BUTTON_HEIGHT
         warn_h = 16.0 if self._warn_text is not None else 0.0
         tab_h = settings.MENU_TAB_HEIGHT
@@ -384,6 +396,7 @@ class TitleView(_HeldKeysMixin, arcade.View):
 
     def on_update(self, delta_time: float) -> None:
         self.stage.update(delta_time)
+        dispatch_menu_pad(self, delta_time, allow_back=False)
 
     def on_draw(self) -> None:
         self.stage.draw()
@@ -406,17 +419,21 @@ class TitleView(_HeldKeysMixin, arcade.View):
         keys.draw_prompt_row(
             self.window.width / 2,
             28,
-            (
-                (("z", "q", "s", "d"), "bouger"),
-                (("space",), "sauter"),
-                (("shift",), "dash"),
-            ),
+            keys.title_prompts(),
             self.held_keys,
             height=20,
         )
+        if not get_pad().using_pad:
+            self._pad_line.draw(
+                get_pad().status_line(),
+                self.window.width / 2,
+                52,
+                max_width=self.window.width - 40,
+                overflow="clip",
+            )
 
     def on_key_press(self, symbol: int, modifiers: int) -> None:
-        self.held_keys.add(symbol)
+        super().on_key_press(symbol, modifiers)
         if handle_display_key(self.window, symbol, modifiers):
             return
         if symbol == arcade.key.ESCAPE:
@@ -606,6 +623,7 @@ class LevelIntroView(_HeldKeysMixin, arcade.View):
 
     def on_show_view(self) -> None:
         use_default_camera(self.window)
+        get_pad().calm()
 
     @property
     def _duration(self) -> float:
@@ -635,12 +653,15 @@ class LevelIntroView(_HeldKeysMixin, arcade.View):
             self._subtitle_text.draw()
 
     def on_update(self, delta_time: float) -> None:
+        dispatch_menu_pad(self, delta_time, allow_back=True)
+        if getattr(self.window, "current_view", self) is not self:
+            return
         self._elapsed += delta_time
         if self._elapsed >= self._duration:
             self._advance()
 
     def on_key_press(self, symbol: int, modifiers: int) -> None:
-        self.held_keys.add(symbol)
+        super().on_key_press(symbol, modifiers)
         if handle_display_key(self.window, symbol, modifiers):
             return
         if symbol in (
@@ -666,19 +687,21 @@ class GameOverView(_HeldKeysMixin, arcade.View):
 
     def on_show_view(self) -> None:
         use_default_camera(self.window)
+        get_pad().calm()
 
-    def on_draw(self) -> None:
+    def on_update(self, delta_time: float) -> None:
+        dispatch_menu_pad(self, delta_time, allow_back=True)
         self.clear()
         height = self.window.height
         _draw_centered(self, "GAME OVER", height * 0.64, 44, settings.COLOR_SPIKE)
         _draw_centered(self, f"Morts : {self.session.deaths}", height * 0.55, 20, settings.COLOR_HUD_TEXT)
-        _draw_action(self, height * 0.42, ("enter",), "Reessayer", self.held_keys)
+        _draw_action(self, height * 0.42, keys.confirm_prompt(), "Reessayer", self.held_keys)
         _draw_action(
-            self, height * 0.36, ("esc",), "Menu principal", self.held_keys, color=settings.COLOR_MENU_HINT
+            self, height * 0.36, keys.back_prompt(), "Menu principal", self.held_keys, color=settings.COLOR_MENU_HINT
         )
 
     def on_key_press(self, symbol: int, modifiers: int) -> None:
-        self.held_keys.add(symbol)
+        super().on_key_press(symbol, modifiers)
         if handle_display_key(self.window, symbol, modifiers):
             return
         if symbol in (arcade.key.ENTER, arcade.key.RETURN, arcade.key.NUM_ENTER):
@@ -731,6 +754,7 @@ class VictoryView(_HeldKeysMixin, arcade.View):
 
     def on_show_view(self) -> None:
         use_default_camera(self.window)
+        get_pad().calm()
         info = peek_level_info(self.session.level_file)
         self.level_label.text = info.name
         progression = self.session.progression
@@ -788,8 +812,11 @@ class VictoryView(_HeldKeysMixin, arcade.View):
         self.stats.draw()
         self.column.draw()
 
+    def on_update(self, delta_time: float) -> None:
+        dispatch_menu_pad(self, delta_time, allow_back=True)
+
     def on_key_press(self, symbol: int, modifiers: int) -> None:
-        self.held_keys.add(symbol)
+        super().on_key_press(symbol, modifiers)
         if handle_display_key(self.window, symbol, modifiers):
             return
         if symbol == arcade.key.ESCAPE:
@@ -843,7 +870,11 @@ class LevelErrorView(_HeldKeysMixin, arcade.View):
 
     def on_show_view(self) -> None:
         use_default_camera(self.window)
+        get_pad().calm()
         self._rebuild_body()
+
+    def on_update(self, delta_time: float) -> None:
+        dispatch_menu_pad(self, delta_time, allow_back=True)
 
     def on_resize(self, width: int, height: int) -> None:
         self._rebuild_body()
@@ -879,14 +910,14 @@ class LevelErrorView(_HeldKeysMixin, arcade.View):
             self._rebuild_body()
         if self._body is not None:
             self._body.draw()
-        _draw_action(self, height * 0.24, ("enter",), "Reessayer", self.held_keys)
+        _draw_action(self, height * 0.24, keys.confirm_prompt(), "Reessayer", self.held_keys)
         caption = "Retour editeur" if self.session.on_leave is not None else "Menu principal"
         _draw_action(
-            self, height * 0.18, ("esc",), caption, self.held_keys, color=settings.COLOR_MENU_HINT
+            self, height * 0.18, keys.back_prompt(), caption, self.held_keys, color=settings.COLOR_MENU_HINT
         )
 
     def on_key_press(self, symbol: int, modifiers: int) -> None:
-        self.held_keys.add(symbol)
+        super().on_key_press(symbol, modifiers)
         if handle_display_key(self.window, symbol, modifiers):
             return
         if symbol in (arcade.key.ENTER, arcade.key.RETURN, arcade.key.NUM_ENTER):

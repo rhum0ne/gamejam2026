@@ -146,7 +146,7 @@ class Hud:
                 keys.draw_prompt_row(
                     self.screen_width / 2,
                     self._MARGIN + settings.UI_KEY_ICON_HEIGHT / 2 + 4,
-                    keys.GHOST_PROMPTS,
+                    keys.ghost_prompts(),
                     data.pressed_keys,
                 )
             elif data.hint:
